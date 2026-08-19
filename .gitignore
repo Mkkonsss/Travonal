@@ -41,3 +41,9 @@ example
 # generated native folders
 /ios
 /android
+
+# Archives
+*.zip
+
+# Claude Code settings
+.claude/

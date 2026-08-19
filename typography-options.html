@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Typography Options</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    background: #080808;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 20px 80px;
+    gap: 12px;
+  }
+  h1 { color: #F0F0F0; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .sub { color: #444; font-size: 12px; letter-spacing: 0.5px; margin-bottom: 40px; }
+  .row { display: flex; gap: 32px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+  .phone { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .phone-label { color: #6E6E73; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; }
+  .phone-name { color: #D0D0D0; font-size: 14px; font-weight: 600; text-align: center; max-width: 200px; }
+
+  .shell {
+    border-radius: 50px;
+    padding: 12px;
+    background: linear-gradient(160deg, #222, #111);
+    box-shadow: 0 40px 120px rgba(0,0,0,0.95), inset 0 0 0 1px rgba(255,255,255,0.07);
+    width: 260px;
+  }
+  .screen {
+    border-radius: 40px;
+    overflow: hidden;
+    height: 560px;
+    background: #0A0A0A;
+    display: flex;
+    flex-direction: column;
+    padding: 52px 24px 44px;
+    position: relative;
+  }
+
+  /* Shared */
+  .brand {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+  }
+  .center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    text-align: center;
+  }
+  .greeting {
+    font-size: 20px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.4);
+  }
+  .emoji { font-size: 64px; line-height: 1; }
+  .cta-area { display: flex; flex-direction: column; gap: 10px; }
+  .btn {
+    background: #E5E5E5;
+    border-radius: 50px;
+    padding: 17px 16px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1C1C1E;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .skip {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+    padding: 4px 0;
+  }
+
+  /* Option A — Bold on top */
+  .a-bold {
+    color: #fff;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+  .a-light {
+    color: rgba(255,255,255,0.42);
+    font-size: 32px;
+    font-weight: 300;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+  }
+
+  /* Option B — All caps emphasis */
+  .b-light {
+    color: rgba(255,255,255,0.42);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: 0px;
+  }
+  .b-caps {
+    color: #fff;
+    font-size: 46px;
+    font-weight: 800;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  /* Option C — Italic light line */
+  .c-italic {
+    color: rgba(255,255,255,0.42);
+    font-size: 28px;
+    font-weight: 300;
+    font-style: italic;
+    letter-spacing: -0.3px;
+  }
+  .c-bold {
+    color: #fff;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+
+  /* Option D — Emotional copy */
+  .d-light {
+    color: rgba(255,255,255,0.42);
+    font-size: 32px;
+    font-weight: 300;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+  }
+  .d-bold {
+    color: #fff;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+
+  /* Option E — Single line */
+  .e-single {
+    color: #fff;
+    font-size: 52px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+</style>
+</head>
+<body>
+
+<h1>Typography Options</h1>
+<p class="sub">Same screen, five headline treatments</p>
+
+<div class="row">
+
+  <!-- A: Bold on top -->
+  <div class="phone">
+    <div class="phone-label">Option A</div>
+    <div class="phone-name">Bold word first</div>
+    <div class="shell"><div class="screen">
+      <div class="brand">Travonal</div>
+      <div class="center">
+        <div class="greeting">Welcome</div>
+        <div class="emoji">👋</div>
+        <div>
+          <div class="a-bold">simple.</div>
+          <div class="a-light">Let's make travel</div>
+        </div>
+      </div>
+      <div class="cta-area">
+        <div class="btn">Get started →</div>
+        <div class="skip">Skip</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- B: All caps -->
+  <div class="phone">
+    <div class="phone-label">Option B</div>
+    <div class="phone-name">All caps emphasis</div>
+    <div class="shell"><div class="screen">
+      <div class="brand">Travonal</div>
+      <div class="center">
+        <div class="greeting">Welcome</div>
+        <div class="emoji">👋</div>
+        <div>
+          <div class="b-light">Let's make travel</div>
+          <div class="b-caps">simple.</div>
+        </div>
+      </div>
+      <div class="cta-area">
+        <div class="btn">Get started →</div>
+        <div class="skip">Skip</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- C: Italic light line -->
+  <div class="phone">
+    <div class="phone-label">Option C</div>
+    <div class="phone-name">Italic contrast</div>
+    <div class="shell"><div class="screen">
+      <div class="brand">Travonal</div>
+      <div class="center">
+        <div class="greeting">Welcome</div>
+        <div class="emoji">👋</div>
+        <div>
+          <div class="c-italic">Let's make travel</div>
+          <div class="c-bold">simple.</div>
+        </div>
+      </div>
+      <div class="cta-area">
+        <div class="btn">Get started →</div>
+        <div class="skip">Skip</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- D: Different copy -->
+  <div class="phone">
+    <div class="phone-label">Option D</div>
+    <div class="phone-name">Emotional copy</div>
+    <div class="shell"><div class="screen">
+      <div class="brand">Travonal</div>
+      <div class="center">
+        <div class="greeting">Welcome</div>
+        <div class="emoji">👋</div>
+        <div>
+          <div class="d-light">Travel the way</div>
+          <div class="d-bold">it should be.</div>
+        </div>
+      </div>
+      <div class="cta-area">
+        <div class="btn">Get started →</div>
+        <div class="skip">Skip</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- E: Single line -->
+  <div class="phone">
+    <div class="phone-label">Option E</div>
+    <div class="phone-name">One bold line</div>
+    <div class="shell"><div class="screen">
+      <div class="brand">Travonal</div>
+      <div class="center">
+        <div class="greeting">Welcome</div>
+        <div class="emoji">👋</div>
+        <div class="e-single">Simple travel.</div>
+      </div>
+      <div class="cta-area">
+        <div class="btn">Get started →</div>
+        <div class="skip">Skip</div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+</body>
+</html>

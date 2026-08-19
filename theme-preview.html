@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travonal — Theme Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a1a; padding: 32px 16px; }
+  h1 { color: #fff; text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.3px; }
+  .subtitle { color: #888; text-align: center; font-size: 13px; margin-bottom: 36px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+
+  /* ── Phone shell ── */
+  .phone { width: 260px; flex-shrink: 0; }
+  .phone-label { text-align: center; color: #aaa; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+  .phone-name { text-align: center; font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+  .shell {
+    border-radius: 38px;
+    padding: 10px;
+    background: #2a2a2a;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .screen {
+    border-radius: 30px;
+    overflow: hidden;
+    height: 520px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* ── Status bar ── */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 18px 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* ── Header ── */
+  .nav-header {
+    padding: 4px 16px 10px;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  /* ── Pulse banner ── */
+  .pulse-banner {
+    margin: 0 12px 10px;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pulse-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .pulse-text { flex: 1; }
+  .pulse-chevron { font-size: 16px; opacity: 0.5; }
+
+  /* ── Trip card ── */
+  .trip-card {
+    margin: 0 12px 10px;
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .trip-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .trip-emoji { font-size: 24px; line-height: 1; }
+  .trip-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .trip-dest { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 2px; }
+  .trip-dates { font-size: 12px; opacity: 0.6; margin-bottom: 10px; }
+  .trip-progress { height: 3px; border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
+  .trip-progress-fill { height: 100%; border-radius: 2px; width: 35%; }
+  .trip-actions { display: flex; gap: 6px; }
+  .trip-btn {
+    flex: 1;
+    padding: 8px 0;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    border: 1.5px solid transparent;
+    cursor: default;
+  }
+
+  /* ── Activity rows ── */
+  .section-label {
+    padding: 6px 16px 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    opacity: 0.5;
+  }
+  .activity {
+    margin: 0 12px 6px;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .activity-time { font-size: 11px; font-weight: 600; opacity: 0.55; width: 34px; flex-shrink: 0; }
+  .activity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .activity-info { flex: 1; }
+  .activity-title { font-size: 13px; font-weight: 600; margin-bottom: 1px; }
+  .activity-sub { font-size: 11px; opacity: 0.5; }
+  .activity-lock { font-size: 12px; opacity: 0.35; }
+
+  /* ── Tab bar ── */
+  .tab-bar {
+    margin-top: auto;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 10px 0 14px;
+    border-top-width: 1px;
+    border-top-style: solid;
+  }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; opacity: 0.45; }
+  .tab.active { opacity: 1; }
+  .tab-icon { font-size: 18px; line-height: 1; }
+  .fab {
+    width: 38px; height: 38px; border-radius: 19px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; line-height: 1;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    margin-top: -8px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Travonal — Theme Options</h1>
+<p class="subtitle">Current theme is Dark Purple. Pick a direction to explore.</p>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const themes = [
+  {
+    label: "Current",
+    name: "Dark Purple",
+    mode: "dark",
+    colors: {
+      bg: "#000000",
+      bgEl: "#212225",
+      text: "#ffffff",
+      textSec: "#B0B4BA",
+      primary: "#A78BFA",
+      primaryMuted: "#2E1D5E",
+      border: "#38393D",
+      live: "#34D399",
+      danger: "#F87171",
+      badge: "#1a1a1a",
+    }
+  },
+  {
+    label: "Dark on White",
+    name: "Clean Light",
+    mode: "light",
+    colors: {
+      bg: "#ffffff",
+      bgEl: "#F2F2F7",
+      text: "#0a0a0a",
+      textSec: "#6B7280",
+      primary: "#7C3AED",
+      primaryMuted: "#EDE9FE",
+      border: "#E5E7EB",
+      live: "#059669",
+      danger: "#DC2626",
+      badge: "#f0f0f0",
+    }
+  },
+  {
+    label: "White on Dark",
+    name: "Obsidian",
+    mode: "dark",
+    colors: {
+      bg: "#0F0F0F",
+      bgEl: "#1C1C1E",
+      text: "#F5F5F5",
+      textSec: "#8E8E93",
+      primary: "#E5E5E5",
+      primaryMuted: "#2A2A2A",
+      border: "#2C2C2E",
+      live: "#30D158",
+      danger: "#FF453A",
+      badge: "#252525",
+    }
+  },
+  {
+    label: "Option",
+    name: "Midnight Blue",
+    mode: "dark",
+    colors: {
+      bg: "#0B0F1A",
+      bgEl: "#151B2E",
+      text: "#E8EEFF",
+      textSec: "#7B8DB0",
+      primary: "#4F8EF7",
+      primaryMuted: "#1A2540",
+      border: "#1E2842",
+      live: "#34D399",
+      danger: "#FB7185",
+      badge: "#0e1525",
+    }
+  },
+  {
+    label: "Option",
+    name: "Forest",
+    mode: "dark",
+    colors: {
+      bg: "#0D1410",
+      bgEl: "#162018",
+      text: "#E8F5E9",
+      textSec: "#7BA688",
+      primary: "#4ADE80",
+      primaryMuted: "#14301A",
+      border: "#1E3322",
+      live: "#86EFAC",
+      danger: "#F87171",
+      badge: "#101810",
+    }
+  },
+  {
+    label: "Option",
+    name: "Warm Sand",
+    mode: "light",
+    colors: {
+      bg: "#FAF7F2",
+      bgEl: "#F0EBE2",
+      text: "#1C1A17",
+      textSec: "#7A7068",
+      primary: "#C2622D",
+      primaryMuted: "#FBE9DC",
+      border: "#E0D8CE",
+      live: "#2D7D46",
+      danger: "#C0392B",
+      badge: "#ede7de",
+    }
+  },
+  {
+    label: "Option",
+    name: "Slate",
+    mode: "dark",
+    colors: {
+      bg: "#0E1117",
+      bgEl: "#1A2030",
+      text: "#E2E8F0",
+      textSec: "#718096",
+      primary: "#63B3ED",
+      primaryMuted: "#1A2744",
+      border: "#2D3748",
+      live: "#68D391",
+      danger: "#FC8181",
+      badge: "#131924",
+    }
+  },
+  {
+    label: "Option",
+    name: "Rose Gold",
+    mode: "light",
+    colors: {
+      bg: "#FFF8F8",
+      bgEl: "#F7EEED",
+      text: "#1A0F0E",
+      textSec: "#7D5C5A",
+      primary: "#C9445C",
+      primaryMuted: "#FCE8EC",
+      border: "#EDD9D8",
+      live: "#059669",
+      danger: "#DC2626",
+      badge: "#f0e4e3",
+    }
+  },
+];
+
+function buildPhone(t) {
+  const c = t.colors;
+  const isDark = t.mode === "dark";
+
+  return `
+  <div class="phone">
+    <div class="phone-label">${t.label}</div>
+    <div class="phone-name" style="color:${isDark?'#ddd':'#222'}">${t.name}</div>
+    <div class="shell">
+      <div class="screen" style="background:${c.bg}">
+
+        <!-- Status bar -->
+        <div class="status-bar" style="color:${c.text}">
+          <span>9:41</span>
+          <span style="font-size:13px">●●●</span>
+        </div>
+
+        <!-- Header -->
+        <div class="nav-header" style="color:${c.text}">Today</div>
+
+        <!-- Pulse banner -->
+        <div class="pulse-banner" style="background:${c.bgEl}">
+          <div class="pulse-dot" style="background:${c.primary}"></div>
+          <span class="pulse-text" style="color:${c.text}">1 issue needs attention</span>
+          <span class="pulse-chevron" style="color:${c.text}">›</span>
+        </div>
+
+        <!-- Trip card -->
+        <div class="trip-card" style="background:${c.bgEl}">
+          <div class="trip-card-top">
+            <span class="trip-emoji">🗺️</span>
+            <span class="trip-badge" style="background:${c.primary}22;color:${c.primary}">Active</span>
+          </div>
+          <div class="trip-dest" style="color:${c.text}">Tokyo</div>
+          <div class="trip-dates" style="color:${c.textSec}">Aug 18 – Aug 26 · Day 3 of 9</div>
+          <div class="trip-progress" style="background:${c.border}">
+            <div class="trip-progress-fill" style="background:${c.primary}"></div>
+          </div>
+          <div class="trip-actions">
+            <div class="trip-btn" style="background:${c.primary};color:#fff">Change today</div>
+            <div class="trip-btn" style="border-color:${c.border};color:${c.textSec}">Edit</div>
+            <div class="trip-btn" style="border-color:${c.border};color:${c.textSec}">⊕</div>
+            <div class="trip-btn" style="border-color:${c.border};color:${c.textSec}">↑</div>
+          </div>
+        </div>
+
+        <!-- Activity list -->
+        <div class="section-label" style="color:${c.text}">Day 3 · Mon Aug 20</div>
+
+        <div class="activity" style="background:${c.bgEl}">
+          <div class="activity-time" style="color:${c.text}">9:00</div>
+          <div class="activity-dot" style="background:${c.primary}"></div>
+          <div class="activity-info">
+            <div class="activity-title" style="color:${c.text}">Senso-ji Temple</div>
+            <div class="activity-sub" style="color:${c.textSec}">Activity · 90 min</div>
+          </div>
+          <div class="activity-lock" style="color:${c.textSec}">🔒</div>
+        </div>
+
+        <div class="activity" style="background:${c.bgEl}">
+          <div class="activity-time" style="color:${c.text}">12:30</div>
+          <div class="activity-dot" style="background:${c.live}"></div>
+          <div class="activity-info">
+            <div class="activity-title" style="color:${c.text}">Ramen Lunch</div>
+            <div class="activity-sub" style="color:${c.textSec}">Food · 60 min</div>
+          </div>
+        </div>
+
+        <div class="activity" style="background:${c.bgEl}">
+          <div class="activity-time" style="color:${c.text}">15:00</div>
+          <div class="activity-dot" style="background:${c.textSec}"></div>
+          <div class="activity-info">
+            <div class="activity-title" style="color:${c.text}">Akihabara</div>
+            <div class="activity-sub" style="color:${c.textSec}">Activity · 120 min</div>
+          </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="tab-bar" style="border-top-color:${c.border};background:${c.bg}">
+          <div class="tab" style="color:${c.textSec}">
+            <div class="tab-icon">⌂</div>
+            <span>Home</span>
+          </div>
+          <div class="tab" style="color:${c.textSec}">
+            <div class="tab-icon">✈</div>
+            <span>Trips</span>
+          </div>
+          <div class="fab" style="background:${c.primary}">+</div>
+          <div class="tab active" style="color:${c.primary}">
+            <div class="tab-icon">◎</div>
+            <span>Explore</span>
+          </div>
+          <div class="tab" style="color:${c.textSec}">
+            <div class="tab-icon">◯</div>
+            <span>Profile</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>`;
+}
+
+document.getElementById('grid').innerHTML = themes.map(buildPhone).join('');
+</script>
+</body>
+</html>

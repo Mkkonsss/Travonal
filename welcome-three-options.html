@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome Screen — 3 Options</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    background: #080808;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 20px 80px;
+    gap: 12px;
+  }
+  h1 { color: #F0F0F0; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .sub { color: #444; font-size: 12px; letter-spacing: 0.5px; margin-bottom: 40px; }
+  .row { display: flex; gap: 40px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+  .phone { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .phone-label { color: #6E6E73; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; }
+  .phone-name { color: #D0D0D0; font-size: 15px; font-weight: 600; }
+  .phone-desc { color: #555; font-size: 12px; text-align: center; max-width: 200px; line-height: 1.5; }
+
+  .shell {
+    border-radius: 50px;
+    padding: 12px;
+    background: linear-gradient(160deg, #222, #111);
+    box-shadow: 0 40px 120px rgba(0,0,0,0.95), inset 0 0 0 1px rgba(255,255,255,0.07);
+    width: 280px;
+  }
+  .screen {
+    border-radius: 40px;
+    overflow: hidden;
+    height: 590px;
+    background: #0F0F0F;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* ── Shared typography ── */
+  .brand {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.8px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.28);
+  }
+  .accent-line {
+    width: 28px;
+    height: 2px;
+    border-radius: 1px;
+    background: rgba(255,255,255,0.15);
+    margin-bottom: 18px;
+  }
+  .headline {
+    font-size: 40px;
+    font-weight: 800;
+    color: #F2F2F2;
+    line-height: 1.08;
+    letter-spacing: -1px;
+    margin-bottom: 14px;
+  }
+  .subline {
+    font-size: 14px;
+    color: rgba(255,255,255,0.36);
+    line-height: 1.6;
+  }
+  .btn {
+    background: #E5E5E5;
+    border-radius: 14px;
+    padding: 17px 16px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1C1C1E;
+    letter-spacing: -0.2px;
+  }
+  .skip {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+    padding: 6px 0;
+  }
+
+  /* ═══════════════════════════
+     OPTION 1 — No image
+  ═══════════════════════════ */
+  .opt1-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 56px 24px 48px;
+  }
+  .opt1-spacer { flex: 1; }
+  .opt1-copy { margin-bottom: 36px; }
+  .opt1-cta { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ═══════════════════════════
+     OPTION 2 — Image fades from top
+  ═══════════════════════════ */
+  .opt2-img {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 280px;
+    background-image: url('assets/images/welcome-bg.jpg');
+    background-size: cover;
+    background-position: center 30%;
+  }
+  .opt2-img::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* Fade: transparent at top, fully #0F0F0F at bottom */
+    background: linear-gradient(
+      to bottom,
+      rgba(15,15,15,0.15) 0%,
+      rgba(15,15,15,0.55) 55%,
+      #0F0F0F 100%
+    );
+  }
+  .opt2-content {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 56px 24px 48px;
+  }
+  .opt2-spacer { flex: 1; }
+  .opt2-copy { margin-bottom: 36px; }
+  .opt2-cta { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ═══════════════════════════
+     OPTION 3 — Image card in middle
+  ═══════════════════════════ */
+  .opt3-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 56px 24px 48px;
+  }
+  .opt3-card-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+  }
+  .opt3-card {
+    width: 100%;
+    height: 180px;
+    border-radius: 20px;
+    overflow: hidden;
+    background-image: url('assets/images/welcome-bg.jpg');
+    background-size: cover;
+    background-position: center 35%;
+    position: relative;
+    box-shadow:
+      0 2px 0 rgba(255,255,255,0.04) inset,
+      0 16px 48px rgba(0,0,0,0.6);
+  }
+  .opt3-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(0,0,0,0.05) 0%,
+      rgba(0,0,0,0.25) 100%
+    );
+    border-radius: 20px;
+  }
+  .opt3-copy { margin-bottom: 32px; }
+  .opt3-cta { display: flex; flex-direction: column; gap: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Welcome Screen Options</h1>
+<p class="sub">Three directions — same copy, same CTA</p>
+
+<div class="row">
+
+  <!-- OPTION 1: No image -->
+  <div class="phone">
+    <div class="phone-label">Option 1</div>
+    <div class="phone-name">No image</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="opt1-content">
+          <div class="brand">Travonal</div>
+          <div class="opt1-spacer"></div>
+          <div class="opt1-copy">
+            <div class="accent-line"></div>
+            <div class="headline">Your entire trip,<br>handled.</div>
+            <div class="subline">Travonal builds your itinerary, manages your budget, and keeps every detail in one place.</div>
+          </div>
+          <div class="opt1-cta">
+            <div class="btn">Get started</div>
+            <div class="skip">Skip setup</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-desc">Clean & minimal. The typography carries it. No image to distract or date the screen.</div>
+  </div>
+
+  <!-- OPTION 2: Image fades from top -->
+  <div class="phone">
+    <div class="phone-label">Option 2</div>
+    <div class="phone-name">Image from top</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="opt2-img"></div>
+        <div class="opt2-content">
+          <div class="brand">Travonal</div>
+          <div class="opt2-spacer"></div>
+          <div class="opt2-copy">
+            <div class="accent-line"></div>
+            <div class="headline">Your entire trip,<br>handled.</div>
+            <div class="subline">Travonal builds your itinerary, manages your budget, and keeps every detail in one place.</div>
+          </div>
+          <div class="opt2-cta">
+            <div class="btn">Get started</div>
+            <div class="skip">Skip setup</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-desc">Image lives at the top and melts into the dark. Copy and CTA stay fully legible at the bottom.</div>
+  </div>
+
+  <!-- OPTION 3: Image card in middle -->
+  <div class="phone">
+    <div class="phone-label">Option 3</div>
+    <div class="phone-name">Image card</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="opt3-content">
+          <div class="brand">Travonal</div>
+          <div class="opt3-card-wrap">
+            <div class="opt3-card"></div>
+          </div>
+          <div class="opt3-copy">
+            <div class="accent-line"></div>
+            <div class="headline">Your entire trip,<br>handled.</div>
+            <div class="subline">Travonal builds your itinerary, manages your budget, and keeps every detail in one place.</div>
+          </div>
+          <div class="opt3-cta">
+            <div class="btn">Get started</div>
+            <div class="skip">Skip setup</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="phone-desc">Image is a framed card — clearly secondary to the headline. Easiest to swap the photo later.</div>
+  </div>
+
+</div>
+</body>
+</html>

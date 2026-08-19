@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welcome Screen — Image Options</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    background: #080808;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 20px 60px;
+    gap: 14px;
+  }
+  h1 { color: #F0F0F0; font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .sub { color: #555; font-size: 12px; letter-spacing: 0.5px; margin-bottom: 36px; }
+  .row { display: flex; gap: 36px; justify-content: center; flex-wrap: wrap; }
+
+  .phone { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .phone-label { color: #8E8E93; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; }
+  .phone-name { color: #E0E0E0; font-size: 14px; font-weight: 600; }
+
+  .shell {
+    border-radius: 48px;
+    padding: 11px;
+    background: linear-gradient(145deg, #202020, #131313);
+    box-shadow: 0 32px 100px rgba(0,0,0,0.9), inset 0 0 0 1px rgba(255,255,255,0.06);
+    width: 272px;
+  }
+  .screen {
+    border-radius: 38px;
+    overflow: hidden;
+    height: 570px;
+    background: #0F0F0F;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  /* ── Shared text elements ── */
+  .brand {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.32);
+  }
+  .headline {
+    font-size: 36px;
+    font-weight: 800;
+    color: #F2F2F2;
+    line-height: 1.08;
+    letter-spacing: -0.6px;
+    margin-bottom: 12px;
+  }
+  .subline {
+    font-size: 14px;
+    color: rgba(255,255,255,0.38);
+    line-height: 1.55;
+  }
+  .btn {
+    background: #E5E5E5;
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1C1C1E;
+  }
+  .skip {
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255,255,255,0.2);
+    font-weight: 500;
+    padding: 3px 0;
+  }
+
+  /* ════════════════════════════
+     OPTION A — Blurred atmosphere
+  ════════════════════════════ */
+  .a-bg {
+    position: absolute;
+    inset: 0;
+    background-image: url('assets/images/welcome-bg.jpg');
+    background-size: cover;
+    background-position: center;
+    filter: blur(18px) brightness(0.22) saturate(0.6);
+    transform: scale(1.1);
+  }
+  .a-content {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 22px 36px;
+  }
+  .a-spacer { flex: 1; }
+  .a-bottom { display: flex; flex-direction: column; gap: 24px; }
+  .a-cta { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ════════════════════════════
+     OPTION B — Postcard window
+  ════════════════════════════ */
+  .b-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 22px 36px;
+  }
+  .b-spacer { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px 0; }
+  .postcard {
+    width: 100%;
+    height: 155px;
+    border-radius: 18px;
+    overflow: hidden;
+    background-image: url('assets/images/welcome-bg.jpg');
+    background-size: cover;
+    background-position: center 40%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.4);
+    position: relative;
+  }
+  .postcard::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.35) 100%);
+    border-radius: 18px;
+  }
+  .b-bottom { display: flex; flex-direction: column; gap: 24px; }
+  .b-cta { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ════════════════════════════
+     OPTION C — Bottom peek
+  ════════════════════════════ */
+  .c-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 22px 0;
+    position: relative;
+    z-index: 2;
+  }
+  .c-spacer { flex: 1; }
+  .c-bottom { display: flex; flex-direction: column; gap: 24px; padding-bottom: 24px; }
+  .c-cta { display: flex; flex-direction: column; gap: 10px; }
+  .c-peek {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 180px;
+    background-image: url('assets/images/welcome-bg.jpg');
+    background-size: cover;
+    background-position: center bottom;
+    z-index: 1;
+  }
+  .c-peek::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 100%;
+    background: linear-gradient(to bottom, #0F0F0F 0%, rgba(15,15,15,0.85) 35%, rgba(15,15,15,0.3) 100%);
+  }
+</style>
+</head>
+<body>
+
+<h1>Image Treatment Options</h1>
+<p class="sub">Same screen, three ways to bring in the city photo</p>
+
+<div class="row">
+
+  <!-- Option A: Blurred atmosphere -->
+  <div class="phone">
+    <div class="phone-label">Option A</div>
+    <div class="phone-name">Blurred atmosphere</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="a-bg"></div>
+        <div class="a-content">
+          <div class="brand">Travonal</div>
+          <div class="a-spacer"></div>
+          <div class="a-bottom">
+            <div>
+              <div class="headline">Plan less.<br>Experience more.</div>
+              <div class="subline">Your full itinerary, budget, and every detail — built and managed for you.</div>
+            </div>
+            <div class="a-cta">
+              <div class="btn">Get started</div>
+              <div class="skip">Skip setup</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: Postcard window -->
+  <div class="phone">
+    <div class="phone-label">Option B</div>
+    <div class="phone-name">Postcard window</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="b-content">
+          <div class="brand">Travonal</div>
+          <div class="b-spacer">
+            <div class="postcard"></div>
+          </div>
+          <div class="b-bottom">
+            <div>
+              <div class="headline">Plan less.<br>Experience more.</div>
+              <div class="subline">Your full itinerary, budget, and every detail — built and managed for you.</div>
+            </div>
+            <div class="b-cta">
+              <div class="btn">Get started</div>
+              <div class="skip">Skip setup</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: Bottom peek -->
+  <div class="phone">
+    <div class="phone-label">Option C</div>
+    <div class="phone-name">City peek from bottom</div>
+    <div class="shell">
+      <div class="screen">
+        <div class="c-peek"></div>
+        <div class="c-content">
+          <div class="brand">Travonal</div>
+          <div class="c-spacer"></div>
+          <div class="c-bottom">
+            <div>
+              <div class="headline">Plan less.<br>Experience more.</div>
+              <div class="subline">Your full itinerary, budget, and every detail — built and managed for you.</div>
+            </div>
+            <div class="c-cta">
+              <div class="btn">Get started</div>
+              <div class="skip">Skip setup</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

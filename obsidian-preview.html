@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Travonal — Obsidian Theme Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #111; padding: 40px 20px 60px; }
+
+  h1 { color: #F5F5F5; text-align: center; font-size: 24px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.4px; }
+  .subtitle { color: #8E8E93; text-align: center; font-size: 13px; margin-bottom: 48px; }
+
+  /* ── Section header ── */
+  .section-heading { color: #8E8E93; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; text-align: center; margin-bottom: 20px; margin-top: 48px; }
+  .section-heading:first-of-type { margin-top: 0; }
+
+  /* ── Row of phones ── */
+  .row { display: flex; flex-wrap: wrap; gap: 32px; justify-content: center; margin-bottom: 8px; }
+
+  /* ── Phone shell ── */
+  .phone { flex-shrink: 0; }
+  .phone-label { text-align: center; color: #8E8E93; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .shell {
+    border-radius: 44px;
+    padding: 11px;
+    background: #1a1a1a;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255,255,255,0.07);
+    width: 270px;
+  }
+  .screen {
+    border-radius: 34px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    background: #0F0F0F;
+  }
+  .screen.tall { height: 560px; }
+  .screen.short { height: 480px; }
+
+  /* ── Colours ── */
+  :root {
+    --bg: #0F0F0F;
+    --el: #1C1C1E;
+    --text: #F5F5F5;
+    --sec: #8E8E93;
+    --primary: #E5E5E5;
+    --muted: #2A2A2A;
+    --border: #2C2C2E;
+    --green: #30D158;
+    --red: #FF453A;
+    --badge: #252525;
+    --amber: #FF9F0A;
+  }
+
+  /* ── Status bar ── */
+  .status { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px 6px; font-size: 12px; font-weight: 700; color: var(--text); }
+
+  /* ── Header ── */
+  .hdr { padding: 4px 18px 10px; }
+  .hdr-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; color: var(--text); }
+  .hdr-sub { font-size: 13px; color: var(--sec); margin-top: 1px; }
+
+  /* ── Pulse banner ── */
+  .pulse { margin: 0 14px 10px; border-radius: 11px; padding: 10px 13px; display: flex; align-items: center; gap: 9px; background: var(--el); }
+  .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+  .pulse-dot.green { background: var(--green); }
+  .pulse-text { flex: 1; font-size: 12px; font-weight: 600; color: var(--text); }
+  .pulse-chev { font-size: 16px; color: var(--sec); }
+
+  /* ── Trip card ── */
+  .tcard { margin: 0 14px 10px; border-radius: 16px; background: var(--el); padding: 15px; }
+  .tcard-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .tcard-emoji { font-size: 26px; line-height: 1; }
+  .badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge-active { background: rgba(229,229,229,0.1); color: var(--primary); }
+  .badge-planned { background: rgba(229,229,229,0.07); color: var(--sec); }
+  .badge-live { background: rgba(48,209,88,0.12); color: var(--green); }
+  .tcard-dest { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; color: var(--text); margin-bottom: 2px; }
+  .tcard-dates { font-size: 12px; color: var(--sec); margin-bottom: 10px; }
+  .progress { height: 3px; border-radius: 2px; background: var(--border); margin-bottom: 10px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 2px; background: var(--primary); }
+  .tcard-actions { display: flex; gap: 7px; }
+  .btn-prim { flex: 2; padding: 9px 0; border-radius: 11px; font-size: 12px; font-weight: 700; text-align: center; background: var(--primary); color: #0F0F0F; }
+  .btn-sec { flex: 1; padding: 9px 0; border-radius: 11px; font-size: 13px; font-weight: 600; text-align: center; border: 1.5px solid var(--border); color: var(--sec); }
+
+  /* ── Day issue chip ── */
+  .issue-chip { margin: 0 14px 8px; border-radius: 9px; padding: 8px 12px; display: flex; align-items: center; gap: 7px; background: rgba(255,159,10,0.09); border: 1px solid rgba(255,159,10,0.25); }
+  .issue-chip span { font-size: 12px; font-weight: 600; color: var(--amber); }
+  .issue-chip .chev { margin-left: auto; }
+
+  /* ── Section label ── */
+  .sec-label { padding: 6px 18px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: var(--sec); opacity: 0.7; }
+
+  /* ── Activity row ── */
+  .act { margin: 0 14px 6px; border-radius: 11px; padding: 10px 13px; display: flex; align-items: center; gap: 10px; background: var(--el); }
+  .act-time { font-size: 11px; font-weight: 600; color: var(--sec); width: 36px; flex-shrink: 0; }
+  .act-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .act-dot.primary { background: var(--primary); }
+  .act-dot.green { background: var(--green); }
+  .act-dot.sec { background: var(--sec); }
+  .act-info { flex: 1; }
+  .act-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 1px; }
+  .act-sub { font-size: 11px; color: var(--sec); }
+  .act-icon { font-size: 12px; color: var(--sec); opacity: 0.45; }
+
+  /* ── Tab bar ── */
+  .tabbar { margin-top: auto; display: flex; justify-content: space-around; align-items: center; padding: 10px 0 16px; border-top: 1px solid var(--border); background: var(--bg); }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; color: var(--sec); opacity: 0.5; }
+  .tab.on { opacity: 1; color: var(--primary); }
+  .tab-icon { font-size: 19px; line-height: 1; }
+  .fab { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; background: var(--primary); color: #0F0F0F; box-shadow: 0 4px 14px rgba(0,0,0,0.5); margin-top: -8px; font-weight: 300; }
+
+  /* ── Trips list ── */
+  .trip-row { margin: 0 14px 7px; border-radius: 13px; background: var(--el); border: 1px solid var(--border); padding: 13px 14px; display: flex; align-items: center; gap: 12px; }
+  .trip-row-emoji { font-size: 22px; }
+  .trip-row-info { flex: 1; }
+  .trip-row-dest { font-size: 15px; font-weight: 700; color: var(--text); }
+  .trip-row-sub { font-size: 12px; color: var(--sec); margin-top: 1px; }
+  .trip-row-date { font-size: 12px; color: var(--sec); }
+  .trip-row-menu { font-size: 18px; color: var(--sec); padding: 0 4px; }
+
+  /* ── Trip detail header ── */
+  .detail-hero { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); }
+  .detail-emoji { font-size: 34px; margin-bottom: 4px; }
+  .detail-dest { font-size: 26px; font-weight: 800; letter-spacing: -0.4px; color: var(--text); }
+  .detail-meta { font-size: 13px; color: var(--sec); margin-top: 2px; margin-bottom: 10px; }
+  .detail-actions { display: flex; gap: 8px; }
+  .detail-btn { flex: 1; padding: 9px 0; border-radius: 11px; font-size: 12px; font-weight: 700; text-align: center; }
+  .detail-btn.prim { background: var(--primary); color: #0F0F0F; }
+  .detail-btn.sec { border: 1.5px solid var(--border); color: var(--sec); font-size: 11px; }
+  .detail-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 18px; }
+  .detail-tab { font-size: 13px; font-weight: 600; padding: 10px 14px 9px; color: var(--sec); }
+  .detail-tab.on { color: var(--text); border-bottom: 2px solid var(--primary); }
+
+  /* ── Share header row ── */
+  .hdr-row { display: flex; align-items: center; padding: 4px 18px 10px; }
+  .hdr-row .hdr-title { flex: 1; }
+  .hdr-icons { display: flex; gap: 14px; align-items: center; }
+  .hdr-icon { font-size: 18px; color: var(--sec); }
+
+  /* ── Explore ── */
+  .search-bar { margin: 0 14px 10px; border-radius: 12px; background: var(--el); border: 1px solid var(--border); padding: 11px 14px; display: flex; align-items: center; gap: 9px; }
+  .search-icon { font-size: 14px; color: var(--sec); }
+  .search-placeholder { font-size: 13px; color: var(--sec); }
+  .chips { display: flex; gap: 7px; padding: 0 14px 10px; overflow: hidden; }
+  .chip { font-size: 11px; font-weight: 600; padding: 6px 12px; border-radius: 20px; background: var(--el); border: 1px solid var(--border); color: var(--sec); white-space: nowrap; }
+  .chip.on { background: var(--muted); border-color: var(--primary); color: var(--primary); }
+  .place-card { margin: 0 14px 8px; border-radius: 13px; background: var(--el); padding: 13px; display: flex; align-items: flex-start; gap: 11px; }
+  .place-thumb { width: 48px; height: 48px; border-radius: 10px; background: var(--muted); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .place-info { flex: 1; }
+  .place-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .place-sub { font-size: 11px; color: var(--sec); }
+  .place-rating { font-size: 11px; color: var(--sec); margin-top: 4px; }
+  .place-save { font-size: 18px; color: var(--sec); }
+
+  /* ── Profile ── */
+  .profile-hero { padding: 16px 18px 14px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--border); }
+  .avatar { width: 52px; height: 52px; border-radius: 26px; background: var(--muted); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+  .profile-name { font-size: 18px; font-weight: 700; color: var(--text); }
+  .profile-sub { font-size: 12px; color: var(--sec); margin-top: 1px; }
+  .list-row { display: flex; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--border); gap: 12px; }
+  .list-row-icon { font-size: 16px; width: 24px; text-align: center; color: var(--sec); }
+  .list-row-info { flex: 1; }
+  .list-row-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .list-row-sub { font-size: 11px; color: var(--sec); margin-top: 1px; }
+  .toggle { width: 44px; height: 26px; border-radius: 13px; background: var(--green); position: relative; flex-shrink: 0; }
+  .toggle::after { content: ''; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 10px; background: white; }
+  .toggle.off { background: rgba(128,128,128,0.3); }
+  .toggle.off::after { right: auto; left: 3px; }
+  .section-group-label { padding: 16px 18px 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; color: var(--sec); opacity: 0.7; }
+
+  /* ── Inbox ── */
+  .inbox-item { margin: 0 14px 7px; border-radius: 13px; background: var(--el); padding: 13px 14px; display: flex; gap: 11px; align-items: flex-start; }
+  .inbox-icon { width: 36px; height: 36px; border-radius: 18px; background: var(--muted); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .inbox-info { flex: 1; }
+  .inbox-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .inbox-sub { font-size: 12px; color: var(--sec); }
+  .inbox-time { font-size: 11px; color: var(--sec); opacity: 0.6; }
+
+  /* ── Chat ── */
+  .chat-bubble { max-width: 78%; border-radius: 16px; padding: 10px 13px; margin: 3px 14px; }
+  .chat-bubble.them { background: var(--el); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .chat-bubble.me { background: var(--primary); color: #0F0F0F; align-self: flex-end; border-bottom-right-radius: 4px; margin-left: auto; }
+  .chat-text { font-size: 13px; font-weight: 500; }
+  .chat-text.me { color: #0F0F0F; }
+  .chat-text.them { color: var(--text); }
+  .chat-area { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding-top: 8px; }
+  .chat-input-row { display: flex; align-items: center; gap: 9px; padding: 10px 14px 14px; border-top: 1px solid var(--border); background: var(--bg); }
+  .chat-input { flex: 1; background: var(--el); border-radius: 22px; padding: 10px 15px; font-size: 13px; color: var(--sec); border: 1px solid var(--border); }
+  .chat-send { width: 36px; height: 36px; border-radius: 18px; background: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 16px; color: #0F0F0F; flex-shrink: 0; }
+
+  /* ── Add Trip ── */
+  .form-field { margin: 0 14px 8px; }
+  .form-label { font-size: 11px; font-weight: 700; color: var(--sec); text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 5px; padding: 0 2px; }
+  .form-input { background: var(--el); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; font-size: 14px; color: var(--text); }
+  .form-input.placeholder { color: var(--sec); }
+  .form-row { display: flex; gap: 8px; }
+  .form-row .form-field { flex: 1; margin: 0 0 8px; }
+  .form-row-wrap { margin: 0 14px 8px; display: flex; gap: 8px; }
+  .style-chip { flex: 1; border-radius: 12px; background: var(--el); border: 1px solid var(--border); padding: 11px 8px; text-align: center; font-size: 12px; font-weight: 600; color: var(--sec); }
+  .style-chip.on { background: rgba(229,229,229,0.08); border-color: var(--primary); color: var(--primary); }
+  .cta-btn { margin: 10px 14px 0; padding: 15px; border-radius: 14px; background: var(--primary); text-align: center; font-size: 15px; font-weight: 700; color: #0F0F0F; }
+
+  /* ── Onboarding ── */
+  .ob-screen { background: linear-gradient(180deg, #1a1a1a 0%, #0F0F0F 60%); position: relative; }
+  .ob-top { padding: 20px 20px 12px; }
+  .ob-step { font-size: 11px; font-weight: 700; color: var(--sec); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .ob-title { font-size: 24px; font-weight: 800; color: var(--text); letter-spacing: -0.4px; margin-bottom: 4px; }
+  .ob-body { font-size: 13px; color: var(--sec); line-height: 1.5; }
+  .ob-options { padding: 0 14px; display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .ob-option { background: var(--el); border-radius: 13px; padding: 13px 15px; display: flex; align-items: center; gap: 11px; border: 1.5px solid transparent; }
+  .ob-option.on { border-color: var(--primary); background: rgba(229,229,229,0.05); }
+  .ob-option-icon { font-size: 20px; }
+  .ob-option-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .ob-option-sub { font-size: 12px; color: var(--sec); margin-top: 1px; }
+  .ob-check { margin-left: auto; width: 22px; height: 22px; border-radius: 11px; border: 2px solid var(--border); }
+  .ob-check.on { background: var(--primary); border-color: var(--primary); display: flex; align-items: center; justify-content: center; color: #0F0F0F; font-size: 12px; font-weight: 800; }
+  .ob-footer { padding: 12px 14px 0; }
+  .ob-next { background: var(--primary); border-radius: 14px; padding: 15px; text-align: center; font-size: 15px; font-weight: 700; color: #0F0F0F; }
+  .ob-dots { display: flex; justify-content: center; gap: 6px; padding-top: 12px; }
+  .ob-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--border); }
+  .ob-dot.on { width: 18px; background: var(--primary); }
+</style>
+</head>
+<body>
+
+<h1>Obsidian Theme — Full App Preview</h1>
+<p class="subtitle">White on dark &nbsp;·&nbsp; All major screens</p>
+
+<!-- ── Row 1: Home + Trips + Trip Detail ── -->
+<p class="section-heading">Main tabs</p>
+<div class="row">
+
+  <!-- Home / Today -->
+  <div class="phone">
+    <div class="phone-label">Home</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status">
+          <span>9:41</span><span>●●●</span>
+        </div>
+        <div class="hdr">
+          <div class="hdr-title">Today</div>
+          <div class="hdr-sub">Tuesday, Aug 18</div>
+        </div>
+
+        <div class="pulse">
+          <div class="pulse-dot green"></div>
+          <span class="pulse-text">All clear — great day ahead ✓</span>
+        </div>
+
+        <div class="tcard">
+          <div class="tcard-top">
+            <span class="tcard-emoji">🗺️</span>
+            <span class="badge badge-live">Live</span>
+          </div>
+          <div class="tcard-dest">Tokyo</div>
+          <div class="tcard-dates">Aug 18 – Aug 26 · Day 1 of 9</div>
+          <div class="progress"><div class="progress-fill" style="width:11%"></div></div>
+          <div class="tcard-actions">
+            <div class="btn-prim">Change today</div>
+            <div class="btn-sec">Edit</div>
+            <div class="btn-sec">⊕</div>
+            <div class="btn-sec">↑</div>
+          </div>
+        </div>
+
+        <div class="sec-label">Day 1 · Tue Aug 18</div>
+
+        <div class="act">
+          <div class="act-time">9:00</div>
+          <div class="act-dot primary"></div>
+          <div class="act-info">
+            <div class="act-title">Senso-ji Temple</div>
+            <div class="act-sub">Activity · 90 min</div>
+          </div>
+          <div class="act-icon">🔒</div>
+        </div>
+        <div class="act">
+          <div class="act-time">12:30</div>
+          <div class="act-dot green"></div>
+          <div class="act-info">
+            <div class="act-title">Ramen Lunch</div>
+            <div class="act-sub">Food · 60 min</div>
+          </div>
+        </div>
+        <div class="act">
+          <div class="act-time">15:00</div>
+          <div class="act-dot sec"></div>
+          <div class="act-info">
+            <div class="act-title">Akihabara</div>
+            <div class="act-sub">Activity · 120 min</div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab on"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trips list -->
+  <div class="phone">
+    <div class="phone-label">Trips</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr"><div class="hdr-title">My Trips</div></div>
+
+        <div class="trip-row">
+          <div class="trip-row-emoji">🗺️</div>
+          <div class="trip-row-info">
+            <div class="trip-row-dest">Tokyo</div>
+            <div class="trip-row-sub">Japan · 9 days</div>
+          </div>
+          <div class="trip-row-date">Aug 18</div>
+          <div class="trip-row-menu">…</div>
+        </div>
+        <div class="trip-row">
+          <div class="trip-row-emoji">🗼</div>
+          <div class="trip-row-info">
+            <div class="trip-row-dest">Paris</div>
+            <div class="trip-row-sub">France · 5 days</div>
+          </div>
+          <div class="trip-row-date">Sep 12</div>
+          <div class="trip-row-menu">…</div>
+        </div>
+        <div class="trip-row">
+          <div class="trip-row-emoji">🏖️</div>
+          <div class="trip-row-info">
+            <div class="trip-row-dest">Bali</div>
+            <div class="trip-row-sub">Indonesia · 7 days</div>
+          </div>
+          <div class="trip-row-date">Nov 3</div>
+          <div class="trip-row-menu">…</div>
+        </div>
+        <div class="trip-row" style="opacity:0.5">
+          <div class="trip-row-emoji">🏔️</div>
+          <div class="trip-row-info">
+            <div class="trip-row-dest">Kyoto</div>
+            <div class="trip-row-sub">Japan · 4 days · Draft</div>
+          </div>
+          <div class="trip-row-date">—</div>
+          <div class="trip-row-menu">…</div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab on"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trip detail -->
+  <div class="phone">
+    <div class="phone-label">Trip detail</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+
+        <div class="detail-hero">
+          <div class="detail-emoji">🗺️</div>
+          <div class="hdr-row" style="padding:0 0 10px">
+            <div>
+              <div class="detail-dest">Tokyo</div>
+              <div class="detail-meta">Japan · Aug 18 – 26 · Day 1 of 9</div>
+            </div>
+            <div class="hdr-icons">
+              <div class="hdr-icon">👤+</div>
+              <div class="hdr-icon">⬆</div>
+            </div>
+          </div>
+          <div class="detail-actions">
+            <div class="detail-btn prim">Change today</div>
+            <div class="detail-btn sec">Edit</div>
+            <div class="detail-btn sec">⊕</div>
+          </div>
+        </div>
+
+        <div class="detail-tabs">
+          <div class="detail-tab on">Itinerary</div>
+          <div class="detail-tab">Prep</div>
+          <div class="detail-tab">Team</div>
+        </div>
+
+        <div class="issue-chip">
+          <span>●</span>
+          <span style="flex:1">1 issue needs attention</span>
+          <span class="chev">›</span>
+        </div>
+
+        <div class="sec-label">Day 1 · Tue Aug 18</div>
+        <div class="act">
+          <div class="act-time">9:00</div>
+          <div class="act-dot primary"></div>
+          <div class="act-info">
+            <div class="act-title">Senso-ji Temple</div>
+            <div class="act-sub">Activity · 90 min</div>
+          </div>
+          <div class="act-icon">🔒</div>
+        </div>
+        <div class="act">
+          <div class="act-time">11:30</div>
+          <div class="act-dot sec"></div>
+          <div class="act-info">
+            <div class="act-title">Yanaka Old Town Walk</div>
+            <div class="act-sub">Activity · 75 min</div>
+          </div>
+        </div>
+        <div class="act">
+          <div class="act-time">13:30</div>
+          <div class="act-dot green"></div>
+          <div class="act-info">
+            <div class="act-title">Ramen Lunch</div>
+            <div class="act-sub">Food · 60 min</div>
+          </div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab on"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 2: Explore + Chat + Inbox ── -->
+<p class="section-heading">Explore · Chat · Inbox</p>
+<div class="row">
+
+  <!-- Explore -->
+  <div class="phone">
+    <div class="phone-label">Explore</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr"><div class="hdr-title">Explore</div></div>
+
+        <div class="search-bar">
+          <div class="search-icon">🔍</div>
+          <div class="search-placeholder">Search places, cities, activities…</div>
+        </div>
+
+        <div class="chips">
+          <div class="chip on">All</div>
+          <div class="chip">Food</div>
+          <div class="chip">Culture</div>
+          <div class="chip">Nature</div>
+          <div class="chip">Shopping</div>
+        </div>
+
+        <div class="place-card">
+          <div class="place-thumb">⛩️</div>
+          <div class="place-info">
+            <div class="place-name">Senso-ji Temple</div>
+            <div class="place-sub">Culture · Tokyo, Japan</div>
+            <div class="place-rating">★ 4.8 · 2.1k reviews · Free</div>
+          </div>
+          <div class="place-save">♡</div>
+        </div>
+        <div class="place-card">
+          <div class="place-thumb">🍜</div>
+          <div class="place-info">
+            <div class="place-name">Ichiran Ramen</div>
+            <div class="place-sub">Food · Tokyo, Japan</div>
+            <div class="place-rating">★ 4.6 · 850 reviews · Moderate</div>
+          </div>
+          <div class="place-save">♡</div>
+        </div>
+        <div class="place-card">
+          <div class="place-thumb">🌸</div>
+          <div class="place-info">
+            <div class="place-name">Shinjuku Gyoen Garden</div>
+            <div class="place-sub">Nature · Tokyo, Japan</div>
+            <div class="place-rating">★ 4.7 · 1.4k reviews · Budget</div>
+          </div>
+          <div class="place-save">❤️</div>
+        </div>
+        <div class="place-card">
+          <div class="place-thumb">🎮</div>
+          <div class="place-info">
+            <div class="place-name">Akihabara Electric Town</div>
+            <div class="place-sub">Shopping · Tokyo, Japan</div>
+            <div class="place-rating">★ 4.5 · 3.2k reviews · Free</div>
+          </div>
+          <div class="place-save">♡</div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab on"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat / Ask Travonal -->
+  <div class="phone">
+    <div class="phone-label">Chat</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr">
+          <div class="hdr-title">Ask Travonal</div>
+          <div class="hdr-sub">AI travel assistant</div>
+        </div>
+
+        <div class="chat-area">
+          <div class="chat-bubble them">
+            <div class="chat-text them">Hi! I'm Travonal. Ask me anything about your trip to Tokyo — itinerary changes, local tips, restaurant recommendations… 🗾</div>
+          </div>
+          <div class="chat-bubble me">
+            <div class="chat-text me">What's the best time to visit Senso-ji to avoid crowds?</div>
+          </div>
+          <div class="chat-bubble them">
+            <div class="chat-text them">Early morning — before 8am is ideal. The temple grounds are beautiful at sunrise and most tourists arrive after 9. You're already scheduled for 9:00 so arriving 30 min early would help!</div>
+          </div>
+          <div class="chat-bubble me">
+            <div class="chat-text me">Can you add a sushi dinner on Day 3?</div>
+          </div>
+          <div class="chat-bubble them">
+            <div class="chat-text them">Sure! I'd suggest Tsukiji Outer Market or Sushi Dai — both are excellent. Want me to add it around 7pm on Day 3?</div>
+          </div>
+        </div>
+
+        <div class="chat-input-row">
+          <div class="chat-input">Message…</div>
+          <div class="chat-send">↑</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inbox -->
+  <div class="phone">
+    <div class="phone-label">Inbox</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr"><div class="hdr-title">Inbox</div></div>
+
+        <div class="inbox-item">
+          <div class="inbox-icon">⚠️</div>
+          <div class="inbox-info">
+            <div class="inbox-title">Booking conflict detected</div>
+            <div class="inbox-sub">Senso-ji overlaps with your hotel check-in · Tokyo trip</div>
+          </div>
+          <div class="inbox-time">Now</div>
+        </div>
+        <div class="inbox-item">
+          <div class="inbox-icon">✨</div>
+          <div class="inbox-info">
+            <div class="inbox-title">Trip ready to review</div>
+            <div class="inbox-sub">Your Tokyo itinerary has been generated — 9 days, 32 activities</div>
+          </div>
+          <div class="inbox-time">2h</div>
+        </div>
+        <div class="inbox-item">
+          <div class="inbox-icon">❤️</div>
+          <div class="inbox-info">
+            <div class="inbox-title">Shinjuku Gyoen Garden</div>
+            <div class="inbox-sub">Saved place · Tokyo, Japan</div>
+          </div>
+          <div class="inbox-time">Yesterday</div>
+        </div>
+        <div class="inbox-item">
+          <div class="inbox-icon">📥</div>
+          <div class="inbox-info">
+            <div class="inbox-title">Imported: Airbnb Shinjuku</div>
+            <div class="inbox-sub">4 nights · Aug 18–22 · Tap to add to trip</div>
+          </div>
+          <div class="inbox-time">2d</div>
+        </div>
+        <div class="inbox-item" style="opacity:0.5">
+          <div class="inbox-icon">✅</div>
+          <div class="inbox-info">
+            <div class="inbox-title">Ramen lunch booked</div>
+            <div class="inbox-sub">Reservation confirmed · Day 1</div>
+          </div>
+          <div class="inbox-time">3d</div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 3: Add Trip + Profile + Onboarding ── -->
+<p class="section-heading">Add trip · Profile · Onboarding</p>
+<div class="row">
+
+  <!-- Add Trip -->
+  <div class="phone">
+    <div class="phone-label">Add Trip</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr">
+          <div class="hdr-title">New Trip</div>
+          <div class="hdr-sub">Tell us where you're headed</div>
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">Destination</div>
+          <div class="form-input">Kyoto, Japan</div>
+        </div>
+
+        <div class="form-row-wrap">
+          <div class="form-field" style="flex:1;margin:0">
+            <div class="form-label">Start date</div>
+            <div class="form-input">Oct 10, 2026</div>
+          </div>
+          <div class="form-field" style="flex:1;margin:0">
+            <div class="form-label">End date</div>
+            <div class="form-input">Oct 15, 2026</div>
+          </div>
+        </div>
+
+        <div class="form-field" style="margin-top:4px">
+          <div class="form-label">Travelers</div>
+          <div class="form-input">2</div>
+        </div>
+
+        <div class="form-field" style="margin-top:4px">
+          <div class="form-label">Travel style</div>
+        </div>
+        <div class="form-row-wrap" style="margin-top:0">
+          <div class="style-chip">🌿 Relaxed</div>
+          <div class="style-chip on">⚡ Moderate</div>
+          <div class="style-chip">🔥 Packed</div>
+        </div>
+
+        <div class="form-field" style="margin-top:4px">
+          <div class="form-label">Budget</div>
+        </div>
+        <div class="form-row-wrap" style="margin-top:0">
+          <div class="style-chip">💵 Budget</div>
+          <div class="style-chip on">💳 Moderate</div>
+          <div class="style-chip">💎 Premium</div>
+        </div>
+
+        <div class="form-field" style="margin-top:4px">
+          <div class="form-label">Notes (optional)</div>
+          <div class="form-input placeholder">Anything special about this trip…</div>
+        </div>
+
+        <div class="cta-btn">Generate Itinerary →</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile -->
+  <div class="phone">
+    <div class="phone-label">Profile</div>
+    <div class="shell">
+      <div class="screen tall">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+        <div class="hdr"><div class="hdr-title">Profile</div></div>
+
+        <div class="profile-hero">
+          <div class="avatar">👤</div>
+          <div>
+            <div class="profile-name">Traveler</div>
+            <div class="profile-sub">3 trips planned · 1 active</div>
+          </div>
+        </div>
+
+        <div class="section-group-label">Preferences</div>
+        <div class="list-row">
+          <div class="list-row-icon">🚶</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Travel pace</div>
+            <div class="list-row-sub">Moderate</div>
+          </div>
+          <div style="font-size:14px;color:var(--sec)">›</div>
+        </div>
+        <div class="list-row">
+          <div class="list-row-icon">💳</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Budget</div>
+            <div class="list-row-sub">Moderate</div>
+          </div>
+          <div style="font-size:14px;color:var(--sec)">›</div>
+        </div>
+        <div class="list-row">
+          <div class="list-row-icon">🍽️</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Dietary</div>
+            <div class="list-row-sub">None set</div>
+          </div>
+          <div style="font-size:14px;color:var(--sec)">›</div>
+        </div>
+
+        <div class="section-group-label">Smart features</div>
+        <div class="list-row">
+          <div class="list-row-icon">⚡</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Trip Pulse</div>
+            <div class="list-row-sub">Auto-detects conflicts & issues</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="list-row">
+          <div class="list-row-icon">🧠</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Learning mode</div>
+            <div class="list-row-sub">Remembers your preferences</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="list-row">
+          <div class="list-row-icon">🔔</div>
+          <div class="list-row-info">
+            <div class="list-row-title">Notifications</div>
+            <div class="list-row-sub">Trip reminders, alerts</div>
+          </div>
+          <div class="toggle off"></div>
+        </div>
+
+        <div class="tabbar">
+          <div class="tab"><div class="tab-icon">⌂</div><span>Home</span></div>
+          <div class="tab"><div class="tab-icon">✈</div><span>Trips</span></div>
+          <div class="fab">+</div>
+          <div class="tab"><div class="tab-icon">◎</div><span>Explore</span></div>
+          <div class="tab on"><div class="tab-icon">◯</div><span>Profile</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboarding -->
+  <div class="phone">
+    <div class="phone-label">Onboarding</div>
+    <div class="shell">
+      <div class="screen tall ob-screen">
+        <div class="status"><span>9:41</span><span>●●●</span></div>
+
+        <div class="ob-top">
+          <div class="ob-step">Step 2 of 4</div>
+          <div class="ob-title">How do you like to travel?</div>
+          <div class="ob-body">This helps us tailor your itineraries to match your style.</div>
+        </div>
+
+        <div class="ob-options">
+          <div class="ob-option">
+            <div class="ob-option-icon">🌿</div>
+            <div>
+              <div class="ob-option-title">Relaxed</div>
+              <div class="ob-option-sub">Slow pace, lots of breathing room</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+          <div class="ob-option on">
+            <div class="ob-option-icon">⚡</div>
+            <div>
+              <div class="ob-option-title">Moderate</div>
+              <div class="ob-option-sub">A good mix — busy but not rushed</div>
+            </div>
+            <div class="ob-check on">✓</div>
+          </div>
+          <div class="ob-option">
+            <div class="ob-option-icon">🔥</div>
+            <div>
+              <div class="ob-option-title">Packed</div>
+              <div class="ob-option-sub">See everything, maximise every day</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+          <div class="ob-option">
+            <div class="ob-option-icon">🔀</div>
+            <div>
+              <div class="ob-option-title">Flexible</div>
+              <div class="ob-option-sub">Depends on the trip</div>
+            </div>
+            <div class="ob-check"></div>
+          </div>
+        </div>
+
+        <div class="ob-footer">
+          <div class="ob-next">Continue</div>
+          <div class="ob-dots">
+            <div class="ob-dot"></div>
+            <div class="ob-dot on"></div>
+            <div class="ob-dot"></div>
+            <div class="ob-dot"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

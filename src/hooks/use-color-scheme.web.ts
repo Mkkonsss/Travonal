@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
 
 /**
@@ -6,9 +6,13 @@ import { useColorScheme as useRNColorScheme } from 'react-native';
  */
 export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
+  const hasHydratedRef = useRef(false);
 
   useEffect(() => {
-    setHasHydrated(true);
+    if (!hasHydratedRef.current) {
+      hasHydratedRef.current = true;
+      setHasHydrated(true);
+    }
   }, []);
 
   const colorScheme = useRNColorScheme();
