@@ -19,7 +19,8 @@ export function buildTripDayMap(
 
   for (const trip of trips) {
     const state = getTripState(trip);
-    if (state === 'draft') continue;
+    // Skip drafts and planned trips (planned have placeholder dates, not calendar-accurate)
+    if (state === 'draft' || state === 'planned') continue;
 
     // Use the shared UTC-safe day counter so DST boundaries are handled correctly.
     const totalDays = getTripDayCount(trip.startDate, trip.endDate);

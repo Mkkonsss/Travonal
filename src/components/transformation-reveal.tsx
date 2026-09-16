@@ -1,9 +1,10 @@
 import { Pressable, ScrollView, StyleSheet, View, Modal } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { TimePickerButton, formatTimeDisplay } from '@/components/time-picker';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { ChangePreview, formatModifiedDescription } from '@/services/itinerary-engine';
 
@@ -139,7 +140,7 @@ export function TransformationReveal({
                 <ThemedText style={[styles.sectionTitle, { color: theme.primary }]}>Modified</ThemedText>
                 {preview.modified.map((mod, i) => (
                   <View key={mod.activity.id + '-mod-' + i} style={styles.activityRow}>
-                    <ThemedText style={[styles.activityBullet, { color: theme.primary }]}>{'\u270E'}</ThemedText>
+                    <SymbolView name="pencil" size={12} tintColor={theme.primary} />
                     <View style={{ flex: 1 }}>
                       <ThemedText style={styles.activityLabel}>{mod.activity.title}</ThemedText>
                       {mod.newTime && onModifyTime ? (
@@ -187,7 +188,7 @@ export function TransformationReveal({
                 <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>Protected</ThemedText>
                 {preview.protectedLocked.map((a, i) => (
                   <View key={a.id + '-prot-' + i} style={styles.activityRow}>
-                    <ThemedText style={styles.activityBullet}>{'\u{1F512}'}</ThemedText>
+                    <SymbolView name="lock.fill" size={12} tintColor={theme.textSecondary} />
                     <ThemedText style={[styles.activityLabel, { color: theme.textSecondary }]}>{a.title}</ThemedText>
                   </View>
                 ))}
@@ -199,7 +200,7 @@ export function TransformationReveal({
             <View style={styles.changesList}>
               {changes.map((change, i) => (
                 <View key={i} style={styles.changeRow}>
-                  <ThemedText style={[styles.changeBullet, { color: theme.primary }]}>{'\u2713'}</ThemedText>
+                  <SymbolView name={"checkmark" as any} size={12} tintColor={theme.primary} />
                   <ThemedText style={styles.changeText}>{change}</ThemedText>
                 </View>
               ))}
@@ -218,9 +219,12 @@ export function TransformationReveal({
           {/* Action buttons outside ScrollView — always reachable */}
           {hasConflicts && (
             <View style={[styles.conflictWarning, { backgroundColor: 'rgba(220,38,38,0.08)', borderColor: 'rgba(220,38,38,0.2)' }]}>
-              <ThemedText style={[styles.conflictText, { color: '#DC2626' }]}>
-                {'\u26A0\uFE0F'} Time conflict \u2014 adjust the times above to resolve before applying
-              </ThemedText>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <SymbolView name={"exclamationmark.triangle.fill" as any} size={14} tintColor="#DC2626" />
+                <ThemedText style={[styles.conflictText, { color: '#DC2626' }]}>
+                  Time conflict \u2014 adjust the times above to resolve before applying
+                </ThemedText>
+              </View>
             </View>
           )}
           <View style={styles.actionRow}>
@@ -381,6 +385,7 @@ interface MoveModalProps {
   activityTitle: string;
   totalDays: number;
   currentDay: number;
+  currentTime: string;
   onMoveLaterToday: () => void;
   onMoveToDay: (day: number, time: string) => void;
   onDismiss: () => void;
@@ -391,6 +396,7 @@ export function MoveModal({
   activityTitle,
   totalDays,
   currentDay,
+  currentTime,
   onMoveLaterToday,
   onMoveToDay,
   onDismiss,
@@ -443,7 +449,7 @@ export function MoveModal({
                   {otherDays.map((d) => (
                     <Pressable
                       key={d}
-                      onPress={() => onMoveToDay(d, '12:00')}
+                      onPress={() => onMoveToDay(d, currentTime)}
                       style={({ pressed }) => [
                         styles.moveDayPill,
                         {
@@ -482,8 +488,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.five,
     maxHeight: '85%',
@@ -518,7 +524,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
   },
   statNumber: {
     fontSize: 14,
@@ -572,7 +578,7 @@ const styles = StyleSheet.create({
   whySection: {
     marginBottom: Spacing.three,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
   },
   whyLabel: { fontSize: 12, fontWeight: '600', marginBottom: 4 },
   whyText: { fontSize: 14, lineHeight: 20 },
@@ -584,20 +590,20 @@ const styles = StyleSheet.create({
   },
   conflictWarning: {
     padding: 10,
-    borderRadius: 8,
+    borderRadius: Radius.xs,
     borderWidth: 1,
     marginBottom: 8,
   },
   conflictText: { fontSize: 13, fontWeight: '500', textAlign: 'center' },
   applyBtn: {
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     alignItems: 'center',
   },
   applyText: { fontSize: 15, fontWeight: '700' },
   dismissBtn: {
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     alignItems: 'center',
   },
   dismissText: { fontSize: 14, fontWeight: '600' },
@@ -612,7 +618,7 @@ const styles = StyleSheet.create({
   rememberBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     alignItems: 'center',
   },
   rememberText: { fontSize: 13, fontWeight: '600' },
@@ -627,7 +633,7 @@ const styles = StyleSheet.create({
   },
   altCard: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: Radius.md,
     gap: 4,
   },
   altTitle: {
@@ -659,7 +665,7 @@ const styles = StyleSheet.create({
   },
   moveOption: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: Radius.md,
     gap: 2,
   },
   moveOptionLabel: {
@@ -681,7 +687,7 @@ const styles = StyleSheet.create({
   moveDayPill: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
   },
   moveDayText: {
     fontSize: 13,

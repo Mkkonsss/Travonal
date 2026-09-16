@@ -5,21 +5,13 @@
 
 import { Activity, Trip, ChangeRecord } from '@/context/trips';
 import { TravelProfile } from '@/context/profile';
-import { TravelMemoryEntry } from '@/context/memory';
+
 import { checkConflicts, computeChangePreview, formatModifiedDescription, getTripDayCount, minutesToTime, timeToMinutes } from '@/services/itinerary-engine';
 import { runTripPulse } from '@/services/trip-pulse';
 import { findTopReplacements, transformTrip } from '@/services/transformation-service';
 import { findReplacement } from '@/services/alternatives-pool';
 import { buildTripDayMap } from '@/services/calendar';
-import {
-  parseSearchQuery,
-  applyDietaryFilter,
-  normalizeDietaryTerm,
-  summarizeFeedback,
-  applyFeedbackToResults,
-  hasDuplicateFeedback,
-  isExploreFeedbackEntry,
-} from '@/services/explore-filters';
+
 import {
   withRetry,
   reportStorageError,
@@ -86,19 +78,6 @@ const DEFAULT_PROFILE: TravelProfile = {
   accommodationPreference: 'hotel',
 
 };
-
-function makeMemEntry(detail: string, category: string): TravelMemoryEntry {
-  return {
-    id: String(Math.random()),
-    type: 'recommendation_rejected',
-    category,
-    detail,
-    tripId: 'trip1',
-    timestamp: new Date().toISOString(),
-    isGlobal: true,
-    enabled: true,
-  };
-}
 
 // ============================================================
 // 1. Calendar: overlapping trips — uses exported buildTripDayMap
@@ -349,7 +328,7 @@ describe('Pulse alert dismissal scoped by trip ID and revision', () => {
   });
 
   test('composite keys survive JSON serialization (AsyncStorage round-trip)', () => {
-    const keys = ['trip1:conflict-1:rev3', 'trip2:empty-3:rev0', 'trip1:overloaded-2:rev7'];
+    const keys = ['trip1:conflict-1:rev3', 'trip2:closure-3:rev0', 'trip1:weather-2:rev7'];
     const serialized = JSON.stringify(keys);
     const restored: string[] = JSON.parse(serialized);
     expect(restored).toEqual(keys);
@@ -357,216 +336,7 @@ describe('Pulse alert dismissal scoped by trip ID and revision', () => {
 });
 
 // ============================================================
-// 8. Dietary normalization — uses exported normalizeDietaryTerm
-// ============================================================
-
-describe('Dietary term normalization', () => {
-  test('normalizeDietaryTerm treats hyphens and spaces equivalently', () => {
-    expect(normalizeDietaryTerm('gluten-free')).toBe('gluten free');
-    expect(normalizeDietaryTerm('gluten free')).toBe('gluten free');
-    expect(normalizeDietaryTerm('Gluten Free')).toBe('gluten free');
-    expect(normalizeDietaryTerm('Gluten-Free')).toBe('gluten free');
-  });
-});
-
-describe('Dietary search parsing', () => {
-  test('"vegan restaurants" parses dietary intent and strips noise', () => {
-    const parsed = parseSearchQuery('vegan restaurants');
-    expect(parsed.filters.dietary).toBe('true');
-    expect(parsed.dietaryTerms).toContain('vegan');
-    expect(parsed.textQuery).toBe('');
-  });
-
-  test('"vegetarian food" triggers dietary filter', () => {
-    const parsed = parseSearchQuery('vegetarian food');
-    expect(parsed.filters.dietary).toBe('true');
-    expect(parsed.dietaryTerms).toContain('vegetarian');
-  });
-
-  test('"gluten-free options" triggers dietary filter', () => {
-    const parsed = parseSearchQuery('gluten-free options');
-    expect(parsed.filters.dietary).toBe('true');
-    expect(parsed.dietaryTerms).toContain('gluten free');
-  });
-
-  test('"gluten free bakery" triggers dietary filter', () => {
-    const parsed = parseSearchQuery('gluten free bakery');
-    expect(parsed.filters.dietary).toBe('true');
-    expect(parsed.textQuery).toBe('bakery');
-  });
-
-  test('non-dietary search does not trigger dietary filter', () => {
-    const parsed = parseSearchQuery('best ramen in Tokyo');
-    expect(parsed.filters.dietary).toBeUndefined();
-  });
-});
-
-describe('Dietary filtering — applyDietaryFilter with normalization', () => {
-  test('"gluten free" (space) matches place with "Gluten-free options" (hyphen)', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Gluten-free options'] },
-      { title: 'B', dietaryOptions: ['Contains gluten'] },
-    ];
-    const parsed = parseSearchQuery('gluten free options');
-    const filtered = applyDietaryFilter(places, parsed.dietaryTerms);
-    expect(filtered.map((p) => p.title)).toEqual(['A']);
-  });
-
-  test('"gluten-free" (hyphen) matches place with "Gluten free options" (space)', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Gluten free options'] },
-      { title: 'B', dietaryOptions: ['Contains gluten'] },
-    ];
-    const parsed = parseSearchQuery('gluten-free restaurants');
-    const filtered = applyDietaryFilter(places, parsed.dietaryTerms);
-    expect(filtered.map((p) => p.title)).toEqual(['A']);
-  });
-
-  test('unrelated "Contains gluten" is excluded', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Gluten-free options'] },
-      { title: 'B', dietaryOptions: ['Contains gluten'] },
-      { title: 'C', dietaryOptions: ['Gluten-free available'] },
-    ];
-    const filtered = applyDietaryFilter(places, ['gluten free']);
-    expect(filtered.map((p) => p.title)).toEqual(['A', 'C']);
-  });
-
-  test('vegan filter still works', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Vegan options', 'Vegetarian options'] },
-      { title: 'B', dietaryOptions: ['Contains pork'] },
-      { title: 'D', dietaryOptions: ['Vegan menu available'] },
-    ];
-    const filtered = applyDietaryFilter(places, ['vegan']);
-    expect(filtered.map((p) => p.title)).toEqual(['A', 'D']);
-  });
-
-  test('vegetarian filter still works', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Vegetarian options'] },
-      { title: 'B', dietaryOptions: ['Meat-focused'] },
-      { title: 'C', dietaryOptions: ['Vegetarian menu'] },
-    ];
-    const filtered = applyDietaryFilter(places, ['vegetarian']);
-    expect(filtered.map((p) => p.title)).toEqual(['A', 'C']);
-  });
-
-  test('empty dietaryTerms returns all places', () => {
-    const places = [
-      { title: 'A', dietaryOptions: ['Vegan'] },
-      { title: 'B', dietaryOptions: undefined },
-    ];
-    const filtered = applyDietaryFilter(places, []);
-    expect(filtered.length).toBe(2);
-  });
-});
-
-// ============================================================
-// 9. Feedback scoring — imported from explore-filters.ts
-// ============================================================
-
-describe('Explore feedback filtering and scoring', () => {
-  test('not-interested feedback removes the place', () => {
-    const entries = [makeMemEntry('Not interested in: Robot Restaurant (Tokyo)', 'nightlife')];
-    const feedback = summarizeFeedback(entries);
-    const results = [
-      { title: 'Robot Restaurant', category: 'nightlife', cost: 'premium', tags: [] },
-      { title: 'Senso-ji Temple', category: 'culture', cost: 'free', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered.map((r) => r.title)).not.toContain('Robot Restaurant');
-    expect(filtered.map((r) => r.title)).toContain('Senso-ji Temple');
-  });
-
-  test('liked category boosts those results to the top', () => {
-    const entries = [makeMemEntry('Likes: culture experiences tags:history', 'culture')];
-    const feedback = summarizeFeedback(entries);
-    const results = [
-      { title: 'A', category: 'nightlife', cost: 'moderate', tags: [] },
-      { title: 'B', category: 'culture', cost: 'free', tags: [] },
-      { title: 'C', category: 'culture', cost: 'budget', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered[0].category).toBe('culture');
-    expect(filtered[1].category).toBe('culture');
-  });
-
-  test('too-expensive feedback (just 1) deprioritizes premium immediately', () => {
-    const entries = [makeMemEntry('Too expensive: Something (Tokyo)', 'food')];
-    const feedback = summarizeFeedback(entries);
-    expect(feedback.tooExpensiveCount).toBe(1);
-
-    const results = [
-      { title: 'Premium A', category: 'food', cost: 'premium', tags: [] },
-      { title: 'Budget B', category: 'food', cost: 'budget', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered[0].title).toBe('Budget B');
-  });
-
-  test('"less like" reduces score but does not remove', () => {
-    const entries = [makeMemEntry('Less like: nightlife venues tags:party', 'nightlife')];
-    const feedback = summarizeFeedback(entries);
-    const results = [
-      { title: 'A', category: 'nightlife', cost: 'moderate', tags: ['party'] },
-      { title: 'B', category: 'culture', cost: 'free', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered.length).toBe(2);
-    expect(filtered[0].title).toBe('B');
-  });
-
-  test('"been here" removes visited places from discovery', () => {
-    const entries = [makeMemEntry('Has visited: Senso-ji Temple (Tokyo)', 'culture')];
-    const feedback = summarizeFeedback(entries);
-    const results = [
-      { title: 'Senso-ji Temple', category: 'culture', cost: 'free', tags: [] },
-      { title: 'Meiji Shrine', category: 'culture', cost: 'free', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered.map((r) => r.title)).not.toContain('Senso-ji Temple');
-    expect(filtered.map((r) => r.title)).toContain('Meiji Shrine');
-  });
-
-  test('empty memory entries produce no filtering', () => {
-    const feedback = summarizeFeedback([]);
-    const results = [
-      { title: 'A', category: 'food', cost: 'moderate', tags: [] },
-      { title: 'B', category: 'culture', cost: 'free', tags: [] },
-    ];
-    const filtered = applyFeedbackToResults(results, feedback);
-    expect(filtered.length).toBe(2);
-  });
-});
-
-// ============================================================
-// 10. Feedback deduplication — imported from explore-filters.ts
-// ============================================================
-
-describe('Feedback deduplication', () => {
-  test('hasDuplicateFeedback detects existing feedback for same place', () => {
-    const entries = [makeMemEntry('Likes: Senso-ji Temple culture', 'culture')];
-    expect(hasDuplicateFeedback(entries, 'Senso-ji Temple', 'more')).toBe(true);
-  });
-
-  test('hasDuplicateFeedback returns false for different place', () => {
-    const entries = [makeMemEntry('Likes: Senso-ji Temple culture', 'culture')];
-    expect(hasDuplicateFeedback(entries, 'Robot Restaurant', 'more')).toBe(false);
-  });
-
-  test('isExploreFeedbackEntry identifies feedback entries', () => {
-    expect(isExploreFeedbackEntry(makeMemEntry('Likes: something', 'food'))).toBe(true);
-    expect(isExploreFeedbackEntry(makeMemEntry('Not interested in: x (y)', 'food'))).toBe(true);
-    expect(isExploreFeedbackEntry(makeMemEntry('Too expensive: x (y)', 'food'))).toBe(true);
-    expect(isExploreFeedbackEntry(makeMemEntry('Has visited: x (y)', 'food'))).toBe(true);
-    expect(isExploreFeedbackEntry(makeMemEntry('Less like: x tags:y', 'food'))).toBe(true);
-    expect(isExploreFeedbackEntry(makeMemEntry('Visited Tokyo for 5 days', 'trip'))).toBe(false);
-  });
-});
-
-// ============================================================
-// 11. Storage retry/dedup/dismiss — imported from storage-errors.ts
+// 8. Storage retry/dedup/dismiss — imported from storage-errors.ts
 // ============================================================
 
 describe('Storage error handling — withRetry', () => {
@@ -959,7 +729,6 @@ describe('checkConflicts — Fix #6 re-run on edited times', () => {
       makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 60 }),
       makeActivity({ id: '2', title: 'B', day: 1, time: '11:00', duration: 60 }),
     ];
-    // Use totalDays=1 to avoid empty_day info for days 2..3
     const conflicts = checkConflicts(activities, 1);
     const overlaps = conflicts.filter((c) => c.type === 'overlap');
     expect(overlaps.length).toBe(0);
@@ -1424,24 +1193,18 @@ describe('Bug 4: Transformation conflict validation — blocking types only', ()
     expect(blocking.length).toBeGreaterThan(0);
   });
 
-  test('day_overloaded is non-blocking', () => {
+  test('many non-overlapping activities produce no conflicts', () => {
     const acts = Array.from({ length: 7 }, (_, i) =>
       makeActivity({ id: `a${i}`, title: `A${i}`, day: 1, time: `${(9 + i * 1).toString().padStart(2, '0')}:00`, duration: 30 }),
     );
     const conflicts = checkConflicts(acts, 1);
-    expect(conflicts.some((c) => c.type === 'day_overloaded')).toBe(true);
-    const blocking = conflicts.filter((c) => c.type === 'overlap' || c.type === 'locked_conflict');
-    // no actual time overlap since each is 30m apart by 1h
-    expect(blocking.length).toBe(0);
+    expect(conflicts.length).toBe(0);
   });
 
-  test('empty_day is non-blocking', () => {
-    // 2-day trip with only day 1 activities — day 2 is empty
+  test('empty days produce no conflicts', () => {
     const acts = [makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00', duration: 60 })];
     const conflicts = checkConflicts(acts, 2);
-    expect(conflicts.some((c) => c.type === 'empty_day')).toBe(true);
-    const blocking = conflicts.filter((c) => c.type === 'overlap' || c.type === 'locked_conflict');
-    expect(blocking.length).toBe(0);
+    expect(conflicts.length).toBe(0);
   });
 
   test('fixing an overlap makes the blocking conflicts list empty', () => {

@@ -138,6 +138,14 @@ export function getAlternatives(destination: string): PlaceOption[] {
   return ALTERNATIVES[destination] ?? ALTERNATIVES._default;
 }
 
+/** Returns true when the destination has real curated data (not generic fallbacks). */
+export function hasDestinationData(destination: string): boolean {
+  const key = destination.trim();
+  return Object.keys(ALTERNATIVES).some(
+    (k) => k !== '_default' && k.toLowerCase() === key.toLowerCase(),
+  );
+}
+
 export function getAllPoolDestinations(): string[] {
   return Object.keys(ALTERNATIVES).filter((k) => k !== '_default');
 }

@@ -12,12 +12,31 @@ export interface InboxItem {
   duration?: number;
   description?: string;
   tags?: string[];
+  crowdLevel?: 'low' | 'medium' | 'high';
+  energyLevel?: 'low' | 'medium' | 'high';
+  bestTime?: string;
+  activityType?: 'flight' | 'hotel' | 'activity' | 'food';
   status: 'needs_trip' | 'fits_current' | 'planned';
   tripId?: string; // if placed into a trip
   mediaUri?: string; // local URI of the selected photo or video
   mediaType?: 'image' | 'video'; // original media type
   createdAt: number;
 }
+
+export interface SavePlaceInput {
+  title: string;
+  destination: string;
+  type: 'flight' | 'hotel' | 'activity' | 'food';
+  category: string;
+  cost: 'free' | 'budget' | 'moderate' | 'premium';
+  duration: number;
+  description: string;
+  tags: string[];
+  crowdLevel?: 'low' | 'medium' | 'high';
+  energyLevel?: 'low' | 'medium' | 'high';
+  bestTime?: string;
+}
+
 
 interface InboxContextType {
   items: InboxItem[];
@@ -33,6 +52,11 @@ interface InboxContextType {
   getForTrip: (tripId: string) => InboxItem[];
   markPlanned: (id: string, tripId: string) => void;
   resetAll: () => void;
+  // Saved places convenience methods
+  savePlace: (place: SavePlaceInput) => void;
+  unsavePlace: (id: string) => void;
+  isSaved: (title: string, destination: string) => boolean;
+  savedPlaces: InboxItem[];
 }
 
 const InboxContext = createContext<InboxContextType | null>(null);
@@ -114,9 +138,42 @@ export function InboxProvider({ children }: { children: ReactNode }) {
     setLoadError(false);
   }
 
+  // Saved places convenience methods
+  const savedPlaces = items.filter((i) => i.type === 'saved_place');
+
+  function savePlace(place: SavePlaceInput) {
+    const alreadyExists = items.some(
+      (i) => i.type === 'saved_place' && i.title === place.title && i.destination === place.destination
+    );
+    if (alreadyExists) return;
+    addItem({
+      type: 'saved_place',
+      title: place.title,
+      destination: place.destination,
+      category: place.category,
+      cost: place.cost,
+      duration: place.duration,
+      description: place.description,
+      tags: place.tags,
+      crowdLevel: place.crowdLevel,
+      energyLevel: place.energyLevel,
+      bestTime: place.bestTime,
+      activityType: place.type,
+      status: 'needs_trip',
+    });
+  }
+
+  function unsavePlace(id: string) {
+    removeItem(id);
+  }
+
+  function isSaved(title: string, destination: string) {
+    return items.some((i) => i.type === 'saved_place' && i.title === title && i.destination === destination);
+  }
+
   return (
     <InboxContext.Provider
-      value={{ items, loaded, loadError, retryLoad, addItem, updateItem, removeItem, getByStatus, getForTrip, markPlanned, resetAll }}>
+      value={{ items, loaded, loadError, retryLoad, addItem, updateItem, removeItem, getByStatus, getForTrip, markPlanned, resetAll, savePlace, unsavePlace, isSaved, savedPlaces }}>
       {children}
     </InboxContext.Provider>
   );

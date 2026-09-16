@@ -384,7 +384,7 @@ describe('sortTripsForPicker — active before past, destination hint', () => {
 // 6. isPulseDismissed (trip-helpers.ts)
 // ============================================================
 
-describe('isPulseDismissed — dismissed/undismissed alerts, empty_day stable keys', () => {
+describe('isPulseDismissed — dismissed/undismissed alerts', () => {
   test('a dismissed alert returns true', () => {
     const dismissed = new Set(['trip1:conflict-1:rev3']);
     expect(isPulseDismissed(dismissed, 'trip1', 'conflict-1', 3)).toBe(true);
@@ -406,21 +406,7 @@ describe('isPulseDismissed — dismissed/undismissed alerts, empty_day stable ke
     expect(isPulseDismissed(dismissed, 'tripB', 'conflict-1', 0)).toBe(true);
   });
 
-  test('empty_day alerts use stable key (no revision suffix)', () => {
-    const key0 = makePulseDismissalKey('trip1', 'empty-3', 0);
-    const key99 = makePulseDismissalKey('trip1', 'empty-3', 99);
-    // Both should produce the same key so the dismissal persists across revisions
-    expect(key0).toBe(key99);
-    expect(key0).toContain('stable');
-  });
-
-  test('empty_day dismissal persists when revision changes', () => {
-    const dismissed = new Set([makePulseDismissalKey('trip1', 'empty-3', 0)]);
-    // Revision advanced — dismissal should STILL hold for empty_day
-    expect(isPulseDismissed(dismissed, 'trip1', 'empty-3', 10)).toBe(true);
-  });
-
-  test('non-empty_day alert key contains rev prefix', () => {
+  test('alert key contains rev prefix', () => {
     const key = makePulseDismissalKey('trip1', 'conflict-2', 5);
     expect(key).toBe('trip1:conflict-2:rev5');
   });

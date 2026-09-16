@@ -17,6 +17,7 @@ module.exports = {
     '^expo-haptics$': '<rootDir>/src/__mocks__/empty.js',
     '^expo-router$': '<rootDir>/src/__mocks__/empty.js',
     '^@react-native-async-storage/async-storage$': '<rootDir>/src/__mocks__/empty.js',
+    '^@supabase/supabase-js$': '<rootDir>/src/__mocks__/supabase.js',
     '^expo-file-system$': '<rootDir>/src/__mocks__/expo-file-system.js',
     '^expo-video$': '<rootDir>/src/__mocks__/expo-video.js',
     '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.js',

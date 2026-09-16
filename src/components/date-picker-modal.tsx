@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export const MONTHS = [
@@ -270,7 +271,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   sheet: {
-    borderRadius: 20,
+    borderRadius: Radius.lg,
     padding: 24,
     width: '100%',
     maxWidth: 360,
@@ -290,14 +291,14 @@ const styles = StyleSheet.create({
   arrowText: { fontSize: 22, fontWeight: '300', lineHeight: 26 },
   yearValue: { fontSize: 20, fontWeight: '700', minWidth: 60, textAlign: 'center' },
   chipScroll: { gap: 8, paddingVertical: 4 },
-  chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, minWidth: 48, alignItems: 'center' },
+  chip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.md, minWidth: 48, alignItems: 'center' },
   chipText: { fontSize: 14, fontWeight: '600' },
   dayChip: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   dayText: { fontSize: 14, fontWeight: '600' },
   preview: { textAlign: 'center', fontSize: 16, fontWeight: '600', marginTop: 12 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  clearBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  clearBtn: { flex: 1, paddingVertical: 14, borderRadius: Radius.sm, borderWidth: 1, alignItems: 'center' },
   clearText: { fontSize: 14, fontWeight: '600' },
-  confirmBtn: { flex: 2, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  confirmBtn: { flex: 2, paddingVertical: 14, borderRadius: Radius.sm, alignItems: 'center' },
   confirmText: { fontSize: 15, fontWeight: '700' },
 });

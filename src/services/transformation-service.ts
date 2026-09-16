@@ -869,3 +869,58 @@ export function transformTrip(
     changes: [],
   };
 }
+
+/**
+ * Pre-apply validation: verify no locked activities were modified.
+ * Returns an error message if validation fails, null if ok.
+ */
+export function validateLockedProtection(
+  original: Activity[],
+  proposed: Activity[],
+): string | null {
+  const lockedOriginals = original.filter(isLocked);
+  for (const locked of lockedOriginals) {
+    const match = proposed.find((a) => a.id === locked.id);
+    if (!match) return `Locked activity "${locked.title}" was removed`;
+    if (match.day !== locked.day || match.time !== locked.time) {
+      return `Locked activity "${locked.title}" was moved`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Detect semantic duplicates: activities with very similar titles on the same day.
+ */
+export function findSemanticDuplicates(activities: Activity[]): string[] {
+  const warnings: string[] = [];
+  const dayGroups = new Map<number, Activity[]>();
+  for (const a of activities) {
+    const list = dayGroups.get(a.day) ?? [];
+    list.push(a);
+    dayGroups.set(a.day, list);
+  }
+  for (const [day, acts] of dayGroups) {
+    for (let i = 0; i < acts.length; i++) {
+      for (let j = i + 1; j < acts.length; j++) {
+        const a = acts[i].title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const b = acts[j].title.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (a === b || (a.length > 5 && (a.includes(b) || b.includes(a)))) {
+          warnings.push(`Day ${day}: "${acts[i].title}" and "${acts[j].title}" look like duplicates`);
+        }
+      }
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Detect if the AI returned essentially the same itinerary (no meaningful change).
+ */
+export function detectNoChange(original: Activity[], proposed: Activity[]): boolean {
+  if (original.length !== proposed.length) return false;
+  const sortKey = (a: Activity) => `${a.day}|${a.time}|${a.title}`;
+  const origKeys = original.map(sortKey).sort();
+  const propKeys = proposed.map(sortKey).sort();
+  return origKeys.every((k, i) => k === propKeys[i]);
+}

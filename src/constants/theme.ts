@@ -9,28 +9,28 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-    primary: '#1C1C1E',
-    primaryMuted: '#F0F0F0',
-    border: '#E0E1E6',
-    live: '#059669',
-    danger: '#DC2626',
+    text: '#111827',
+    background: '#FFFFFF',
+    backgroundElement: '#F4F5FA',
+    backgroundSelected: '#E8EAF6',
+    textSecondary: '#6B7280',
+    primary: '#111827',
+    primaryMuted: '#F4F5FA',
+    border: '#E8E9F2',
+    live: '#10B981',
+    danger: '#EF4444',
   },
   dark: {
-    text: '#F5F5F5',
-    background: '#0F0F0F',
-    backgroundElement: '#1C1C1E',
-    backgroundSelected: '#2A2A2A',
-    textSecondary: '#8E8E93',
-    primary: '#E5E5E5',
-    primaryMuted: '#2A2A2A',
-    border: '#2C2C2E',
-    live: '#30D158',
-    danger: '#FF453A',
+    text: '#F9FAFB',
+    background: '#09090F',
+    backgroundElement: '#131320',
+    backgroundSelected: '#1C1C30',
+    textSecondary: '#9CA3AF',
+    primary: '#F9FAFB',
+    primaryMuted: '#1C1C30',
+    border: '#1F1F35',
+    live: '#34D399',
+    danger: '#F87171',
   },
 } as const;
 
@@ -71,5 +71,45 @@ export const Spacing = {
   six: 64,
 } as const;
 
+/** Consistent border-radius scale used across the entire app. */
+export const Radius = {
+  /** Tags, small badges */
+  xs: 8,
+  /** Inputs, chips, small interactive elements */
+  sm: 12,
+  /** Cards, buttons — the universal default */
+  md: 16,
+  /** Large cards, trip photo cards */
+  lg: 20,
+  /** Pills, FAB, fully rounded elements */
+  xl: 28,
+  /** Bottom sheet top corners */
+  sheet: 24,
+} as const;
+
+/** Three-level shadow scale. Use tinted shadows where possible. */
+export const Shadow = {
+  subtle: {
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  medium: {
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  strong: {
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+} as const;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
+/** Extra bottom padding on scrollable screens to clear the floating Ask Travonal button */
+export const FAB_CLEARANCE = 80;

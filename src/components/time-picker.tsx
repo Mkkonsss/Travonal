@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
@@ -25,14 +26,25 @@ function from24(hour24: number): { hour12: number; period: 'AM' | 'PM' } {
   return { hour12: hour24 - 12, period: 'PM' };
 }
 
-/** Parse "HH:MM" to { hour12, minute, period }. Returns sensible defaults on bad input. */
+/** Parse "HH:MM" or "h:MM AM/PM" to { hour12, minute, period }. Returns sensible defaults on bad input. */
 function parseTime(time: string): { hour12: number; minute: number; period: 'AM' | 'PM' } {
-  const match = time.match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return { hour12: 12, minute: 0, period: 'PM' };
-  const h = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  const { hour12, period } = from24(Math.min(h, 23));
-  return { hour12, minute: Math.min(m, 59), period };
+  // 24-hour format (e.g. "09:00", "19:30")
+  const match24 = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = parseInt(match24[1], 10);
+    const m = parseInt(match24[2], 10);
+    const { hour12, period } = from24(Math.min(h, 23));
+    return { hour12, minute: Math.min(m, 59), period };
+  }
+  // 12-hour with AM/PM (e.g. "7:00 PM") — handles corrupted stored data
+  const match12 = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match12) {
+    const h = parseInt(match12[1], 10);
+    const m = parseInt(match12[2], 10);
+    const period = match12[3].toUpperCase() as 'AM' | 'PM';
+    if (h >= 1 && h <= 12) return { hour12: h, minute: Math.min(m, 59), period };
+  }
+  return { hour12: 12, minute: 0, period: 'PM' };
 }
 
 /** Format back to "HH:MM" 24-hour string for storage. */
@@ -331,7 +343,7 @@ const pickerStyles = StyleSheet.create({
     padding: 24,
   },
   sheet: {
-    borderRadius: 20,
+    borderRadius: Radius.lg,
     padding: 24,
     paddingBottom: 40,
     width: '100%',
@@ -362,7 +374,7 @@ const pickerStyles = StyleSheet.create({
   periodBtn: {
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 16,
+    borderRadius: Radius.md,
   },
   periodText: { fontSize: 16, fontWeight: '700' },
   preview: { textAlign: 'center', fontSize: 24, fontWeight: '700', marginTop: 12 },
@@ -370,19 +382,19 @@ const pickerStyles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     alignItems: 'center',
   },
   confirmBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     alignItems: 'center',
   },
   button: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 10,
     minWidth: 80,
@@ -391,7 +403,7 @@ const pickerStyles = StyleSheet.create({
   customDurationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   customDurationInput: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 15,

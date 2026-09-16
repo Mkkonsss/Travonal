@@ -4,12 +4,56 @@
  */
 
 import { Trip, ChangeRecord, Activity } from '@/context/trips';
+import { generateId } from '@/services/itinerary-engine';
+
+const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const LONG_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const SHORT_DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const LONG_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+/**
+ * Format a day number into a human-readable label.
+ * If startDate is provided (ISO string), appends the actual date.
+ * e.g. "Day 3 — Wed, Jun 18"
+ */
+export function formatDayLabel(dayNumber: number, startDate?: string, datesKnown?: boolean): string {
+  if (!startDate || datesKnown === false) return `Day ${dayNumber}`;
+  const start = new Date(startDate + 'T00:00:00');
+  const date = new Date(start);
+  date.setDate(date.getDate() + dayNumber - 1);
+  return `Day ${dayNumber} — ${SHORT_DAYS[date.getDay()]}, ${SHORT_MONTHS[date.getMonth()]} ${date.getDate()}`;
+}
+
+/**
+ * Format an ISO date string into "Wednesday, June 18" format.
+ */
+export function formatWeekdayDate(dateString: string): string {
+  const d = new Date(dateString + 'T00:00:00');
+  return `${LONG_DAYS[d.getDay()]}, ${LONG_MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/**
+ * Format an ISO date string into short "Jun 18" format.
+ */
+export function formatShortDate(dateString: string): string {
+  const d = new Date(dateString + 'T00:00:00');
+  return `${SHORT_MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/**
+ * Format a date range for display: "Jun 18 – Jun 25" or "Jun 18 – Jul 2"
+ * Returns "Dates TBD" when datesKnown is false.
+ */
+export function formatDateRange(startDate: string, endDate: string, datesKnown?: boolean): string {
+  if (datesKnown === false) return 'Dates TBD';
+  return `${formatShortDate(startDate)} – ${formatShortDate(endDate)}`;
+}
 
 /** Create a new trip record with an auto-generated id, empty activities, and owner member. */
 export function createTripRecord(
   input: Omit<Trip, 'id' | 'activities'>,
 ): Trip {
-  const id = String(Date.now());
+  const id = generateId();
   return {
     ...input,
     id,
@@ -48,13 +92,8 @@ export function computeItineraryHash(activities: Activity[]): string {
 
 /** Create the composite key used to scope pulse dismissals by trip and itinerary revision.
  * For empty_day alerts, use a stable key based on the day number (no revision) so dismissals
- * persist as long as the day remains empty. For all other alerts, use the revision counter
- * so dismissals expire when activities change. */
+ * Use the revision counter so dismissals expire when activities change. */
 export function makePulseDismissalKey(tripId: string, alertId: string, revision: number): string {
-  // empty_day alerts have alertId like "empty-3" — use stable key without revision
-  if (alertId.startsWith('empty-')) {
-    return `${tripId}:${alertId}:stable`;
-  }
   return `${tripId}:${alertId}:rev${revision}`;
 }
 

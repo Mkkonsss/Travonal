@@ -3,6 +3,7 @@ import {
   minutesToTime,
   checkConflicts,
   reflowDay,
+  reflowFromTime,
   getTripDayCount,
   computeChangePreview,
   getPlanHealth,
@@ -50,7 +51,7 @@ describe('getTripDayCount', () => {
 });
 
 describe('checkConflicts', () => {
-  test('detects overlapping activities', () => {
+  test('detects overlapping activities when both have explicit durations', () => {
     const activities: Activity[] = [
       makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 90 }),
       makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
@@ -63,6 +64,15 @@ describe('checkConflicts', () => {
     expect(overlaps[0].activityIds).toContain('2');
   });
 
+  test('detects activities at the exact same time', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00' }),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00' }),
+    ];
+    const conflicts = checkConflicts(activities, 1);
+    expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(1);
+  });
+
   test('no overlap when activities do not collide', () => {
     const activities: Activity[] = [
       makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 60 }),
@@ -72,32 +82,13 @@ describe('checkConflicts', () => {
     expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(0);
   });
 
-  test('detects empty days', () => {
+  test('no overlap when only one activity has a duration', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00' }),
-    ];
-    const conflicts = checkConflicts(activities, 3);
-    const emptyDays = conflicts.filter((c) => c.type === 'empty_day');
-    expect(emptyDays.length).toBe(2);
-    expect(emptyDays.map((c) => c.day).sort()).toEqual([2, 3]);
-  });
-
-  test('detects overloaded days (>6 activities)', () => {
-    const activities: Activity[] = Array.from({ length: 7 }, (_, i) =>
-      makeActivity({ id: String(i), title: `Act${i}`, day: 1, time: minutesToTime(540 + i * 70), duration: 60 })
-    );
-    const conflicts = checkConflicts(activities, 1);
-    expect(conflicts.some((c) => c.type === 'day_overloaded')).toBe(true);
-  });
-
-  test('detects missing meals when 3+ activities and no food type', () => {
-    const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00' }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '11:00' }),
-      makeActivity({ id: '3', title: 'C', day: 1, time: '14:00' }),
+      makeActivity({ id: '1', title: 'Dinner', day: 1, time: '19:00' }),
+      makeActivity({ id: '2', title: 'Walk', day: 1, time: '19:45', duration: 30 }),
     ];
     const conflicts = checkConflicts(activities, 1);
-    expect(conflicts.some((c) => c.type === 'gap_too_short')).toBe(true);
+    expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(0);
   });
 });
 
@@ -202,7 +193,7 @@ describe('getPlanHealth', () => {
     expect(health.issueCount).toBe(0);
   });
 
-  test('returns issues when there are errors', () => {
+  test('returns issues when there are hard conflicts', () => {
     const activities: Activity[] = [
       makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
       makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
@@ -210,5 +201,47 @@ describe('getPlanHealth', () => {
     const health = getPlanHealth(activities, 1);
     expect(health.status).toBe('issues');
     expect(health.issueCount).toBeGreaterThan(0);
+  });
+});
+
+describe('reflowFromTime', () => {
+  test('pushes upcoming activities forward by delay', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'Past', day: 1, time: '09:00', duration: 60 }),
+      makeActivity({ id: '2', title: 'Upcoming1', day: 1, time: '11:00', duration: 60 }),
+      makeActivity({ id: '3', title: 'Upcoming2', day: 1, time: '14:00', duration: 60 }),
+    ];
+    const result = reflowFromTime(activities, 1, '10:30', 30);
+    expect(result.find((a) => a.id === '1')!.time).toBe('09:00'); // before fromTime, unchanged
+    expect(result.find((a) => a.id === '2')!.time).toBe('11:30'); // pushed 30 min
+    expect(result.find((a) => a.id === '3')!.time).toBe('14:30'); // pushed 30 min
+  });
+
+  test('does not move locked activities', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'Locked', day: 1, time: '12:00', duration: 60, locked: true }),
+      makeActivity({ id: '2', title: 'Flexible', day: 1, time: '14:00', duration: 60 }),
+    ];
+    const result = reflowFromTime(activities, 1, '11:00', 60);
+    expect(result.find((a) => a.id === '1')!.time).toBe('12:00'); // locked, unchanged
+    expect(result.find((a) => a.id === '2')!.time).toBe('15:00'); // pushed 60 min
+  });
+
+  test('caps activities at 23:30', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'Late', day: 1, time: '22:00', duration: 60 }),
+    ];
+    const result = reflowFromTime(activities, 1, '21:00', 120);
+    expect(result[0].time).toBe('23:30');
+  });
+
+  test('does not affect other days', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'Day1', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '2', title: 'Day2', day: 2, time: '10:00', duration: 60 }),
+    ];
+    const result = reflowFromTime(activities, 1, '09:00', 30);
+    expect(result.find((a) => a.id === '1')!.time).toBe('10:30');
+    expect(result.find((a) => a.id === '2')!.time).toBe('10:00'); // day 2 unchanged
   });
 });

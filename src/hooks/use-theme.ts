@@ -11,6 +11,7 @@ export function useTheme() {
   const theme = scheme === 'unspecified' ? 'light' : scheme;
   return {
     ...Colors[theme],
-    primaryText: theme === 'dark' ? '#1C1C1E' : '#ffffff',
+    primaryText: theme === 'dark' ? '#111827' : '#ffffff',
+    shadow: theme === 'dark' ? '#000000' : '#00000018',
   };
 }

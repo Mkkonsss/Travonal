@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { PulseAlert, PulseSeverity } from '@/services/trip-pulse';
 import { PulseHistoryEntry } from '@/services/storage';
@@ -11,37 +12,32 @@ import { PulseHistoryEntry } from '@/services/storage';
 function useAlertColor(type: PulseAlert['type'], theme: ReturnType<typeof useTheme>): string {
   switch (type) {
     case 'conflict':
+    case 'closure':
+    case 'flight_conflict':
       return theme.danger;
-    case 'empty_day':
-    case 'overloaded':
-      return theme.primary;
-    case 'low_fit':
-      return theme.primary;
-    case 'optimization':
-      return theme.primary;
-    case 'suggestion':
-      return theme.live;
+    case 'weather':
+    case 'sunset_mismatch':
+    case 'duplicate':
     default:
       return theme.primary;
   }
 }
 
 const TYPE_ICONS: Record<PulseAlert['type'], string> = {
-  conflict: '\u{26A0}\uFE0F',
-  empty_day: '\u{1F4AD}',
-  overloaded: '\u{1F4E6}',
-  low_fit: '\u{1F914}',
-  optimization: '\u{1F4A1}',
-  suggestion: '\u{2728}',
+  conflict: 'exclamationmark.triangle.fill',
+  closure: 'nosign',
+  weather: 'cloud.rain.fill',
+  flight_conflict: 'airplane',
+  sunset_mismatch: 'sunset.fill',
+  duplicate: 'doc.on.doc.fill',
 };
 
 const SEVERITY_LABELS: Record<PulseSeverity, string> = {
   urgent: 'Urgent',
-  important: 'Important',
-  suggestion: 'Suggestions',
+  important: 'Good to know',
 };
 
-const SEVERITY_ORDER: PulseSeverity[] = ['urgent', 'important', 'suggestion'];
+const SEVERITY_ORDER: PulseSeverity[] = ['urgent', 'important'];
 
 interface PulseBannerProps {
   alerts: PulseAlert[];
@@ -53,6 +49,10 @@ interface PulseBannerProps {
   onOpen?: () => void;
   externalOpen?: boolean;
   onExternalClose?: () => void;
+  /** Check if a prepared AI solution exists for an alert */
+  hasSolution?: (alertId: string) => boolean;
+  /** Check if a solution is currently being prepared */
+  isPreparing?: (alertId: string) => boolean;
 }
 
 function PulseAlertCard({
@@ -60,14 +60,19 @@ function PulseAlertCard({
   onAction,
   onDismiss,
   resolved,
+  hasSolution,
+  isPreparing,
 }: {
   alert: PulseAlert;
   onAction: (alert: PulseAlert) => void;
   onDismiss: (alertId: string) => void;
   resolved?: boolean;
+  hasSolution?: boolean;
+  isPreparing?: boolean;
 }) {
   const theme = useTheme();
   const color = useAlertColor(alert.type, theme);
+  const actionText = hasSolution ? 'Review changes' : alert.actionLabel;
 
   return (
     <View style={[styles.alertCardOuter, resolved && { opacity: 0.45 }]}>
@@ -86,8 +91,11 @@ function PulseAlertCard({
       >
         <View style={styles.alertContent}>
           <View style={styles.alertTitleRow}>
-            <ThemedText style={styles.alertIcon}>{TYPE_ICONS[alert.type]}</ThemedText>
+            <SymbolView name={TYPE_ICONS[alert.type] ?? 'sparkles'} size={18} tintColor={color} />
             <ThemedText style={[styles.alertTitle, resolved && { textDecorationLine: 'line-through' }]} numberOfLines={1}>{alert.title}</ThemedText>
+            {isPreparing && !hasSolution && (
+              <View style={[styles.preparingDot, { backgroundColor: color }]} />
+            )}
           </View>
           <ThemedText style={[styles.alertMessage, { color: theme.textSecondary }]} numberOfLines={2}>{alert.message}</ThemedText>
           {alert.day != null && (
@@ -97,12 +105,12 @@ function PulseAlertCard({
             <View style={styles.alertActions}>
               <Pressable
                 onPress={() => onAction(alert)}
-                style={[styles.actionBtn, { backgroundColor: color + '20' }]}
+                style={[styles.actionBtn, { backgroundColor: hasSolution ? color + '30' : color + '20' }]}
                 accessibilityRole="button"
-                accessibilityLabel={alert.actionLabel}
+                accessibilityLabel={actionText}
               >
                 <ThemedText style={[styles.actionText, { color }]}>
-                  {alert.actionLabel}
+                  {isPreparing && !hasSolution ? 'Preparing...' : actionText}
                 </ThemedText>
               </Pressable>
               <Pressable
@@ -142,15 +150,15 @@ function historyToAlerts(entries: PulseHistoryEntry[]): PulseAlert[] {
     .filter((e) => e.title && e.message)
     .map((e) => ({
       id: e.occurrenceId ?? e.alertId,
-      type: (e.alertType ?? 'suggestion') as PulseAlert['type'],
-      severity: (e.severity ?? 'suggestion') as PulseSeverity,
+      type: (e.alertType ?? 'conflict') as PulseAlert['type'],
+      severity: (e.severity ?? 'important') as PulseSeverity,
       title: e.title!,
       message: e.message!,
       actionLabel: 'Resolved',
     }));
 }
 
-export function PulseBanner({ alerts, onAction, onDismiss, dismissedAlerts, resolvedHistory, newIssueCount, onOpen, externalOpen, onExternalClose }: PulseBannerProps) {
+export function PulseBanner({ alerts, onAction, onDismiss, dismissedAlerts, resolvedHistory, newIssueCount, onOpen, externalOpen, onExternalClose, hasSolution, isPreparing }: PulseBannerProps) {
   const theme = useTheme();
   const [internalOpen, setInternalOpen] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
@@ -192,17 +200,12 @@ export function PulseBanner({ alerts, onAction, onDismiss, dismissedAlerts, reso
             },
           ]}
           accessibilityRole="button"
-          accessibilityLabel={`Trip Pulse: ${alerts.length} issues need attention. Tap to view.`}
+          accessibilityLabel={`Trip Insights: ${alerts.length} ${alerts.length === 1 ? 'thing' : 'things'} to check. Tap to view.`}
         >
-          <ThemedText style={styles.compactIcon}>{'\u26A1'}</ThemedText>
+          <SymbolView name="bolt.fill" size={16} tintColor={theme.text} />
           <ThemedText style={styles.compactText}>
-            {alerts.length} {alerts.length === 1 ? 'issue needs' : 'issues need'} attention
+            {alerts.length} {alerts.length === 1 ? 'thing' : 'things'} to check
           </ThemedText>
-          {badgeCount > 0 && (
-            <View style={[styles.badge, { backgroundColor: theme.danger }]}>
-              <ThemedText style={styles.badgeText}>{badgeCount}</ThemedText>
-            </View>
-          )}
           <ThemedText style={[styles.compactChevron, { color: theme.textSecondary }]}>{'\u203A'}</ThemedText>
         </Pressable>
       </Animated.View>
@@ -213,31 +216,31 @@ export function PulseBanner({ alerts, onAction, onDismiss, dismissedAlerts, reso
         animationType="slide"
         onRequestClose={closeModal}
       >
-        <Pressable style={styles.modalBackdrop} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close Trip Pulse">
+        <Pressable style={styles.modalBackdrop} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close Trip Insights">
           <Pressable
             style={[styles.modalSheet, { backgroundColor: theme.background }]}
             onPress={(e) => e.stopPropagation()}
-            accessibilityRole="button" accessibilityLabel="Trip Pulse details"
+            accessibilityRole="button" accessibilityLabel="Trip Insights details"
           >
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <ThemedText style={styles.modalTitle}>Trip Pulse</ThemedText>
+              <ThemedText style={styles.modalTitle}>Trip Insights</ThemedText>
               <Pressable
                 onPress={closeModal}
                 hitSlop={12}
                 accessibilityRole="button"
-                accessibilityLabel="Close Trip Pulse"
+                accessibilityLabel="Close Trip Insights"
               >
-                <ThemedText style={[styles.modalClose, { color: theme.textSecondary }]}>{'\u2715'}</ThemedText>
+                <SymbolView name={"xmark" as any} size={16} tintColor={theme.textSecondary} />
               </Pressable>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
               {alerts.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <ThemedText style={styles.emptyIcon}>{'\u2705'}</ThemedText>
+                  <SymbolView name="checkmark.seal.fill" size={36} tintColor={theme.primary} />
                   <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
-                    No issues found -- your trip looks great!
+                    Nothing to flag -- your trip looks great!
                   </ThemedText>
                 </View>
               ) : (
@@ -275,6 +278,8 @@ export function PulseBanner({ alerts, onAction, onDismiss, dismissedAlerts, reso
                                     onAction(a);
                                   }}
                                   onDismiss={onDismiss}
+                                  hasSolution={hasSolution?.(alert.id)}
+                                  isPreparing={isPreparing?.(alert.id)}
                                 />
                               ))}
                             </View>
@@ -337,22 +342,23 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.four,
     marginTop: Spacing.three,
+    marginBottom: Spacing.two,
   },
   compactRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     gap: 8,
   },
-  compactIcon: { fontSize: 16, lineHeight: 20 },
+  compactIcon: { width: 16, height: 16 },
   compactText: { fontSize: 14, fontWeight: '600', flex: 1 },
   compactChevron: { fontSize: 20, fontWeight: '300' },
   badge: {
     minWidth: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 6,
@@ -366,8 +372,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.five,
     maxHeight: '80%',
@@ -415,7 +421,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     gap: 12,
   },
-  emptyIcon: { fontSize: 36, lineHeight: 44 },
+  emptyIcon: { width: 36, height: 36 },
   emptyText: { fontSize: 15, textAlign: 'center' },
 
   // Resolved section
@@ -439,7 +445,7 @@ const styles = StyleSheet.create({
   // Alert cards
   alertCardOuter: {
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     overflow: 'hidden',
   },
   alertBorderStrip: {
@@ -447,8 +453,8 @@ const styles = StyleSheet.create({
   },
   alertCard: {
     flex: 1,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    borderTopRightRadius: Radius.sm,
+    borderBottomRightRadius: Radius.sm,
     overflow: 'hidden',
   },
   alertContent: {
@@ -460,7 +466,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  alertIcon: { fontSize: 18, lineHeight: 22 },
+  preparingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    opacity: 0.6,
+  },
+  alertIcon: { width: 18, height: 18 },
   alertTitle: { fontSize: 14, fontWeight: '700', flex: 1 },
   alertMessage: { fontSize: 13, lineHeight: 18 },
   alertDay: { fontSize: 12, fontWeight: '600' },
@@ -472,7 +484,7 @@ const styles = StyleSheet.create({
   actionBtn: {
     paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: Radius.md,
   },
   actionText: { fontSize: 13, fontWeight: '600' },
   dismissBtn: {

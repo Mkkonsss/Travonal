@@ -11,15 +11,15 @@ export interface BrowseCategory {
 }
 
 export const BROWSE_CATEGORIES: BrowseCategory[] = [
-  { id: 'all', label: 'All', icon: '\u{1F30D}' },
-  { id: 'food', label: 'Food & Dining', icon: '\u{1F37D}\uFE0F' },
-  { id: 'hotel', label: 'Stays', icon: '\u{1F3E8}' },
-  { id: 'culture', label: 'Culture', icon: '\u{1F3DB}\uFE0F' },
-  { id: 'nature', label: 'Nature', icon: '\u{1F33F}' },
-  { id: 'art', label: 'Art', icon: '\u{1F3A8}' },
-  { id: 'adventure', label: 'Adventure', icon: '\u{26F0}\uFE0F' },
-  { id: 'shopping', label: 'Shopping', icon: '\u{1F6CD}\uFE0F' },
-  { id: 'nightlife', label: 'Nightlife', icon: '\u{1F378}' },
+  { id: 'all', label: 'All', icon: 'globe' },
+  { id: 'food', label: 'Food & Dining', icon: 'fork.knife' },
+  { id: 'hotel', label: 'Stays', icon: 'building.2.fill' },
+  { id: 'culture', label: 'Culture', icon: 'building.columns.fill' },
+  { id: 'nature', label: 'Nature', icon: 'leaf.fill' },
+  { id: 'art', label: 'Art', icon: 'paintpalette.fill' },
+  { id: 'adventure', label: 'Adventure', icon: 'mountain.2.fill' },
+  { id: 'shopping', label: 'Shopping', icon: 'bag.fill' },
+  { id: 'nightlife', label: 'Nightlife', icon: 'wineglass.fill' },
 ];
 
 export function searchPlaces(
@@ -124,7 +124,7 @@ export function personalizeResults(
 
     // Budget alignment: +2 if within budget
     const budgetOrder = ['free', 'budget', 'moderate', 'premium'];
-    const userBudgetIdx = budgetOrder.indexOf(profile.budget);
+    const userBudgetIdx = budgetOrder.indexOf(profile.budget ?? 'moderate');
     const placeCostIdx = budgetOrder.indexOf(place.cost);
     if (placeCostIdx <= userBudgetIdx) {
       score += 2;

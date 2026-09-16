@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { SymbolView } from 'expo-symbols';
 
 const DURATION = 600;
 
@@ -33,7 +34,7 @@ export function AnimatedSplashOverlay() {
 
   const logo = (
     <View style={styles.logoContainer}>
-      <Text style={styles.logoEmoji}>{'\u2708\uFE0F'}</Text>
+      <SymbolView name="airplane" size={48} tintColor="#FFFFFF" />
       <Text style={styles.logoText}>Travonal</Text>
     </View>
   );
@@ -66,7 +67,7 @@ export function AnimatedIcon() {
   return (
     <View style={styles.iconContainer}>
       <View style={styles.background} />
-      <Text style={styles.iconEmoji}>{'\u2708\uFE0F'}</Text>
+      <SymbolView name="airplane" size={48} tintColor="#FFFFFF" />
     </View>
   );
 }
@@ -75,10 +76,6 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     gap: 8,
-  },
-  logoEmoji: {
-    fontSize: 48,
-    lineHeight: 60,
   },
   logoText: {
     color: '#fff',
@@ -92,10 +89,6 @@ const styles = StyleSheet.create({
     width: 128,
     height: 128,
     zIndex: 100,
-  },
-  iconEmoji: {
-    fontSize: 48,
-    lineHeight: 60,
   },
   background: {
     borderRadius: 40,

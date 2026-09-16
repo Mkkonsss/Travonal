@@ -1,118 +1,183 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import type { TravelProfile } from '@/context/profile';
 
-const PACE_INDEX: Record<string, number> = { relaxed: 0, moderate: 1, active: 2 };
-const BUDGET_INDEX: Record<string, number> = { budget: 0, moderate: 1, premium: 2 };
+// ── Scale bar (visual line indicator) ──
 
-function ScaleIndicator({
-  title,
-  labels,
+const PACE_IDX: Record<string, number> = { relaxed: 0, moderate: 1, active: 2 };
+const FLEX_IDX: Record<string, number> = { planned: 0, some: 1, freeflow: 2 };
+const BUDGET_IDX: Record<string, number> = { budget: 0, moderate: 1, premium: 2 };
+
+function ScaleBar({
+  label,
+  left,
+  right,
   value,
+  theme,
 }: {
-  title: string;
-  labels: string[];
-  value: number;
+  label: string;
+  left: string;
+  right: string;
+  value: number; // 0-2
+  theme: ReturnType<typeof useTheme>;
 }) {
-  const theme = useTheme();
-  const maxIdx = labels.length - 1;
-  const fillPercent = maxIdx === 0 ? 100 : Math.max(8, (value / maxIdx) * 100);
-  const currentLabel = labels[value] ?? labels[0];
+  const pct = Math.max(10, (value / 2) * 100);
+  const isLeft = value === 0;
+  const isRight = value === 2;
 
   return (
-    <View style={styles.scaleContainer}>
-      <View style={styles.scaleTitleRow}>
-        <ThemedText style={[styles.scaleTitle, { color: theme.text }]}>{title}</ThemedText>
-        <ThemedText style={[styles.scaleValue, { color: theme.primary }]}>{currentLabel}</ThemedText>
+    <View style={styles.scaleRow}>
+      <View style={styles.scaleLabelRow}>
+        <ThemedText style={[styles.scaleLabel, { color: theme.text }]}>{label}</ThemedText>
       </View>
-      <View style={[styles.scaleTrack, { backgroundColor: theme.border }]}>
-        <View style={[styles.scaleFill, { backgroundColor: theme.primary, width: `${fillPercent}%` }]} />
+      <View style={[styles.track, { backgroundColor: theme.border }]}>
+        <View style={[styles.fill, { backgroundColor: theme.textSecondary, width: `${pct}%` }]} />
       </View>
-      <View style={styles.scaleEndLabels}>
-        <ThemedText style={[styles.scaleEndLabel, { color: theme.textSecondary }]}>
-          {labels[0]}
-        </ThemedText>
-        <ThemedText style={[styles.scaleEndLabel, { color: theme.textSecondary }]}>
-          {labels[maxIdx]}
-        </ThemedText>
+      <View style={styles.scaleEndRow}>
+        <ThemedText style={[styles.scaleEnd, isLeft ? { color: theme.text, fontWeight: '700' } : { color: theme.textSecondary }]}>{left}</ThemedText>
+        <ThemedText style={[styles.scaleEnd, isRight ? { color: theme.text, fontWeight: '700' } : { color: theme.textSecondary }]}>{right}</ThemedText>
       </View>
     </View>
   );
 }
 
+/** Strip leading emoji and whitespace from a label */
+function stripEmoji(str: string): string {
+  return str.replace(/^[\p{Emoji}\p{Emoji_Component}\uFE0F\u200D\s]+/u, '').trim();
+}
+
 export function TravelStyleCard({
   profile,
   onPress,
+  onReset,
   showHeader = true,
+  compact = false,
 }: {
   profile: TravelProfile;
   onPress?: () => void;
+  onReset?: () => void;
   showHeader?: boolean;
+  compact?: boolean;
 }) {
   const theme = useTheme();
+
+  // Filter out "Nothing in particular" entries
+  const dietary = profile.dietaryRestrictions.filter((d) => !d.includes('Nothing'));
+  const mobility = profile.mobilityNeeds.filter((m) => !m.includes('Nothing'));
 
   const content = (
     <>
       {showHeader && (
-        <View style={styles.cardHeader}>
-          <ThemedText type="eyebrow" style={{ color: theme.textSecondary }}>
-            Your travel style
-          </ThemedText>
-          {onPress && (
-            <ThemedText style={[styles.editHint, { color: theme.primary }]}>Edit</ThemedText>
+        <ThemedText style={[styles.eyebrow, { color: theme.text }]}>
+          Your preferences
+        </ThemedText>
+      )}
+
+      {/* Scale bars */}
+      {!compact && (
+        <View style={styles.scales}>
+          <ScaleBar label="Pace" left="Relaxed" right="Active" value={PACE_IDX[profile.pace] ?? 1} theme={theme} />
+          <ScaleBar label="Flexibility" left="Planned" right="Spontaneous" value={FLEX_IDX[profile.flexibility] ?? 1} theme={theme} />
+          {profile.budget != null && (
+            <ScaleBar label="Budget" left="Budget" right="Premium" value={BUDGET_IDX[profile.budget] ?? 1} theme={theme} />
           )}
         </View>
       )}
 
-      <ScaleIndicator
-        title="Pace"
-        labels={['Relaxed', 'Moderate', 'Active']}
-        value={PACE_INDEX[profile.pace] ?? 1}
-      />
-      <ScaleIndicator
-        title="Budget"
-        labels={['Budget', 'Moderate', 'Premium']}
-        value={BUDGET_INDEX[profile.budget] ?? 1}
-      />
-
-      {profile.interests.length > 0 && (
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-            Interests
-          </ThemedText>
-          <View style={styles.chips}>
-            {profile.interests.map((interest) => (
-              <View key={interest} style={[styles.chip, { backgroundColor: theme.primaryMuted }]}>
-                <ThemedText style={[styles.chipText, { color: theme.primary }]}>
-                  {interest}
-                </ThemedText>
+      {/* All chips in one flow when compact */}
+      {compact ? (
+        <View style={styles.chips}>
+          {profile.interests.map((i) => (
+            <View key={i} style={[styles.chip, { borderColor: theme.border }]}>
+              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(i)}</ThemedText>
+            </View>
+          ))}
+          {dietary.map((d) => (
+            <View key={d} style={[styles.chip, { borderColor: theme.border }]}>
+              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(d)}</ThemedText>
+            </View>
+          ))}
+          {mobility.map((m) => (
+            <View key={m} style={[styles.chip, { borderColor: theme.border }]}>
+              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(m)}</ThemedText>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <>
+          {/* Interests */}
+          {profile.interests.length > 0 && (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Interests</ThemedText>
+              <View style={styles.chips}>
+                {profile.interests.map((i) => (
+                  <View key={i} style={[styles.chip, { borderColor: theme.border }]}>
+                    <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(i)}</ThemedText>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          )}
+
+          {/* Dietary */}
+          {dietary.length > 0 && (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Dietary</ThemedText>
+              <View style={styles.chips}>
+                {dietary.map((d) => (
+                  <View key={d} style={[styles.chip, { borderColor: theme.border }]}>
+                    <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(d)}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Accessibility */}
+          {mobility.length > 0 && (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Accessibility</ThemedText>
+              <View style={styles.chips}>
+                {mobility.map((m) => (
+                  <View key={m} style={[styles.chip, { borderColor: theme.border }]}>
+                    <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(m)}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+        </>
       )}
 
-      {profile.dietaryRestrictions.length > 0 && (
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-            Dietary
-          </ThemedText>
-          <ThemedText style={{ color: theme.text, fontSize: 14 }}>
-            {profile.dietaryRestrictions.join(', ')}
-          </ThemedText>
-        </View>
-      )}
-
-      {profile.mobilityNeeds.length > 0 && (
-        <View style={styles.section}>
-          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-            Accessibility
-          </ThemedText>
-          <ThemedText style={{ color: theme.text, fontSize: 14 }}>
-            {profile.mobilityNeeds.join(', ')}
-          </ThemedText>
+      {(onPress || onReset) && (
+        <View style={styles.actions}>
+          {onPress && (
+            <Pressable
+              onPress={onPress}
+              style={styles.actionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Edit preferences"
+            >
+              <ThemedText style={[styles.actionBtnText, { color: theme.textSecondary }]}>Edit preferences {'\u203A'}</ThemedText>
+            </Pressable>
+          )}
+          {onReset && (
+            <Pressable
+              onPress={onReset}
+              style={styles.actionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Reset preferences"
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <ThemedText style={[styles.actionBtnText, { color: '#DC2626' }]}>Reset</ThemedText>
+                <SymbolView name={"xmark" as any} size={12} tintColor="#DC2626" />
+              </View>
+            </Pressable>
+          )}
         </View>
       )}
     </>
@@ -122,16 +187,9 @@ export function TravelStyleCard({
     return (
       <Pressable
         onPress={onPress}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: theme.backgroundElement,
-            borderColor: theme.border,
-            opacity: pressed ? 0.92 : 1,
-          },
-        ]}
+        style={({ pressed }) => [styles.card, { opacity: pressed ? 0.7 : 1 }]}
         accessibilityRole="button"
-        accessibilityLabel="View your travel profile"
+        accessibilityLabel="Edit your travel preferences"
       >
         {content}
       </Pressable>
@@ -139,7 +197,7 @@ export function TravelStyleCard({
   }
 
   return (
-    <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+    <View style={styles.card}>
       {content}
     </View>
   );
@@ -147,51 +205,90 @@ export function TravelStyleCard({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    gap: 12,
+    paddingVertical: 4,
+    gap: 6,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 10,
   },
-  editHint: { fontSize: 13, fontWeight: '600' },
 
-  // Scale
-  scaleContainer: { gap: 6 },
-  scaleTitleRow: {
+  // Scales
+  scales: {
+    gap: 14,
+  },
+  scaleRow: {
+    gap: 5,
+  },
+  scaleLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  scaleTitle: { fontSize: 13, fontWeight: '600' },
-  scaleValue: { fontSize: 13, fontWeight: '700' },
-  scaleTrack: {
-    height: 6,
-    borderRadius: 3,
+  scaleLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  track: {
+    height: 4,
+    borderRadius: 2,
     overflow: 'hidden',
   },
-  scaleFill: {
-    height: 6,
-    borderRadius: 3,
+  fill: {
+    height: 4,
+    borderRadius: 2,
   },
-  scaleEndLabels: {
+  scaleEndRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  scaleEndLabel: { fontSize: 11, fontWeight: '500' },
+  scaleEnd: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
 
-  // Sections
-  section: { gap: 4 },
+  // Sections (interests, dietary, accessibility)
+  section: {
+    gap: 6,
+    marginTop: 10,
+  },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  chipText: { fontSize: 12, fontWeight: '600', textTransform: 'capitalize' },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  actionBtn: {
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  actionBtnText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });

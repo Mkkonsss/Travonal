@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, Modal } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useProfile } from '@/context/profile';
 
@@ -20,23 +21,23 @@ export type TravonalCommand =
   | 'move_later'
   | 'move_earlier';
 
-interface Command {
+export interface Command {
   id: TravonalCommand;
   label: string;
   icon: string;
   description: string;
 }
 
-const COMMANDS: Command[] = [
-  { id: 'make_relaxed', label: 'More relaxed', icon: '\u{1F9D8}', description: 'Reduce activities, add breathing room' },
-  { id: 'make_adventurous', label: 'More adventurous', icon: '\u{26F0}\uFE0F', description: 'Swap for higher-energy options' },
-  { id: 'reduce_cost', label: 'Reduce cost', icon: '\u{1F4B0}', description: 'Find budget-friendly alternatives' },
-  { id: 'avoid_crowds', label: 'Avoid crowds', icon: '\u{1F30F}', description: 'Shift timing or swap for quieter spots' },
-  { id: 'reduce_travel_time', label: 'Less travel time', icon: '\u{23F1}\uFE0F', description: 'Reorder by proximity' },
-  { id: 'surprise_me', label: 'Surprise me', icon: '\u{2728}', description: 'Something that fits your profile' },
-  { id: 'add_activity', label: 'Add an activity', icon: '\u{2795}', description: 'Add something to this day' },
-  { id: 'reflow_day', label: 'Fix timing', icon: '\u{1F552}', description: 'Auto-adjust times and add buffers' },
-  { id: 'fix_my_day', label: 'Fix my day', icon: '\u{1F527}', description: 'Detect problems and fix them' },
+export const COMMANDS: Command[] = [
+  { id: 'make_relaxed', label: 'More relaxed', icon: 'figure.mind.and.body', description: 'Reduce activities, add breathing room' },
+  { id: 'make_adventurous', label: 'More adventurous', icon: 'mountain.2.fill', description: 'Swap for higher-energy options' },
+  { id: 'reduce_cost', label: 'Reduce cost', icon: 'dollarsign.circle.fill', description: 'Find budget-friendly alternatives' },
+  { id: 'avoid_crowds', label: 'Avoid crowds', icon: 'person.3.fill', description: 'Shift timing or swap for quieter spots' },
+  { id: 'reduce_travel_time', label: 'Less travel time', icon: 'timer', description: 'Reorder by proximity' },
+  { id: 'surprise_me', label: 'Surprise me', icon: 'sparkles', description: 'Something that fits your profile' },
+  { id: 'add_activity', label: 'Add an activity', icon: 'plus.circle.fill', description: 'Add something to this day' },
+  { id: 'reflow_day', label: 'Fix timing', icon: 'clock.arrow.2.circlepath', description: 'Auto-adjust times and add buffers' },
+  { id: 'fix_my_day', label: 'Fix my day', icon: 'wrench.and.screwdriver.fill', description: 'Detect problems and fix them' },
 ];
 
 /**
@@ -152,11 +153,14 @@ interface AskTravonalProps {
   visible: boolean;
   onClose: () => void;
   onCommand: (command: TravonalCommand, extractedDay?: number, searchTerms?: string, startAfter?: string) => void;
+  onFreeTextEdit?: (instruction: string) => void;
   currentDay?: number;
+  totalDays?: number;
   tripDestination?: string;
+  activityCount?: number;
 }
 
-export function AskTravonal({ visible, onClose, onCommand, currentDay, tripDestination }: AskTravonalProps) {
+export function AskTravonal({ visible, onClose, onCommand, onFreeTextEdit, currentDay, totalDays, tripDestination, activityCount }: AskTravonalProps) {
   const theme = useTheme();
   const { profile } = useProfile();
   const [textQuery, setTextQuery] = useState('');
@@ -167,6 +171,14 @@ export function AskTravonal({ visible, onClose, onCommand, currentDay, tripDesti
     if (!textQuery.trim()) return;
     const { command, feedback, extractedDay, searchTerms, startAfter } = parseTextToCommand(textQuery);
     if (command === null) {
+      if (onFreeTextEdit) {
+        const instruction = textQuery.trim();
+        setTextQuery('');
+        setErrorMessage('');
+        onFreeTextEdit(instruction);
+        onClose();
+        return;
+      }
       setErrorMessage(feedback);
       return;
     }
@@ -194,13 +206,15 @@ export function AskTravonal({ visible, onClose, onCommand, currentDay, tripDesti
             accessibilityRole="none"
           >
             <View style={styles.handle} />
-            <ThemedText style={styles.title}>Customize trip</ThemedText>
+            <ThemedText style={styles.title}>Ask Travonal</ThemedText>
             {(currentDay != null || tripDestination) && (
               <ThemedText style={[styles.context, { color: theme.textSecondary }]}>
-                {tripDestination ? `${tripDestination}` : ''}
+                {tripDestination ?? ''}
                 {tripDestination && currentDay != null ? ' \u00B7 ' : ''}
                 {currentDay != null ? `Day ${currentDay}` : ''}
-                {profile.interests.length > 0 ? ` \u00B7 tailored to your interests` : ''}
+                {totalDays != null ? ` of ${totalDays}` : ''}
+                {activityCount != null ? ` \u00B7 ${activityCount} activities` : ''}
+                {profile.interests.length > 0 ? ' \u00B7 personalized' : ''}
               </ThemedText>
             )}
 
@@ -210,7 +224,7 @@ export function AskTravonal({ visible, onClose, onCommand, currentDay, tripDesti
                 style={[styles.textInput, { color: theme.text }]}
                 value={textQuery}
                 onChangeText={setTextQuery}
-                placeholder="Describe what you want..."
+                placeholder={onFreeTextEdit ? "Tell AI what to change..." : "Describe what you want..."}
                 placeholderTextColor={theme.textSecondary}
                 onSubmitEditing={handleTextSubmit}
                 returnKeyType="go"
@@ -234,36 +248,40 @@ export function AskTravonal({ visible, onClose, onCommand, currentDay, tripDesti
               </ThemedText>
             )}
 
-            <ThemedText style={[styles.orLabel, { color: theme.textSecondary }]}>or pick a command</ThemedText>
+            {textQuery.trim().length === 0 && (
+              <>
+                <ThemedText style={[styles.orLabel, { color: theme.textSecondary }]}>or pick a command</ThemedText>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.commandScroll} keyboardShouldPersistTaps="handled">
-              <View style={styles.commands}>
-                {COMMANDS.map((cmd) => (
-                  <Pressable
-                    key={cmd.id}
-                    onPress={() => {
-                      setTextQuery('');
-                      setErrorMessage('');
-                      onCommand(cmd.id);
-                      onClose();
-                    }}
-                    style={({ pressed }) => [
-                      styles.commandRow,
-                      { backgroundColor: pressed ? theme.primaryMuted : theme.backgroundElement },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={cmd.label}
-                    accessibilityHint={cmd.description}
-                  >
-                    <ThemedText style={styles.commandIcon}>{cmd.icon}</ThemedText>
-                    <View style={styles.commandText}>
-                      <ThemedText style={styles.commandLabel}>{cmd.label}</ThemedText>
-                      <ThemedText style={[styles.commandDesc, { color: theme.textSecondary }]}>{cmd.description}</ThemedText>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
+                <ScrollView showsVerticalScrollIndicator={false} style={styles.commandScroll} keyboardShouldPersistTaps="handled">
+                  <View style={styles.commands}>
+                    {COMMANDS.map((cmd) => (
+                      <Pressable
+                        key={cmd.id}
+                        onPress={() => {
+                          setTextQuery('');
+                          setErrorMessage('');
+                          onCommand(cmd.id);
+                          onClose();
+                        }}
+                        style={({ pressed }) => [
+                          styles.commandRow,
+                          { backgroundColor: pressed ? theme.primaryMuted : theme.backgroundElement },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={cmd.label}
+                        accessibilityHint={cmd.description}
+                      >
+                        <SymbolView name={cmd.icon} size={24} tintColor={theme.primary} />
+                        <View style={styles.commandText}>
+                          <ThemedText style={styles.commandLabel}>{cmd.label}</ThemedText>
+                          <ThemedText style={[styles.commandDesc, { color: theme.textSecondary }]}>{cmd.description}</ThemedText>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
@@ -281,8 +299,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.five,
     maxHeight: '85%',
@@ -304,7 +322,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     marginBottom: Spacing.two,
     gap: 8,
@@ -317,7 +335,7 @@ const styles = StyleSheet.create({
   textSendBtn: {
     paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: Radius.md,
   },
   textSendText: {
     fontSize: 13,
@@ -343,10 +361,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: Radius.md,
     gap: 12,
   },
-  commandIcon: { fontSize: 24 },
+  commandIcon: { width: 24, height: 24 },
   commandText: { flex: 1 },
   commandLabel: { fontSize: 15, fontWeight: '600' },
   commandDesc: { fontSize: 13, marginTop: 1 },

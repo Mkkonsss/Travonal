@@ -1,9 +1,15 @@
-import { useState } from 'react';
+/**
+ * ActivityCard — displays a single activity in the timeline.
+ *
+ * Interactions:
+ *  - Tap → onTap (navigate to place detail)
+ *  - Long-press → onDrag (start drag-and-drop reorder)
+ *  - "..." → onMenu (open context menu)
+ */
+
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeOut,
-} from 'react-native-reanimated';
+import { Image as ExpoImage } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
 import { Activity } from '@/context/trips';
@@ -27,143 +33,110 @@ function formatDuration(minutes: number): string {
 
 interface ActivityCardProps {
   activity: Activity;
-  onLock: () => void;
-  onRemove: () => void;
-  onReplace: () => void;
-  onMove: (direction: 'up' | 'down') => void;
-  onMoveAdvanced?: () => void;
-  onEdit?: () => void;
-  onCustomize?: () => void;
-  isFirst: boolean;
-  isLast: boolean;
+  /** Photo URL for the activity thumbnail */
+  photoUrl?: string | null;
+  /** Short label for the book button, e.g. "Book hotel", "Reserve" */
+  bookLabel?: string;
+  /** "..." menu button → context menu */
+  onMenu?: () => void;
+  /** Tap the card → navigate to place detail */
+  onTap?: () => void;
+  /** Book button tapped */
+  onBook?: () => void;
 }
 
 export function ActivityCard({
   activity,
-  onLock,
-  onRemove,
-  onReplace,
-  onMove,
-  onMoveAdvanced,
-  onEdit,
-  onCustomize,
-  isFirst,
-  isLast,
+  photoUrl,
+  bookLabel,
+  onMenu,
+  onTap,
+  onBook,
 }: ActivityCardProps) {
   const theme = useTheme();
-  const [expanded, setExpanded] = useState(false);
-
   const isProtected = !!(activity.locked || activity.fixed);
+  const showBookBtn = onBook && !activity.bookingStatus && !activity.fixed;
 
   return (
     <View style={styles.activityContent}>
-      <Pressable
-        onPress={() => setExpanded(!expanded)}
-        style={styles.activityMain}
-        accessibilityRole="button"
-        accessibilityLabel={`${activity.title} at ${activity.time}${isProtected ? ', locked' : ''}`}
-        accessibilityHint="Tap to show activity controls"
-      >
-        <View style={styles.activityInfo}>
-          <ThemedText style={styles.activityTitle}>{activity.title}</ThemedText>
-          <ThemedText style={[styles.activityMeta, { color: theme.textSecondary }]}>
-            {TYPE_LABELS[activity.type]}
-            {activity.duration ? ` \u00B7 ${formatDuration(activity.duration)}` : ''}
-            {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
-          </ThemedText>
-        </View>
-        {activity.fixed && (
-          <ThemedText style={[styles.fixedBadge, { color: theme.textSecondary }]}>Fixed</ThemedText>
-        )}
-        {activity.locked && !activity.fixed && (
-          <ThemedText style={[styles.lockBadge, { color: theme.primary }]}>Locked</ThemedText>
-        )}
-      </Pressable>
-
-      {expanded && (
-        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={styles.controls}>
-          {/* Lock / Unlock - not available for fixed activities */}
-          {!activity.fixed && (
-            <Pressable
-              onPress={onLock}
-              style={[styles.controlBtn, activity.locked && styles.controlBtnActive]}
-              accessibilityRole="button"
-              accessibilityLabel={activity.locked ? 'Unlock activity' : 'Lock activity'}
-            >
-              <ThemedText style={styles.controlText}>
-                {activity.locked ? 'Unlock' : 'Lock'}
-              </ThemedText>
-            </Pressable>
-          )}
-
-          {/* Replace - available for all activities */}
-          <Pressable
-            onPress={onReplace}
-            style={styles.controlBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Replace activity"
-          >
-            <ThemedText style={styles.controlText}>Replace</ThemedText>
-          </Pressable>
-
-          {/* Move button -- opens move modal (not available for locked/fixed) */}
-          {!isProtected && (
-            <Pressable
-              onPress={onMoveAdvanced ?? (() => onMove('down'))}
-              style={styles.controlBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Move activity"
-            >
-              <ThemedText style={styles.controlText}>Move</ThemedText>
-            </Pressable>
-          )}
-
-          {/* Edit - available for all activities */}
-          {onEdit && (
-            <Pressable
-              onPress={onEdit}
-              style={styles.controlBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Edit activity"
-            >
-              <ThemedText style={styles.controlText}>Edit</ThemedText>
-            </Pressable>
-          )}
-
-          {/* Customize - apply transformations to this activity */}
-          {onCustomize && !isProtected && (
-            <Pressable
-              onPress={onCustomize}
-              style={styles.controlBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Customize activity"
-            >
-              <ThemedText style={styles.controlText}>Customize</ThemedText>
-            </Pressable>
-          )}
-
-          {/* Remove - available for all activities */}
-          <Pressable
-            onPress={onRemove}
-            style={[styles.controlBtn, styles.controlBtnDanger]}
-            accessibilityRole="button"
-            accessibilityLabel="Remove activity"
-          >
-            <ThemedText style={[styles.controlText, { color: theme.danger }]}>
-              Remove
+      <View style={styles.cardRow}>
+        {/* Main content area — tap to view, hold to drag (handled by parent) */}
+        <Pressable
+          onPress={onTap}
+          style={({ pressed }) => [
+            styles.activityMain,
+            pressed && { opacity: 0.7 },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${activity.title} at ${activity.time}${isProtected ? ', locked' : ''}`}
+          accessibilityHint="Tap for details, hold to reorder"
+        >
+          {photoUrl ? (
+            <ExpoImage
+              source={{ uri: photoUrl }}
+              style={styles.thumbnail}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+            />
+          ) : null}
+          <View style={styles.activityInfo}>
+            <ThemedText style={styles.activityTitle}>{activity.title}</ThemedText>
+            <ThemedText style={[styles.activityMeta, { color: theme.textSecondary }]}>
+              {TYPE_LABELS[activity.type]}
+              {activity.duration ? ` \u00B7 ${formatDuration(activity.duration)}` : ''}
+              {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
             </ThemedText>
-          </Pressable>
-
-          {/* Protected info message */}
-          {isProtected && (
-            <View style={[styles.protectedMsg, { backgroundColor: theme.primaryMuted }]}>
-              <ThemedText style={[styles.protectedText, { color: theme.textSecondary }]}>
-                {activity.fixed ? 'Fixed reservation — protected from auto-changes' : 'Locked — protected from auto-changes'}
-              </ThemedText>
+            {/* Book button — inline below meta for unbooked activities */}
+            {showBookBtn && (
+              <Pressable
+                onPress={(e) => { e.stopPropagation(); onBook(); }}
+                hitSlop={4}
+                style={({ pressed }) => [
+                  styles.bookBtn,
+                  { borderColor: theme.primary + '40' },
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${bookLabel ?? 'Book'} ${activity.title}`}
+              >
+                <ThemedText style={[styles.bookBtnText, { color: theme.primary }]}>
+                  {bookLabel ?? 'Book'}
+                </ThemedText>
+              </Pressable>
+            )}
+          </View>
+          {activity.bookingStatus === 'booked' && (
+            <View style={styles.statusRow}>
+              <SymbolView name={"checkmark" as any} size={12} tintColor="#10B981" />
+              <ThemedText style={[styles.statusBadge, { color: '#10B981' }]}>Booked</ThemedText>
             </View>
           )}
-        </Animated.View>
-      )}
+          {activity.bookingStatus === 'pending' && (
+            <ThemedText style={[styles.statusBadge, { color: '#D97706' }]}>Pending</ThemedText>
+          )}
+        </Pressable>
+        {activity.fixed && (
+          <View style={[styles.lockPill, { backgroundColor: theme.textSecondary + '20' }]}>
+            <SymbolView name={"pin.fill" as any} size={10} tintColor={theme.textSecondary} />
+          </View>
+        )}
+        {activity.locked && !activity.fixed && (
+          <View style={[styles.lockPill, { backgroundColor: theme.primary + '15' }]}>
+            <SymbolView name={"lock.fill" as any} size={10} tintColor={theme.primary} />
+          </View>
+        )}
+
+        {/* "..." menu trigger — opens context menu */}
+        <Pressable
+          onPress={onMenu}
+          hitSlop={8}
+          style={styles.menuTrigger}
+          accessibilityRole="button"
+          accessibilityLabel={`More actions for ${activity.title}`}
+        >
+          <ThemedText style={[styles.menuDots, { color: theme.textSecondary }]}>{'\u2022\u2022\u2022'}</ThemedText>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -173,10 +146,23 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingLeft: 12,
     paddingBottom: 16,
+    overflow: 'visible',
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
   },
   activityMain: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    gap: 10,
+  },
+  thumbnail: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
   },
   activityInfo: {
     flex: 1,
@@ -189,48 +175,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 2,
   },
-  lockBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  fixedBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  controls: {
+  statusRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
+    alignItems: 'center',
+    gap: 4,
   },
-  controlBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: 'rgba(229,229,229,0.08)',
-  },
-  controlBtnActive: {
-    backgroundColor: 'rgba(229,229,229,0.16)',
-  },
-  controlBtnDanger: {
-    backgroundColor: 'rgba(220,38,38,0.08)',
-  },
-  controlText: {
-    fontSize: 12,
+  statusBadge: {
+    fontSize: 11,
     fontWeight: '600',
   },
-  protectedMsg: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginTop: 2,
+  lockPill: {
+    position: 'absolute',
+    top: 0,
+    right: 28,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  protectedText: {
-    fontSize: 12,
-    fontStyle: 'italic',
+  bookBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  bookBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  menuTrigger: {
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  menuDots: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 2,
   },
 });

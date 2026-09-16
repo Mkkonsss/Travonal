@@ -143,7 +143,7 @@ describe('pulseInputFingerprint', () => {
     expect(fp1).not.toBe(fp2);
   });
 
-  test('fingerprint changes when profile dislikes change', () => {
+  test('fingerprint does not depend on profile dislikes (no longer used for alerts)', () => {
     const trips = [makeTrip({
       id: 't1',
       startDate: '2026-09-01',
@@ -154,7 +154,7 @@ describe('pulseInputFingerprint', () => {
     const fp1 = pulseInputFingerprint(trips, { pace: 'moderate', dislikes: [] });
     const fp2 = pulseInputFingerprint(trips, { pace: 'moderate', dislikes: ['crowds'] });
 
-    expect(fp1).not.toBe(fp2);
+    expect(fp1).toBe(fp2);
   });
 });
 

@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { Keyframe, Easing } from 'react-native-reanimated';
+import { SymbolView } from 'expo-symbols';
 
 const DURATION = 300;
 
@@ -42,7 +43,7 @@ export function AnimatedIcon() {
     <View style={styles.iconContainer}>
       <Animated.View style={styles.background} entering={keyframe.duration(DURATION)} />
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Text style={styles.iconEmoji}>{'\u2708\uFE0F'}</Text>
+        <SymbolView name={"airplane" as any} size={24} tintColor="#000" />
       </Animated.View>
     </View>
   );

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import {
   loadTripsSafe,
   saveTrips,
@@ -7,6 +7,9 @@ import {
 } from '@/services/storage';
 import { createTripRecord, findUndoableChange } from '@/services/trip-helpers';
 import { generateId } from '@/services/itinerary-engine';
+import { generateActivityId, normalizeTimeTo24 } from '@/services/ai-utils';
+import { useAuth } from '@/context/auth';
+import { pushTrips, pullTrips, deleteRemoteTrip } from '@/services/sync';
 
 export type ReservationType = 'restaurant' | 'hotel' | 'flight' | 'train' | 'activity' | 'other';
 
@@ -36,10 +39,21 @@ export interface Activity {
   type: 'flight' | 'hotel' | 'activity' | 'food';
   locked?: boolean;
   fixed?: boolean; // fixed reservation / commitment — always treated as locked
+  requested?: boolean; // from board/inbox — AI must include, can freely place
   category?: string;
   description?: string;
   duration?: number; // minutes
   cost?: 'free' | 'budget' | 'moderate' | 'premium';
+  placeId?: string;       // Google Place ID
+  address?: string;       // formattedAddress from Google Places
+  lat?: number;           // location.latitude
+  lng?: number;           // location.longitude
+  openingHours?: string[];  // from Google Places
+  rating?: number;          // Google rating (1-5)
+  reviewCount?: number;     // Google review count
+  notes?: string;           // user's personal notes from board
+  reservationId?: string; // linked reservation ID
+  bookingStatus?: 'booked' | 'pending'; // booking state — undefined = not yet booked
 }
 
 export interface ChangeRecord {
@@ -63,6 +77,8 @@ export interface Trip {
   country: string;
   startDate: string;
   endDate: string;
+  /** When false, startDate/endDate are placeholders and should not be shown as real calendar dates. */
+  datesKnown?: boolean;
   notes: string;
   emoji: string;
   activities: Activity[];
@@ -75,6 +91,7 @@ export interface Trip {
   restrictions?: string;
   travelers?: number;
   tripInstructions?: string; // per-trip overrides e.g. "okay with early mornings on this trip"
+  geoContext?: string;       // pre-computed geographic cluster summary for AI prompt
   status?: 'draft' | 'planned' | 'active' | 'completed';
   generatedAt?: string;
   /** Monotonic counter incremented on every activity mutation. Used to scope pulse dismissals. */
@@ -123,7 +140,7 @@ export interface TripMember {
   invitationId?: string;
 }
 
-export type TripState = 'draft' | 'upcoming' | 'active' | 'past';
+export type TripState = 'draft' | 'upcoming' | 'active' | 'past' | 'planned';
 
 const EMPTY_TRIPS: Trip[] = [];
 
@@ -150,17 +167,18 @@ interface TripsContextType {
   /** Re-attempt loading trip data after a previous failure. */
   retryTripsLoad: () => void;
   addTrip: (trip: Omit<Trip, 'id' | 'activities'>) => string;
+  addTripWithActivities: (trip: Omit<Trip, 'id' | 'activities'>, initialActivities: Omit<Activity, 'id'>[], reservations?: Omit<Reservation, 'id' | 'tripId'>[]) => string;
   getTrip: (id: string) => Trip | undefined;
   getTripState: (trip: Trip) => TripState;
   updateTrip: (id: string, updates: Partial<Omit<Trip, 'id'>>) => void;
   deleteTrip: (id: string) => void;
-  addActivity: (tripId: string, activity: Omit<Activity, 'id'>) => void;
-  updateActivity: (tripId: string, activityId: string, updates: Partial<Omit<Activity, 'id'>>) => void;
-  removeActivity: (tripId: string, activityId: string) => void;
-  moveActivity: (tripId: string, activityId: string, newDay: number, newTime: string) => void;
+  addActivity: (tripId: string, activity: Omit<Activity, 'id'>) => boolean;
+  updateActivity: (tripId: string, activityId: string, updates: Partial<Omit<Activity, 'id'>>, skipLockCheck?: boolean) => boolean;
+  removeActivity: (tripId: string, activityId: string, skipLockCheck?: boolean) => boolean;
+  moveActivity: (tripId: string, activityId: string, newDay: number, newTime: string, skipLockCheck?: boolean) => boolean;
   toggleLock: (tripId: string, activityId: string) => void;
   reorderActivities: (tripId: string, day: number, orderedIds: string[]) => void;
-  replaceActivity: (tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>) => void;
+  replaceActivity: (tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>, skipLockCheck?: boolean) => boolean;
   setTripActivities: (tripId: string, activities: Activity[], changeDescription?: string, bypassLockProtection?: boolean) => void;
   undoChange: (tripId: string) => void;
   getUndoableChange: (tripId: string) => ChangeRecord | undefined;
@@ -191,6 +209,10 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   // Separate failure flags: history failure must NOT block trip saves.
   const [tripsLoadError, setTripsLoadError] = useState(false);
   const [historyLoadError, setHistoryLoadError] = useState(false);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tripsRef = useRef<Trip[]>(EMPTY_TRIPS);
+  useEffect(() => { tripsRef.current = trips; }, [trips]);
 
   useEffect(() => {
     Promise.all([
@@ -205,12 +227,39 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // After local data is ready and user is signed in, pull any remote-only trips
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pullTrips(user.id).then((remoteTrips) => {
+      if (remoteTrips.length === 0) return;
+      setTrips((local) => {
+        const localIds = new Set(local.map((t) => t.id));
+        const newFromRemote = remoteTrips.filter((t) => !localIds.has(t.id));
+        return newFromRemote.length > 0 ? [...local, ...newFromRemote] : local;
+      });
+    });
+   
+  }, [loaded, user?.id]);
+
   // Trip save is gated only on its OWN load result, not on history.
   useEffect(() => {
     if (loaded && !tripsLoadError) {
       saveTrips(trips);
     }
   }, [trips, loaded, tripsLoadError]);
+
+  // Push trips to Supabase (debounced 1.5s to avoid hammering on rapid mutations)
+  useEffect(() => {
+    if (!loaded || !user?.id || tripsLoadError) return;
+    const userId = user.id;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      pushTrips(userId, trips);
+    }, 1500);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [trips, loaded, user?.id, tripsLoadError]);
 
   // History save is gated only on its OWN load result.
   useEffect(() => {
@@ -260,12 +309,53 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     return newTrip.id;
   }
 
+  function addTripWithActivities(
+    trip: Omit<Trip, 'id' | 'activities'>,
+    initialActivities: Omit<Activity, 'id'>[],
+    reservations?: Omit<Reservation, 'id' | 'tripId'>[],
+  ): string {
+    const base = createTripRecord(trip);
+
+    // Create reservations with real IDs first so we can link activities to them.
+    const tripReservations = (reservations ?? []).map((r) => ({
+      ...r,
+      id: generateId(),
+      tripId: base.id,
+    }));
+
+    // Match each initial activity to its reservation by title+day to stamp reservationId.
+    const activities = initialActivities.map((a) => {
+      const linked = tripReservations.find(
+        (r) => r.title === a.title && (r.day == null || r.day === (a.day ?? 1)),
+      );
+      return {
+        ...a,
+        id: generateActivityId(),
+        reservationId: linked?.id,
+      };
+    });
+
+    const newTrip: Trip = {
+      ...base,
+      activities,
+      reservations: tripReservations.length > 0 ? tripReservations : undefined,
+    };
+    setTrips((prev) => [...prev, newTrip]);
+    // Sync ref immediately so sequential actions in the same loop can find this trip
+    tripsRef.current = [...tripsRef.current, newTrip];
+    return newTrip.id;
+  }
+
   function getTrip(id: string) {
-    return trips.find((t) => t.id === id);
+    // Use tripsRef for consistency with other operations — ensures just-created
+    // trips are findable within the same action batch (before React re-renders).
+    return tripsRef.current.find((t) => t.id === id);
   }
 
   function getTripState(trip: Trip): TripState {
     if (trip.status === 'draft' || trip.activities.length === 0) return 'draft';
+    // Undated trips (duration-only, no confirmed calendar dates) are "planned" (dates TBD)
+    if (trip.datesKnown === false) return 'planned';
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const start = new Date(trip.startDate + 'T00:00:00');
@@ -279,25 +369,30 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     setTrips((prev) =>
       prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
     );
+    // Sync ref so sequential actions in the same batch see the update
+    tripsRef.current = tripsRef.current.map((t) => (t.id === id ? { ...t, ...updates } : t));
   }
 
   function deleteTrip(id: string) {
     setTrips((prev) => prev.filter((t) => t.id !== id));
     setChangeHistory((prev) => prev.filter((c) => c.tripId !== id));
+    if (user?.id) deleteRemoteTrip(id);
   }
 
-  function addActivity(tripId: string, activity: Omit<Activity, 'id'>) {
-    const trip = trips.find((t) => t.id === tripId);
-    if (!trip) return;
-    const newAct = { ...activity, id: String(Date.now()) + String(Math.floor(Math.random() * 100)) };
+  const addActivity = useCallback((tripId: string, activity: Omit<Activity, 'id'>): boolean => {
+    const trip = tripsRef.current.find((t) => t.id === tripId);
+    if (!trip) return false;
+
+    const newAct: Activity = { ...activity, id: generateActivityId(), time: normalizeTimeTo24(activity.time) };
     const newActivities = [...trip.activities, newAct];
     recordChange(tripId, `Added "${activity.title}"`, trip.activities, newActivities);
+
     setTrips((prev) =>
       prev.map((t) => {
         if (t.id !== tripId) return t;
         const updated: Trip = {
           ...t,
-          activities: newActivities,
+          activities: [...t.activities, newAct],
           itineraryRevision: (t.itineraryRevision ?? 0) + 1,
         };
         if (updated.status === 'draft' && updated.activities.length > 0) {
@@ -306,59 +401,86 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         return updated;
       })
     );
-  }
+    return true;
+  }, []);
 
-  function updateActivity(tripId: string, activityId: string, updates: Partial<Omit<Activity, 'id'>>) {
-    const trip = trips.find((t) => t.id === tripId);
-    if (!trip) return;
+  const updateActivity = useCallback((tripId: string, activityId: string, updates: Partial<Omit<Activity, 'id'>>, skipLockCheck?: boolean): boolean => {
+    const trip = tripsRef.current.find((t) => t.id === tripId);
+    if (!trip) return false;
     const target = trip.activities.find((a) => a.id === activityId);
-    if (target && isLocked(target) && !('locked' in updates)) return;
+    if (!target) return false;
+    if (!skipLockCheck && isLocked(target) && !('locked' in updates)) return false;
+
+    const safeUpdates = updates.time ? { ...updates, time: normalizeTimeTo24(updates.time) } : updates;
     const newActivities = trip.activities.map((a) =>
-      a.id === activityId ? { ...a, ...updates } : a
+      a.id === activityId ? { ...a, ...safeUpdates } : a
     );
-    if (target) {
-      recordChange(tripId, `Updated "${target.title}"`, trip.activities, newActivities);
-    }
-    setTrips((prev) =>
-      prev.map((t) => {
-        if (t.id !== tripId) return t;
-        return {
-          ...t,
-          activities: newActivities,
-          itineraryRevision: (t.itineraryRevision ?? 0) + 1,
-        };
-      })
-    );
-  }
+    recordChange(tripId, `Updated "${target.title}"`, trip.activities, newActivities);
 
-  function removeActivity(tripId: string, activityId: string) {
     setTrips((prev) =>
       prev.map((t) => {
         if (t.id !== tripId) return t;
-        const target = t.activities.find((a) => a.id === activityId);
-        // Lock protection: cannot remove locked/fixed activity
-        if (target && isLocked(target)) return t;
-        return { ...t, activities: t.activities.filter((a) => a.id !== activityId), itineraryRevision: (t.itineraryRevision ?? 0) + 1 };
-      })
-    );
-  }
-
-  function moveActivity(tripId: string, activityId: string, newDay: number, newTime: string) {
-    setTrips((prev) =>
-      prev.map((t) => {
-        if (t.id !== tripId) return t;
-        const target = t.activities.find((a) => a.id === activityId);
-        // Lock protection: cannot move locked/fixed activity
-        if (target && isLocked(target)) return t;
         return {
           ...t,
           activities: t.activities.map((a) =>
-            a.id === activityId ? { ...a, day: newDay, time: newTime } : a
+            a.id === activityId ? { ...a, ...safeUpdates } : a
           ),
           itineraryRevision: (t.itineraryRevision ?? 0) + 1,
         };
       })
     );
+    return true;
+  }, []);
+
+  const removeActivity = useCallback((tripId: string, activityId: string, skipLockCheck?: boolean): boolean => {
+    const trip = tripsRef.current.find((t) => t.id === tripId);
+    if (!trip) return false;
+    const target = trip.activities.find((a) => a.id === activityId);
+    if (!target) return false;
+    if (!skipLockCheck && isLocked(target)) return false;
+
+    const newActivities = trip.activities.filter((a) => a.id !== activityId);
+    recordChange(tripId, `Removed "${target.title}"`, trip.activities, newActivities);
+
+    setTrips((prev) =>
+      prev.map((t) => {
+        if (t.id !== tripId) return t;
+        return {
+          ...t,
+          activities: t.activities.filter((a) => a.id !== activityId),
+          itineraryRevision: (t.itineraryRevision ?? 0) + 1,
+        };
+      })
+    );
+    return true;
+  }, []);
+
+  function moveActivity(tripId: string, activityId: string, newDay: number, newTime: string, skipLockCheck?: boolean): boolean {
+    const trip = tripsRef.current.find((t) => t.id === tripId);
+    if (!trip) return false;
+    const target = trip.activities.find((a) => a.id === activityId);
+    if (!target) return false;
+    if (!skipLockCheck && isLocked(target)) return false;
+
+    const safeTime = normalizeTimeTo24(newTime);
+    const newActivities = trip.activities.map((a) =>
+      a.id === activityId ? { ...a, day: newDay, time: safeTime } : a
+    );
+    recordChange(tripId, `Moved "${target.title}" to Day ${newDay}`, trip.activities, newActivities);
+
+    setTrips((prev) =>
+      prev.map((t) => {
+        if (t.id !== tripId) return t;
+        return {
+          ...t,
+          activities: t.activities.map((a) =>
+            a.id === activityId ? { ...a, day: newDay, time: safeTime } : a
+          ),
+          itineraryRevision: (t.itineraryRevision ?? 0) + 1,
+        };
+      })
+    );
+    return true;
   }
 
   function toggleLock(tripId: string, activityId: string) {
@@ -405,22 +527,32 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  function replaceActivity(tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>) {
+  function replaceActivity(tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>, skipLockCheck?: boolean): boolean {
+    const trip = tripsRef.current.find((t) => t.id === tripId);
+    if (!trip) return false;
+    const target = trip.activities.find((a) => a.id === oldActivityId);
+    if (!target) return false;
+    if (!skipLockCheck && isLocked(target)) return false;
+
+    const newId = generateActivityId();
+    const newActivities = trip.activities.map((a) =>
+      a.id === oldActivityId ? { ...newActivity, id: newId } : a
+    );
+    recordChange(tripId, `Replaced "${target.title}" with "${newActivity.title}"`, trip.activities, newActivities);
+
     setTrips((prev) =>
       prev.map((t) => {
         if (t.id !== tripId) return t;
-        const target = t.activities.find((a) => a.id === oldActivityId);
-        // Lock protection: cannot replace locked/fixed activity
-        if (target && isLocked(target)) return t;
         return {
           ...t,
           activities: t.activities.map((a) =>
-            a.id === oldActivityId ? { ...newActivity, id: String(Date.now()) } : a
+            a.id === oldActivityId ? { ...newActivity, id: newId } : a
           ),
           itineraryRevision: (t.itineraryRevision ?? 0) + 1,
         };
       })
     );
+    return true;
   }
 
   function setTripActivities(tripId: string, activities: Activity[], changeDescription?: string, bypassLockProtection?: boolean) {
@@ -532,9 +664,28 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!trip) return;
     const prevRes = trip.reservations ?? [];
     const newResArr = [...prevRes, newRes];
-    recordChange(tripId, `Added reservation "${res.title}"`, trip.activities, trip.activities, prevRes, newResArr);
+
+    // Auto-create a corresponding fixed activity linked to the reservation
+    const activityType: Activity['type'] =
+      res.type === 'restaurant' ? 'food' :
+      res.type === 'hotel' ? 'hotel' :
+      res.type === 'flight' ? 'flight' :
+      'activity';
+    const newActivity: Activity = {
+      id: generateId(),
+      title: res.title,
+      day: res.day ?? 1,
+      time: res.time ? normalizeTimeTo24(res.time) : '12:00',
+      type: activityType,
+      fixed: true,
+      locked: true,
+      reservationId: newRes.id,
+    };
+    const newActivities = [...trip.activities, newActivity];
+
+    recordChange(tripId, `Added reservation "${res.title}"`, trip.activities, newActivities, prevRes, newResArr);
     setTrips((prev) =>
-      prev.map((t) => (t.id === tripId ? { ...t, reservations: newResArr } : t))
+      prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
   }
 
@@ -543,9 +694,19 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!trip) return;
     const prevRes = trip.reservations ?? [];
     const newResArr = prevRes.map((r) => (r.id === res.id ? res : r));
-    recordChange(tripId, `Updated reservation "${res.title}"`, trip.activities, trip.activities, prevRes, newResArr);
+    // Sync linked activity with reservation changes
+    const newActivities = trip.activities.map((a) => {
+      if (a.reservationId !== res.id) return a;
+      return {
+        ...a,
+        title: res.title,
+        day: res.day ?? a.day,
+        time: res.time ? normalizeTimeTo24(res.time) : a.time,
+      };
+    });
+    recordChange(tripId, `Updated reservation "${res.title}"`, trip.activities, newActivities, prevRes, newResArr);
     setTrips((prev) =>
-      prev.map((t) => (t.id === tripId ? { ...t, reservations: newResArr } : t))
+      prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
   }
 
@@ -555,9 +716,16 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     const prevRes = trip.reservations ?? [];
     const removed = prevRes.find((r) => r.id === resId);
     const newResArr = prevRes.filter((r) => r.id !== resId);
-    recordChange(tripId, `Removed reservation "${removed?.title ?? resId}"`, trip.activities, trip.activities, prevRes, newResArr);
+
+    // Remove the linked activity that was created for this reservation.
+    // If the user had separately added content to that activity slot, we
+    // remove only the exact reservation-linked activity (by reservationId).
+    // Activities that were user-edited (no reservationId) are left untouched.
+    const newActivities = trip.activities.filter((a) => a.reservationId !== resId);
+
+    recordChange(tripId, `Removed reservation "${removed?.title ?? resId}"`, trip.activities, newActivities, prevRes, newResArr);
     setTrips((prev) =>
-      prev.map((t) => (t.id === tripId ? { ...t, reservations: newResArr } : t))
+      prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
   }
 
@@ -679,6 +847,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         historyLoadError,
         retryTripsLoad,
         addTrip,
+        addTripWithActivities,
         getTrip,
         getTripState,
         updateTrip,

@@ -7,6 +7,7 @@ import { useMemory } from '@/context/memory';
 import { useTripPulse, shouldRunTripPulse } from '@/context/trip-pulse';
 import { usePulseHistory } from '@/context/pulse-history';
 import { runTripPulse } from '@/services/trip-pulse';
+import { fetchWeatherForecast, TripWeatherForecast } from '@/services/weather';
 import {
   scheduleLocalNotification,
   onPermissionChange,
@@ -27,24 +28,16 @@ function isUpcomingOrActive(trip: Trip): boolean {
  */
 export function pulseInputFingerprint(
   trips: Trip[],
-  profile: { pace: string; dislikes: string[] },
+  _profile: { pace: string; dislikes: string[] },
 ): string {
   let hash = '';
   for (const t of trips) {
-    // Trip-level fields that affect pulse
-    hash += `${t.id}|${t.startDate}|${t.endDate}|${t.budget ?? ''}|${t.itineraryRevision ?? 0}|`;
-    // Activities: id, time, day, duration, type — all affect conflict/overloaded/low_fit checks
+    hash += `${t.id}|${t.startDate}|${t.endDate}|${t.itineraryRevision ?? 0}|`;
     for (const a of t.activities) {
       hash += `${a.id},${a.day},${a.time},${a.duration ?? 0},${a.type};`;
     }
-    // Reservations: time changes affect potential future pulse checks
-    for (const r of (t.reservations ?? [])) {
-      hash += `R${r.id},${r.time ?? ''},${r.day ?? ''},${r.cancelled ?? false};`;
-    }
     hash += '|';
   }
-  // Profile fields that affect pulse
-  hash += `P:${profile.pace}:${profile.dislikes.join(',')}`;
   return hash;
 }
 
@@ -104,8 +97,20 @@ export function AppPulseEvaluator() {
     const relevantTrips = currentTrips.filter(isUpcomingOrActive);
 
     for (const trip of relevantTrips) {
+      // Fetch weather forecast if any activity has coordinates
+      let weatherForecast: TripWeatherForecast | null = null;
+      const actWithCoords = trip.activities.find((a) => a.lat != null && a.lng != null);
+      if (actWithCoords && actWithCoords.lat != null && actWithCoords.lng != null) {
+        weatherForecast = await fetchWeatherForecast(
+          actWithCoords.lat,
+          actWithCoords.lng,
+          trip.startDate,
+          trip.endDate,
+        );
+      }
+
       // Use Infinity to get ALL alerts — lifecycle must not be limited by display cap
-      const alerts = runTripPulse(trip, currentProfile, currentMemory, Infinity);
+      const alerts = runTripPulse(trip, currentProfile, currentMemory, Infinity, weatherForecast);
       const activeAlertIds = new Set<string>();
 
       for (const alert of alerts) {
@@ -122,7 +127,7 @@ export function AppPulseEvaluator() {
         // Schedule notification for urgent alerts whose occurrence hasn't been notified
         if (alert.severity === 'urgent' && !history.isOccurrenceNotified(trip.id, alert.id)) {
           const scheduled = await scheduleLocalNotification(
-            `Trip Pulse: ${trip.destination}`,
+            `Trip Alerts: ${trip.destination}`,
             alert.message,
             { tripId: trip.id, alertId: alert.id },
           );

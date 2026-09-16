@@ -3,10 +3,11 @@ import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SymbolView } from 'expo-symbols';
 
 import { TimePickerButton, defaultTimeForType, defaultDurationForType } from '@/components/time-picker';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
 import { useInbox } from '@/context/inbox';
 import { useTrips } from '@/context/trips';
 import { useTheme } from '@/hooks/use-theme';
@@ -72,7 +73,10 @@ export default function PlaceTripScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: theme.border }]}>
         <Pressable onPress={() => router.back()} style={styles.headerBtn} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
-          <ThemedText style={[styles.headerBack, { color: theme.primary }]}>{'\u2190'} Back</ThemedText>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <SymbolView name={"chevron.left" as any} size={14} tintColor={theme.primary} />
+            <ThemedText style={[styles.headerBack, { color: theme.primary }]}>Back</ThemedText>
+          </View>
         </Pressable>
         <ThemedText style={styles.headerTitle}>Add to Trip</ThemedText>
         <View style={styles.headerBtn} />
@@ -92,7 +96,7 @@ export default function PlaceTripScreen() {
         </View>
 
         {/* Select trip */}
-        <ThemedText type="eyebrow" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+        <ThemedText type="sectionTitle" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
           Select a trip
         </ThemedText>
 
@@ -136,7 +140,6 @@ export default function PlaceTripScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Select trip: ${trip.destination}`}
                 >
-                  <ThemedText style={styles.tripEmoji}>{trip.emoji}</ThemedText>
                   <View style={styles.tripInfo}>
                     <ThemedText style={styles.tripDest}>{trip.destination}</ThemedText>
                     <ThemedText type="small" style={{ color: theme.textSecondary }}>
@@ -144,7 +147,7 @@ export default function PlaceTripScreen() {
                     </ThemedText>
                   </View>
                   {selectedTripId === trip.id && (
-                    <ThemedText style={[styles.checkMark, { color: theme.primary }]}>{'\u2713'}</ThemedText>
+                    <SymbolView name={"checkmark" as any} size={16} tintColor={theme.primary} />
                   )}
                 </Pressable>
               </Animated.View>
@@ -155,7 +158,7 @@ export default function PlaceTripScreen() {
         {/* Select day */}
         {selectedTrip && totalDays > 0 && (
           <Animated.View entering={FadeIn.duration(200)}>
-            <ThemedText type="eyebrow" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+            <ThemedText type="sectionTitle" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
               Select a day
             </ThemedText>
 
@@ -192,7 +195,7 @@ export default function PlaceTripScreen() {
         {/* Time & duration */}
         {selectedDay && (
           <Animated.View entering={FadeIn.duration(200)}>
-            <ThemedText type="eyebrow" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+            <ThemedText type="sectionTitle" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
               Time & duration
             </ThemedText>
             <TimePickerButton
@@ -250,7 +253,7 @@ const styles = StyleSheet.create({
 
   // Item preview
   itemPreview: {
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     padding: 16,
     gap: 4,
@@ -267,7 +270,7 @@ const styles = StyleSheet.create({
   tripCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     borderWidth: 1.5,
     padding: 14,
     gap: 10,
@@ -282,7 +285,7 @@ const styles = StyleSheet.create({
   dayPill: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
   dayText: { fontSize: 13, fontWeight: '600' },
@@ -290,7 +293,7 @@ const styles = StyleSheet.create({
   // Buttons
   confirmBtn: {
     paddingVertical: 16,
-    borderRadius: 14,
+    borderRadius: Radius.md,
     alignItems: 'center',
     marginTop: Spacing.two,
   },
@@ -300,7 +303,7 @@ const styles = StyleSheet.create({
   createTripBtn: {
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: Radius.sm,
   },
   createTripText: { fontSize: 15, fontWeight: '600' },
 

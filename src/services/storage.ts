@@ -12,6 +12,7 @@ const KEYS = {
   INBOX: '@travonal/inbox',
   DISMISSED_PULSE: '@travonal/dismissed_pulse',
   CHAT_MESSAGES: '@travonal/chat_messages',
+  CHAT_THREADS: '@travonal/chat_threads',
   RECENT_SEARCHES: '@travonal/recent_searches',
   NOTIF_DISMISSED: '@travonal/notif_dismissed',
   TRIP_PULSE_ENABLED: '@travonal/trip_pulse_enabled',
@@ -19,6 +20,10 @@ const KEYS = {
   SEEN_PULSE: '@travonal/seen_pulse',
   PULSE_HISTORY: '@travonal/pulse_history',
   PULSE_NOTIFIED: '@travonal/pulse_notified',
+  DISCOVERY_SEEN: '@travonal/discovery_seen',
+  DISCOVERY_DISMISSED: '@travonal/discovery_dismissed',
+  DISCOVERY_INTERACTIONS: '@travonal/discovery_interactions',
+  BOARDS: '@travonal/boards',
 } as const;
 
 /**
@@ -224,6 +229,22 @@ export async function saveInbox<T>(inbox: T): Promise<boolean> {
   }
 }
 
+export function loadBoardsSafe<T>(fallback: T): Promise<StorageLoadResult<T>> {
+  return safeLoad(KEYS.BOARDS, fallback);
+}
+
+export async function saveBoards<T>(boards: T): Promise<boolean> {
+  const data = JSON.stringify(boards);
+  try {
+    await withRetry(() => rawSetItem(KEYS.BOARDS, data));
+    return true;
+  } catch (e) {
+    console.warn('Failed to save boards:', e);
+    reportStorageError('boards', () => rawSetItem(KEYS.BOARDS, data));
+    return false;
+  }
+}
+
 export async function loadDismissedPulse(): Promise<string[]> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.DISMISSED_PULSE);
@@ -255,6 +276,23 @@ export async function saveChatMessages<T>(messages: T): Promise<void> {
     await AsyncStorage.setItem(KEYS.CHAT_MESSAGES, JSON.stringify(messages));
   } catch (e) {
     console.warn('Failed to save chat messages:', e);
+  }
+}
+
+export async function loadChatThreads<T>(fallback: T): Promise<T> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.CHAT_THREADS);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function saveChatThreads<T>(threads: T): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.CHAT_THREADS, JSON.stringify(threads));
+  } catch (e) {
+    console.warn('Failed to save chat threads:', e);
   }
 }
 

@@ -91,7 +91,7 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
   const pool = getAlternatives(trip.destination);
   const activities: Activity[] = [...fixedActivities];
   const usedTitles = new Set(fixedActivities.map((a) => a.title));
-  const travelWith = trip.travelWith ?? profile.travelWith;
+  const travelWith = trip.travelWith ?? profile.travelWith ?? 'solo';
   const dietary = profile.dietaryRestrictions ?? [];
 
   // Score places by profile fit
@@ -108,7 +108,7 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
       }
       // Budget alignment
       const budgetOrder = ['free', 'budget', 'moderate', 'premium'];
-      const userBudget = trip.budget ?? profile.budget;
+      const userBudget = trip.budget ?? profile.budget ?? 'moderate';
       const userIdx = budgetOrder.indexOf(userBudget);
       const placeIdx = budgetOrder.indexOf(place.cost);
       if (placeIdx <= userIdx) score += 2;
@@ -711,12 +711,14 @@ export function validateAndRepairItinerary(
  * Simulated generation steps for the progress screen.
  */
 export const GENERATION_STEPS = [
-  { label: 'Building your days', duration: 800 },
-  { label: 'Matching your interests', duration: 600 },
-  { label: 'Grouping nearby stops', duration: 700 },
-  { label: 'Checking commitments', duration: 500 },
-  { label: 'Balancing your pace', duration: 400 },
-  { label: 'Finishing your draft', duration: 600 },
+  { label: 'Exploring your destination', duration: 2500 },
+  { label: 'Finding the best spots', duration: 2200 },
+  { label: 'Planning your mornings', duration: 2000 },
+  { label: 'Picking restaurants & cafes', duration: 2200 },
+  { label: 'Mapping out your route', duration: 2000 },
+  { label: 'Optimizing your schedule', duration: 1800 },
+  { label: 'Balancing your pace', duration: 1500 },
+  { label: 'Adding finishing touches', duration: 1800 },
 ] as const;
 
 /**
