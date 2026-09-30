@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flow Away — Logo Concepts v2</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f2f2f2;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      color: #111;
+      min-height: 100vh;
+      padding: 64px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+    }
+
+    header h1 {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 44px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .concept-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #ccc;
+      margin-bottom: 36px;
+      align-self: flex-start;
+    }
+
+    .icon-stage {
+      width: 180px;
+      height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: #f0f0f0;
+      margin-bottom: 24px;
+    }
+
+    .mockups {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+
+    .mockup-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mockup-label {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .app-icon {
+      width: 68px;
+      height: 68px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .app-icon.light {
+      background: #fff;
+      box-shadow: 0 0 0 1px #e4e4e4, 0 4px 20px rgba(0,0,0,0.07);
+    }
+
+    .app-icon.dark {
+      background: #111;
+    }
+
+    .card-meta {
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 5px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Flow Away — Round 2</h1>
+  <p>Geometric &amp; Unexpected</p>
+</header>
+
+<div class="grid">
+
+  <!-- CONCEPT 1: KITE -->
+  <div class="card">
+    <span class="concept-label">Concept 01</span>
+    <div class="icon-stage">
+      <svg width="140" height="160" viewBox="0 0 140 160" fill="none">
+        <!-- Kite body: two triangles, upper taller -->
+        <path d="M70 8 L128 72 L70 102 L12 72 Z" fill="#111"/>
+        <!-- Tail: curved line from bottom -->
+        <path d="M70 102 C68 116 74 124 66 138 C62 145 56 148 52 152" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+        <!-- Tail bows -->
+        <path d="M63 118 C58 116 55 120 60 122" stroke="#111" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <path d="M58 132 C53 130 50 134 55 136" stroke="#111" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <!-- Cross lines on kite -->
+        <line x1="12" y1="72" x2="128" y2="72" stroke="#f2f2f2" stroke-width="2"/>
+        <line x1="70" y1="8" x2="70" y2="102" stroke="#f2f2f2" stroke-width="2"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="42" height="48" viewBox="0 0 140 160" fill="none">
+            <path d="M70 8 L128 72 L70 102 L12 72 Z" fill="#111"/>
+            <path d="M70 102 C68 116 74 124 66 138 C62 145 56 148 52 152" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M63 118 C58 116 55 120 60 122" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+            <path d="M58 132 C53 130 50 134 55 136" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+            <line x1="12" y1="72" x2="128" y2="72" stroke="#fff" stroke-width="2"/>
+            <line x1="70" y1="8" x2="70" y2="102" stroke="#fff" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="42" height="48" viewBox="0 0 140 160" fill="none">
+            <path d="M70 8 L128 72 L70 102 L12 72 Z" fill="#fff"/>
+            <path d="M70 102 C68 116 74 124 66 138 C62 145 56 148 52 152" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M63 118 C58 116 55 120 60 122" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+            <path d="M58 132 C53 130 50 134 55 136" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+            <line x1="12" y1="72" x2="128" y2="72" stroke="#111" stroke-width="2"/>
+            <line x1="70" y1="8" x2="70" y2="102" stroke="#111" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Kite</p>
+      <p class="card-desc">Wind-powered, weightless, going wherever the breeze takes it. Clean geometric diamond — nobody in tech uses this.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: PAPER BOAT -->
+  <div class="card">
+    <span class="concept-label">Concept 02</span>
+    <div class="icon-stage">
+      <svg width="160" height="140" viewBox="0 0 160 140" fill="none">
+        <!-- Hull: trapezoid bottom -->
+        <path d="M20 80 L40 112 L120 112 L140 80 Z" fill="#111"/>
+        <!-- Sail left: tall triangle -->
+        <path d="M78 80 L78 18 L30 80 Z" fill="#111"/>
+        <!-- Sail right: smaller triangle -->
+        <path d="M82 80 L82 34 L128 80 Z" fill="#111"/>
+        <!-- Waterline reflection: thin arc -->
+        <path d="M10 118 C50 128 110 128 150 118" stroke="#111" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.25"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="48" height="42" viewBox="0 0 160 140" fill="none">
+            <path d="M20 80 L40 112 L120 112 L140 80 Z" fill="#111"/>
+            <path d="M78 80 L78 18 L30 80 Z" fill="#111"/>
+            <path d="M82 80 L82 34 L128 80 Z" fill="#111"/>
+            <path d="M10 118 C50 128 110 128 150 118" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.2"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="48" height="42" viewBox="0 0 160 140" fill="none">
+            <path d="M20 80 L40 112 L120 112 L140 80 Z" fill="#fff"/>
+            <path d="M78 80 L78 18 L30 80 Z" fill="#fff"/>
+            <path d="M82 80 L82 34 L128 80 Z" fill="#fff"/>
+            <path d="M10 118 C50 128 110 128 150 118" stroke="#fff" stroke-width="3.5" stroke-linecap="round" fill="none" opacity="0.25"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Paper Boat</p>
+      <p class="card-desc">Childhood wonder, adventure, setting off into the unknown. Origami simplicity — instantly readable at any size.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: DISPERSING LINES (wind) -->
+  <div class="card">
+    <span class="concept-label">Concept 03</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Three lines spreading from a point on the left, curving outward -->
+        <!-- Top line: curves up and right -->
+        <path d="M24 80 C50 80 70 48 136 28" stroke="#111" stroke-width="7" stroke-linecap="round" fill="none"/>
+        <!-- Middle line: goes straight right, slight curve -->
+        <path d="M24 80 C60 80 90 78 140 80" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- Bottom line: curves down and right -->
+        <path d="M24 80 C50 80 70 112 136 132" stroke="#111" stroke-width="7" stroke-linecap="round" fill="none"/>
+        <!-- Origin dot -->
+        <circle cx="24" cy="80" r="8" fill="#111"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="48" height="48" viewBox="0 0 160 160" fill="none">
+            <path d="M24 80 C50 80 70 48 136 28" stroke="#111" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C60 80 90 78 140 80" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C50 80 70 112 136 132" stroke="#111" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <circle cx="24" cy="80" r="8" fill="#111"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="48" height="48" viewBox="0 0 160 160" fill="none">
+            <path d="M24 80 C50 80 70 48 136 28" stroke="#fff" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C60 80 90 78 140 80" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C50 80 70 112 136 132" stroke="#fff" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <circle cx="24" cy="80" r="8" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Dispersal</p>
+      <p class="card-desc">One point of origin, infinite directions. The AI unlocks possibilities. Suggests flow, wind, and expansion simultaneously.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 4: HORIZON + DOT (The Moment of Departure) -->
+  <div class="card">
+    <span class="concept-label">Concept 04</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Bold horizon arc at bottom -->
+        <path d="M16 108 C16 108 46 88 80 88 C114 88 144 108 144 108" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <!-- Rising sun/moon dot above horizon -->
+        <circle cx="80" cy="60" r="22" fill="#111"/>
+        <!-- Two subtle atmosphere lines -->
+        <path d="M8 120 C8 120 38 104 80 104 C122 104 152 120 152 120" stroke="#111" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.3"/>
+        <path d="M28 96 C28 96 50 84 80 84 C110 84 132 96 132 96" stroke="#111" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.15"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="48" height="48" viewBox="0 0 160 160" fill="none">
+            <path d="M16 108 C16 108 46 88 80 88 C114 88 144 108 144 108" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <circle cx="80" cy="60" r="22" fill="#111"/>
+            <path d="M8 120 C8 120 38 104 80 104 C122 104 152 120 152 120" stroke="#111" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.3"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="48" height="48" viewBox="0 0 160 160" fill="none">
+            <path d="M16 108 C16 108 46 88 80 88 C114 88 144 108 144 108" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <circle cx="80" cy="60" r="22" fill="#fff"/>
+            <path d="M8 120 C8 120 38 104 80 104 C122 104 152 120 152 120" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.4"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Horizon</p>
+      <p class="card-desc">A destination in the distance, always ahead. The dot rising above the curve — calm, open, full of possibility.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

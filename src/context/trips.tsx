@@ -2,10 +2,8 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, Re
 import {
   loadTripsSafe,
   saveTrips,
-  loadChangeHistorySafe,
-  saveChangeHistory,
 } from '@/services/storage';
-import { createTripRecord, findUndoableChange } from '@/services/trip-helpers';
+import { createTripRecord } from '@/services/trip-helpers';
 import { generateId } from '@/services/itinerary-engine';
 import { generateActivityId, normalizeTimeTo24 } from '@/services/ai-utils';
 import { useAuth } from '@/context/auth';
@@ -29,6 +27,11 @@ export interface Reservation {
   notes?: string;
   fixed?: boolean;
   cancelled?: boolean;
+  checkOutDate?: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  roomType?: string;
+  amenities?: string[];
 }
 
 export interface Activity {
@@ -42,7 +45,6 @@ export interface Activity {
   requested?: boolean; // from board/inbox — AI must include, can freely place
   category?: string;
   description?: string;
-  duration?: number; // minutes
   cost?: 'free' | 'budget' | 'moderate' | 'premium';
   placeId?: string;       // Google Place ID
   address?: string;       // formattedAddress from Google Places
@@ -56,17 +58,17 @@ export interface Activity {
   bookingStatus?: 'booked' | 'pending'; // booking state — undefined = not yet booked
 }
 
+/** @deprecated ChangeRecord functionality has been removed. Kept as a stub for downstream imports. */
 export interface ChangeRecord {
   id: string;
   tripId: string;
   description: string;
   timestamp: string;
   previousActivities: Activity[];
-  appliedActivities?: Activity[]; // deep copy of state AFTER; undefined = legacy (non-undoable)
+  appliedActivities?: Activity[];
   previousReservations?: Reservation[];
   appliedReservations?: Reservation[];
   undone?: boolean;
-  /** Name of the member who made this change (local attribution) */
   changedBy?: string;
 }
 
@@ -82,7 +84,7 @@ export interface Trip {
   notes: string;
   emoji: string;
   activities: Activity[];
-  budget?: 'budget' | 'moderate' | 'premium';
+  budget?: '$' | '$$' | '$$$' | '$$$$';
   pace?: 'relaxed' | 'moderate' | 'active';
   interests?: string[];
   travelWith?: 'solo' | 'partner' | 'family' | 'friends' | 'group';
@@ -123,8 +125,8 @@ export interface BudgetItem {
 
 export interface Invitation {
   id: string;
-  name: string;
-  contact: string; // email or phone
+  name?: string;
+  contact?: string; // email or phone
   status: 'pending' | 'accepted' | 'declined';
   sentAt: string;
   role?: 'member' | 'viewer'; // role granted on acceptance
@@ -156,14 +158,16 @@ function generateInviteCode(): string {
   return `TRV-${code}`;
 }
 
+// Module-level store for last-viewed trip — read by chat tab without needing re-renders
+let _lastViewedTripId: string | undefined;
+export function setLastViewedTripId(id: string) { _lastViewedTripId = id; }
+export function getLastViewedTripId() { return _lastViewedTripId; }
+
 interface TripsContextType {
   trips: Trip[];
   loaded: boolean;
-  changeHistory: ChangeRecord[];
   /** True only when the trip data itself failed to load. Saving is disabled. */
   tripsLoadError: boolean;
-  /** True only when change-history failed to load. Does NOT block trip saving. */
-  historyLoadError: boolean;
   /** Re-attempt loading trip data after a previous failure. */
   retryTripsLoad: () => void;
   addTrip: (trip: Omit<Trip, 'id' | 'activities'>) => string;
@@ -180,13 +184,11 @@ interface TripsContextType {
   reorderActivities: (tripId: string, day: number, orderedIds: string[]) => void;
   replaceActivity: (tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>, skipLockCheck?: boolean) => boolean;
   setTripActivities: (tripId: string, activities: Activity[], changeDescription?: string, bypassLockProtection?: boolean) => void;
-  undoChange: (tripId: string) => void;
-  getUndoableChange: (tripId: string) => ChangeRecord | undefined;
-  getTripChanges: (tripId: string) => ChangeRecord[];
   updateTripPrepItems: (tripId: string, items: PrepItem[]) => void;
   updateTripBudget: (tripId: string, budgetTotal: number) => void;
   updateTripExpenses: (tripId: string, expenses: BudgetItem[]) => void;
   addReservation: (tripId: string, res: Omit<Reservation, 'id' | 'tripId'>) => void;
+  attachReservation: (tripId: string, activityId: string, res: Omit<Reservation, 'id' | 'tripId'>) => void;
   updateReservation: (tripId: string, res: Reservation) => void;
   removeReservation: (tripId: string, resId: string) => void;
   addInvitation: (tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>) => void;
@@ -204,25 +206,17 @@ const TripsContext = createContext<TripsContextType | null>(null);
 
 export function TripsProvider({ children }: { children: ReactNode }) {
   const [trips, setTrips] = useState<Trip[]>(EMPTY_TRIPS);
-  const [changeHistory, setChangeHistory] = useState<ChangeRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
-  // Separate failure flags: history failure must NOT block trip saves.
   const [tripsLoadError, setTripsLoadError] = useState(false);
-  const [historyLoadError, setHistoryLoadError] = useState(false);
   const { user } = useAuth();
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tripsRef = useRef<Trip[]>(EMPTY_TRIPS);
   useEffect(() => { tripsRef.current = trips; }, [trips]);
 
   useEffect(() => {
-    Promise.all([
-      loadTripsSafe<Trip[]>(EMPTY_TRIPS),
-      loadChangeHistorySafe<ChangeRecord[]>([]),
-    ]).then(([tripsResult, historyResult]) => {
+    loadTripsSafe<Trip[]>(EMPTY_TRIPS).then((tripsResult) => {
       if (!tripsResult.ok) setTripsLoadError(true);
-      if (!historyResult.ok) setHistoryLoadError(true);
       setTrips(tripsResult.data);
-      setChangeHistory(historyResult.data);
       setLoaded(true);
     });
   }, []);
@@ -261,13 +255,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     };
   }, [trips, loaded, user?.id, tripsLoadError]);
 
-  // History save is gated only on its OWN load result.
-  useEffect(() => {
-    if (loaded && !historyLoadError) {
-      saveChangeHistory(changeHistory);
-    }
-  }, [changeHistory, loaded, historyLoadError]);
-
   function retryTripsLoad() {
     loadTripsSafe<Trip[]>(EMPTY_TRIPS).then((result) => {
       if (result.ok) {
@@ -276,31 +263,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
       }
       // If still failing, keep tripsLoadError=true; don't touch saved state.
     });
-  }
-
-  function recordChange(
-    tripId: string,
-    description: string,
-    previousActivities: Activity[],
-    appliedActivities: Activity[],
-    previousReservations?: Reservation[],
-    appliedReservations?: Reservation[],
-  ) {
-    // Attribution: find the owner's name from the trip's member list
-    const trip = trips.find((t) => t.id === tripId);
-    const owner = (trip?.members ?? []).find((m) => m.role === 'owner');
-    const record: ChangeRecord = {
-      id: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
-      tripId,
-      description,
-      timestamp: new Date().toISOString(),
-      previousActivities: JSON.parse(JSON.stringify(previousActivities)),
-      appliedActivities: JSON.parse(JSON.stringify(appliedActivities)),
-      previousReservations: previousReservations ? JSON.parse(JSON.stringify(previousReservations)) : undefined,
-      appliedReservations: appliedReservations ? JSON.parse(JSON.stringify(appliedReservations)) : undefined,
-      changedBy: owner?.name ?? 'You',
-    };
-    setChangeHistory((prev) => [record, ...prev].slice(0, 50)); // keep last 50
   }
 
   function addTrip(trip: Omit<Trip, 'id' | 'activities'>): string {
@@ -375,7 +337,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
 
   function deleteTrip(id: string) {
     setTrips((prev) => prev.filter((t) => t.id !== id));
-    setChangeHistory((prev) => prev.filter((c) => c.tripId !== id));
     if (user?.id) deleteRemoteTrip(id);
   }
 
@@ -384,8 +345,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!trip) return false;
 
     const newAct: Activity = { ...activity, id: generateActivityId(), time: normalizeTimeTo24(activity.time) };
-    const newActivities = [...trip.activities, newAct];
-    recordChange(tripId, `Added "${activity.title}"`, trip.activities, newActivities);
 
     setTrips((prev) =>
       prev.map((t) => {
@@ -412,10 +371,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!skipLockCheck && isLocked(target) && !('locked' in updates)) return false;
 
     const safeUpdates = updates.time ? { ...updates, time: normalizeTimeTo24(updates.time) } : updates;
-    const newActivities = trip.activities.map((a) =>
-      a.id === activityId ? { ...a, ...safeUpdates } : a
-    );
-    recordChange(tripId, `Updated "${target.title}"`, trip.activities, newActivities);
 
     setTrips((prev) =>
       prev.map((t) => {
@@ -439,9 +394,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!target) return false;
     if (!skipLockCheck && isLocked(target)) return false;
 
-    const newActivities = trip.activities.filter((a) => a.id !== activityId);
-    recordChange(tripId, `Removed "${target.title}"`, trip.activities, newActivities);
-
     setTrips((prev) =>
       prev.map((t) => {
         if (t.id !== tripId) return t;
@@ -463,10 +415,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!skipLockCheck && isLocked(target)) return false;
 
     const safeTime = normalizeTimeTo24(newTime);
-    const newActivities = trip.activities.map((a) =>
-      a.id === activityId ? { ...a, day: newDay, time: safeTime } : a
-    );
-    recordChange(tripId, `Moved "${target.title}" to Day ${newDay}`, trip.activities, newActivities);
 
     setTrips((prev) =>
       prev.map((t) => {
@@ -535,10 +483,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (!skipLockCheck && isLocked(target)) return false;
 
     const newId = generateActivityId();
-    const newActivities = trip.activities.map((a) =>
-      a.id === oldActivityId ? { ...newActivity, id: newId } : a
-    );
-    recordChange(tripId, `Replaced "${target.title}" with "${newActivity.title}"`, trip.activities, newActivities);
 
     setTrips((prev) =>
       prev.map((t) => {
@@ -577,9 +521,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-    if (changeDescription) {
-      recordChange(tripId, changeDescription, trip.activities, merged);
-    }
     setTrips((prev) =>
       prev.map((t) => {
         if (t.id !== tripId) return t;
@@ -590,54 +531,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         return updated;
       })
     );
-  }
-
-  function undoChange(tripId: string) {
-    const lastChange = findUndoableChange(changeHistory, tripId);
-    if (!lastChange || !lastChange.appliedActivities) return;
-    const trip = trips.find((t) => t.id === tripId);
-    if (!trip) return;
-    // Only undo if current state still matches the applied snapshot
-    const normalize = (acts: Activity[]) =>
-      JSON.stringify([...acts].sort((a, b) => a.id.localeCompare(b.id)));
-    if (normalize(trip.activities) !== normalize(lastChange.appliedActivities)) return;
-    // If this change also snapshotted reservations, verify those match too
-    if (lastChange.appliedReservations) {
-      const normalizeRes = (res: Reservation[]) =>
-        JSON.stringify([...res].sort((a, b) => a.id.localeCompare(b.id)));
-      if (normalizeRes(trip.reservations ?? []) !== normalizeRes(lastChange.appliedReservations)) return;
-    }
-    setTrips((prev) =>
-      prev.map((t) => {
-        if (t.id !== tripId) return t;
-        const restored: Partial<Trip> = {
-          activities: JSON.parse(JSON.stringify(lastChange.previousActivities)),
-          itineraryRevision: (t.itineraryRevision ?? 0) + 1,
-        };
-        if (lastChange.previousReservations) {
-          restored.reservations = JSON.parse(JSON.stringify(lastChange.previousReservations));
-        }
-        return { ...t, ...restored };
-      })
-    );
-    setChangeHistory((prev) =>
-      prev.map((c) => (c.id === lastChange.id ? { ...c, undone: true } : c))
-    );
-  }
-
-  function getUndoableChange(tripId: string) {
-    const record = findUndoableChange(changeHistory, tripId);
-    if (!record || !record.appliedActivities) return undefined; // legacy = non-undoable
-    const trip = trips.find((t) => t.id === tripId);
-    if (!trip) return undefined;
-    const normalize = (acts: Activity[]) =>
-      JSON.stringify([...acts].sort((a, b) => a.id.localeCompare(b.id)));
-    if (normalize(trip.activities) !== normalize(record.appliedActivities)) return undefined;
-    return record;
-  }
-
-  function getTripChanges(tripId: string) {
-    return changeHistory.filter((c) => c.tripId === tripId);
   }
 
   function updateTripPrepItems(tripId: string, items: PrepItem[]) {
@@ -665,25 +558,63 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     const prevRes = trip.reservations ?? [];
     const newResArr = [...prevRes, newRes];
 
-    // Auto-create a corresponding fixed activity linked to the reservation
     const activityType: Activity['type'] =
       res.type === 'restaurant' ? 'food' :
       res.type === 'hotel' ? 'hotel' :
       res.type === 'flight' ? 'flight' :
       'activity';
-    const newActivity: Activity = {
-      id: generateId(),
-      title: res.title,
-      day: res.day ?? 1,
-      time: res.time ? normalizeTimeTo24(res.time) : '12:00',
-      type: activityType,
-      fixed: true,
-      locked: true,
-      reservationId: newRes.id,
-    };
-    const newActivities = [...trip.activities, newActivity];
 
-    recordChange(tripId, `Added reservation "${res.title}"`, trip.activities, newActivities, prevRes, newResArr);
+    // Auto-link: check for an existing unbooked activity with a matching name
+    const nameLC = res.title.toLowerCase();
+    const match = trip.activities.find((a) =>
+      a.type === activityType && !a.reservationId &&
+      (a.title.toLowerCase().includes(nameLC) || nameLC.includes(a.title.toLowerCase()))
+    );
+
+    let newActivities: Activity[];
+    if (match) {
+      // Link reservation to existing activity
+      newActivities = trip.activities.map((a) =>
+        a.id === match.id
+          ? { ...a, reservationId: newRes.id, bookingStatus: 'booked' as const }
+          : a
+      );
+    } else {
+      // No match — create a new activity linked to the reservation
+      const newActivity: Activity = {
+        id: generateId(),
+        title: res.title,
+        day: res.day ?? 1,
+        time: res.time ? normalizeTimeTo24(res.time) : '12:00',
+        type: activityType,
+        fixed: true,
+        locked: true,
+        reservationId: newRes.id,
+      };
+      newActivities = [...trip.activities, newActivity];
+    }
+
+    setTrips((prev) =>
+      prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
+    );
+  }
+
+  function attachReservation(tripId: string, activityId: string, res: Omit<Reservation, 'id' | 'tripId'>) {
+    const trip = trips.find((t) => t.id === tripId);
+    if (!trip) return;
+    const activity = trip.activities.find((a) => a.id === activityId);
+    if (!activity) return;
+
+    const newRes: Reservation = { ...res, id: generateId(), tripId };
+    const prevRes = trip.reservations ?? [];
+    const newResArr = [...prevRes, newRes];
+
+    // Link the activity to the new reservation and mark as booked
+    const newActivities = trip.activities.map((a) => {
+      if (a.id !== activityId) return a;
+      return { ...a, reservationId: newRes.id, bookingStatus: 'booked' as const };
+    });
+
     setTrips((prev) =>
       prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
@@ -704,7 +635,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         time: res.time ? normalizeTimeTo24(res.time) : a.time,
       };
     });
-    recordChange(tripId, `Updated reservation "${res.title}"`, trip.activities, newActivities, prevRes, newResArr);
     setTrips((prev) =>
       prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
@@ -714,7 +644,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     const trip = trips.find((t) => t.id === tripId);
     if (!trip) return;
     const prevRes = trip.reservations ?? [];
-    const removed = prevRes.find((r) => r.id === resId);
     const newResArr = prevRes.filter((r) => r.id !== resId);
 
     // Remove the linked activity that was created for this reservation.
@@ -723,7 +652,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     // Activities that were user-edited (no reservationId) are left untouched.
     const newActivities = trip.activities.filter((a) => a.reservationId !== resId);
 
-    recordChange(tripId, `Removed reservation "${removed?.title ?? resId}"`, trip.activities, newActivities, prevRes, newResArr);
     setTrips((prev) =>
       prev.map((t) => (t.id === tripId ? { ...t, activities: newActivities, reservations: newResArr } : t))
     );
@@ -832,9 +760,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
 
   function resetAll() {
     setTrips(EMPTY_TRIPS);
-    setChangeHistory([]);
     setTripsLoadError(false);
-    setHistoryLoadError(false);
   }
 
   return (
@@ -842,9 +768,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
       value={{
         trips,
         loaded,
-        changeHistory,
         tripsLoadError,
-        historyLoadError,
         retryTripsLoad,
         addTrip,
         addTripWithActivities,
@@ -860,13 +784,11 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         reorderActivities,
         replaceActivity,
         setTripActivities,
-        undoChange,
-        getUndoableChange,
-        getTripChanges,
         updateTripPrepItems,
         updateTripBudget,
         updateTripExpenses,
         addReservation,
+        attachReservation,
         updateReservation,
         removeReservation,
         addInvitation,

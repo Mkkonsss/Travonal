@@ -8,6 +8,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OfflineBanner } from '@/components/offline-banner';
 import { Toast } from '@/components/toast';
 import { AppPulseEvaluator } from '@/components/app-pulse-evaluator';
+import { MemoryTracker } from '@/components/memory-tracker';
 import { AuthProvider, useAuth } from '@/context/auth';
 
 import { FabProvider } from '@/context/fab';
@@ -63,7 +64,9 @@ function RootLayoutNav() {
     return onNotificationTap((data) => {
       const tripId = data.tripId as string | undefined;
       if (tripId) {
-        router.push(`/trip/${tripId}` as any);
+        const params: Record<string, string> = {};
+        if (data.openPulse === 'true') params.openPulse = '1';
+        router.push({ pathname: `/trip/${tripId}` as any, params });
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,6 +104,7 @@ export default function RootLayout() {
                       <InboxProvider>
                         <BoardsProvider>
                           <AppPulseEvaluator />
+                          <MemoryTracker />
                           <RootLayoutNav />
                           <OfflineBanner />
                           <Toast />

@@ -21,6 +21,7 @@ module.exports = {
     '^expo-file-system$': '<rootDir>/src/__mocks__/expo-file-system.js',
     '^expo-video$': '<rootDir>/src/__mocks__/expo-video.js',
     '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.js',
+    '^expo-symbols$': '<rootDir>/src/__mocks__/expo-symbols.js',
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
   transform: {

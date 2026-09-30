@@ -21,7 +21,6 @@ function placeToActivity(place: PlaceOption, day: number, time: string): Activit
     type: place.type,
     day,
     time,
-    duration: place.duration,
     category: place.category,
     cost: place.cost,
     description: place.description,
@@ -196,8 +195,8 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
     // Skip past fixed activities
     for (const fixed of dayFixed.sort((a, b) => a.time.localeCompare(b.time))) {
       const fixedStart = parseInt(fixed.time.split(':')[0]) * 60 + parseInt(fixed.time.split(':')[1]);
-      if (fixedStart + (fixed.duration ?? 60) > currentMinutes) {
-        currentMinutes = fixedStart + (fixed.duration ?? 60) + 30;
+      if (fixedStart + 60 > currentMinutes) {
+        currentMinutes = fixedStart + 60 + 30;
       }
     }
 
@@ -250,8 +249,8 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
         const unusedActivity = pickUnused(activityFallbacks);
         const unusedFood = pickUnused(foodFallbacks);
         const fallback = wantFood
-          ? { type: 'food' as Activity['type'], title: unusedFood, duration: 45, category: 'food' }
-          : { type: 'activity' as Activity['type'], title: unusedActivity, duration: 60, category: 'culture' };
+          ? { type: 'food' as Activity['type'], title: unusedFood, category: 'food' }
+          : { type: 'activity' as Activity['type'], title: unusedActivity, category: 'culture' };
         const uniqueTitle = fallback.title;
         if (!usedTitles.has(uniqueTitle)) {
           fallback.title = uniqueTitle;
@@ -261,14 +260,13 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
             type: fallback.type,
             day,
             time: minutesToTime(currentMinutes),
-            duration: fallback.duration,
             category: fallback.category,
             cost: 'budget',
           };
           activities.push(fallbackActivity);
           usedTitles.add(fallback.title);
           if (fallback.type === 'food') mealsScheduled.add(getMealSlot(currentMinutes) ?? 'lunch');
-          currentMinutes += fallback.duration + 30;
+          currentMinutes += 60 + 30;
           added++;
         } else {
           // Even the fallback title is used — skip to avoid infinite loop
@@ -292,7 +290,7 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
       const activity = placeToActivity(place, day, time);
       activities.push(activity);
       usedTitles.add(place.title);
-      currentMinutes += (place.duration ?? 60) + activityBuffer;
+      currentMinutes += 60 + activityBuffer;
       added++;
     }
 
@@ -325,7 +323,6 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
           type: 'food',
           day,
           time: '12:30',
-          duration: 60,
           category: 'food',
           cost: 'budget',
         };
@@ -353,7 +350,6 @@ export function generateItinerary(options: GenerationOptions): Activity[] {
           type: 'activity',
           day,
           time: '10:00',
-          duration: 60,
           category: 'culture',
           cost: 'free',
         };
@@ -412,7 +408,7 @@ export function validateAndRepairItinerary(
     const acts = dayActivities(day).filter((a) => !excludeId || a.id !== excludeId);
     // Build list of occupied intervals
     const occupied = acts
-      .map((a) => ({ start: timeToMinutes(a.time), end: timeToMinutes(a.time) + (a.duration ?? 60) }))
+      .map((a) => ({ start: timeToMinutes(a.time), end: timeToMinutes(a.time) + 60 }))
       .sort((a, b) => a.start - b.start);
 
     let candidate = earliest;
@@ -470,7 +466,7 @@ export function validateAndRepairItinerary(
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1];
       const cur = sorted[i];
-      const prevEnd = timeToMinutes(prev.time) + (prev.duration ?? 60);
+      const prevEnd = timeToMinutes(prev.time) + 60;
       const curStart = timeToMinutes(cur.time);
 
       if (curStart < prevEnd) {
@@ -486,7 +482,7 @@ export function validateAndRepairItinerary(
           // Current is locked, previous is flexible — move previous earlier or to a free slot
           const prevAct = result.find((a) => a.id === prev.id);
           if (prevAct) {
-            const neededDuration = prev.duration ?? 60;
+            const neededDuration = 60;
             const freeSlot = findFreeSlot(day, neededDuration, 8 * 60, curStart - neededDuration, prev.id);
             if (freeSlot != null) {
               prevAct.time = safeTime(freeSlot);
@@ -512,7 +508,7 @@ export function validateAndRepairItinerary(
       const available = pool.filter((p) => !usedTitles.has(p.title) && p.type === 'activity');
       if (available.length > 0) {
         const place = available[0];
-        const duration = place.duration ?? 60;
+        const duration = 60;
         const slot = findFreeSlot(day, duration, 9 * 60, 21 * 60);
         if (slot != null) {
           result.push(placeToActivity(place, day, safeTime(slot)));
@@ -543,7 +539,6 @@ export function validateAndRepairItinerary(
               type: 'activity',
               day,
               time: safeTime(slot),
-              duration: 60,
               category: 'culture',
               cost: 'free',
             });
@@ -576,7 +571,7 @@ export function validateAndRepairItinerary(
       );
       if (foodPlaces.length > 0) {
         const place = foodPlaces[0];
-        const duration = place.duration ?? 60;
+        const duration = 60;
         // Try to place within lunch window first, then any available slot
         let slot = findFreeSlot(day, duration, MEAL_WINDOWS.lunch.start, MEAL_WINDOWS.lunch.end);
         if (slot == null) slot = findFreeSlot(day, duration, MEAL_WINDOWS.dinner.start, MEAL_WINDOWS.dinner.end);
@@ -615,7 +610,6 @@ export function validateAndRepairItinerary(
               type: 'food',
               day,
               time: safeTime(slot),
-              duration,
               category: 'food',
               cost: 'budget',
             });
@@ -647,7 +641,7 @@ export function validateAndRepairItinerary(
       for (let i = 1; i < sorted.length; i++) {
         const prev = sorted[i - 1];
         const cur = sorted[i];
-        const prevEnd = timeToMinutes(prev.time) + (prev.duration ?? 60);
+        const prevEnd = timeToMinutes(prev.time) + 60;
         const curStart = timeToMinutes(cur.time);
 
         if (curStart < prevEnd) {
@@ -663,7 +657,7 @@ export function validateAndRepairItinerary(
           if (target.id === cur.id) {
             // Push current forward
             const newStart = clampMinutes(prevEnd + 15);
-            if (newStart + (act.duration ?? 60) > 23 * 60 + 59) {
+            if (newStart + 60 > 23 * 60 + 59) {
               warnings.push({
                 type: 'time_overflow',
                 message: `Moving "${act.title}" to resolve overlap would exceed 23:59 on day ${day}`,
@@ -675,7 +669,7 @@ export function validateAndRepairItinerary(
             }
           } else {
             // Move previous earlier
-            const neededDuration = act.duration ?? 60;
+            const neededDuration = 60;
             const freeSlot = findFreeSlot(day, neededDuration, 8 * 60, curStart - neededDuration, act.id);
             if (freeSlot != null) {
               act.time = safeTime(freeSlot);
@@ -711,14 +705,15 @@ export function validateAndRepairItinerary(
  * Simulated generation steps for the progress screen.
  */
 export const GENERATION_STEPS = [
-  { label: 'Exploring your destination', duration: 2500 },
-  { label: 'Finding the best spots', duration: 2200 },
-  { label: 'Planning your mornings', duration: 2000 },
-  { label: 'Picking restaurants & cafes', duration: 2200 },
-  { label: 'Mapping out your route', duration: 2000 },
-  { label: 'Optimizing your schedule', duration: 1800 },
-  { label: 'Balancing your pace', duration: 1500 },
-  { label: 'Adding finishing touches', duration: 1800 },
+  { label: 'Exploring your destination', duration: 5000 },
+  { label: 'Finding the best spots', duration: 6000 },
+  { label: 'Researching local restaurants & cafes', duration: 6000 },
+  { label: 'Planning your daily route', duration: 6000 },
+  { label: 'Scheduling activities & experiences', duration: 7000 },
+  { label: 'Balancing your pace & schedule', duration: 6000 },
+  { label: 'Personalizing for your travel style', duration: 7000 },
+  { label: 'Reviewing your full itinerary', duration: 6000 },
+  { label: 'Adding finishing touches', duration: 7000 },
 ] as const;
 
 /**
@@ -778,7 +773,7 @@ export function generateFixMyDayProblems(trip: Trip, day: number): {
     const current = sorted[i];
     const next = sorted[i + 1];
     const currentEnd = parseInt(current.time.split(':')[0]) * 60 +
-      parseInt(current.time.split(':')[1]) + (current.duration ?? 60);
+      parseInt(current.time.split(':')[1]) + 60;
     const nextStart = parseInt(next.time.split(':')[0]) * 60 + parseInt(next.time.split(':')[1]);
     if (currentEnd > nextStart) {
       problems.push({
@@ -802,7 +797,6 @@ export function simulateImportIdentification(source: string): {
   destination: string;
   category: string;
   cost: 'free' | 'budget' | 'moderate' | 'premium';
-  duration: number;
   description: string;
   tags: string[];
   type: 'activity' | 'food';
@@ -815,7 +809,6 @@ export function simulateImportIdentification(source: string): {
       destination: 'Unknown',
       category: 'food',
       cost: 'moderate',
-      duration: 90,
       description: 'A charming local spot with great reviews',
       tags: ['Food & Dining'],
       type: 'food',
@@ -827,7 +820,6 @@ export function simulateImportIdentification(source: string): {
       destination: 'Unknown',
       category: 'art',
       cost: 'moderate',
-      duration: 120,
       description: 'A must-visit collection of modern works',
       tags: ['Art & Museums', 'Culture'],
       type: 'activity',
@@ -839,7 +831,6 @@ export function simulateImportIdentification(source: string): {
       destination: 'Unknown',
       category: 'nature',
       cost: 'free',
-      duration: 180,
       description: 'A beautiful trail with panoramic views',
       tags: ['Nature', 'Adventure'],
       type: 'activity',
@@ -851,7 +842,6 @@ export function simulateImportIdentification(source: string): {
       destination: 'Unknown',
       category: 'nature',
       cost: 'free',
-      duration: 60,
       description: 'The sunset spot everyone is sharing right now',
       tags: ['Photography', 'Nature'],
       type: 'activity',
@@ -863,7 +853,6 @@ export function simulateImportIdentification(source: string): {
     destination: 'Unknown',
     category: 'culture',
     cost: 'budget',
-    duration: 90,
     description: 'A place worth visiting based on what you shared',
     tags: ['Culture'],
     type: 'activity',

@@ -18,7 +18,7 @@ import { Image as ExpoImage } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getPlacesNearbyAI, getPlacePhotoAI } from '@/services/ai';
 
-const STORAGE_KEY = '@travonal_destination_photos_v1';
+const STORAGE_KEY = '@toveli_destination_photos_v2';
 
 // In-memory cache — shared across all hook instances for the session
 const photoCache = new Map<string, string | null>();
@@ -67,7 +67,7 @@ export function useDestinationPhoto(destination: string): string | null {
       }
 
       try {
-        const { places } = await getPlacesNearbyAI({ keyword: destination + ' landmark' });
+        const { places } = await getPlacesNearbyAI({ keyword: destination });
         if (cancelled) return;
 
         // Walk results to find first usable photo name (New Places API v1 field)

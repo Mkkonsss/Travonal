@@ -24,6 +24,7 @@ import { prefetchPhotosFromCache, getCachedPhotoUrl } from '@/services/free-phot
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
 import { importPlaceAI } from '@/services/ai';
 import { useGate } from '@/hooks/use-gate';
+import { FontAwesome5 } from '@expo/vector-icons';
 
 const COLUMN_GAP = 10;
 
@@ -442,7 +443,7 @@ export default function BoardDetailScreen() {
 
   // Analyzing animation (for link/screenshot/text imports)
   const IMPORT_STEPS_MAP: Record<string, string[]> = {
-    link: ['Reading link', 'Extracting place info', 'Finding details'],
+    link: ['Reading post', 'Finding the place', 'Getting details'],
     screenshot: ['Analyzing image', 'Identifying place', 'Finding details'],
     text: ['Analyzing text', 'Identifying place', 'Finding details'],
   };
@@ -723,7 +724,7 @@ export default function BoardDetailScreen() {
     if (!gate.allowed) { gate.showUpgrade(); return; }
     const clip = await Clipboard.getStringAsync();
     const prefill = clip.trim().startsWith('http') ? clip.trim() : '';
-    Alert.prompt('Paste a link', 'Paste a URL to a place (Google Maps, Yelp, Booking.com, etc.)', [
+    Alert.prompt('Save a post', 'Paste a link from social media and AI finds the place', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Add',
@@ -738,7 +739,7 @@ export default function BoardDetailScreen() {
                 setRevealData(buildRevealItem(result, { source: val, sourceType: 'link' }));
                 Clipboard.setStringAsync('');
               } else {
-                Alert.alert('Could not identify place', result.notes || 'No place found from that link. Try pasting the place name directly using "Paste text" instead.');
+                Alert.alert('Could not identify place', result.notes || 'Couldn\'t find a place in that post. Try pasting the place name using "Paste text" instead.');
               }
             } catch (err: any) {
               console.error('[link import] error:', err);
@@ -933,7 +934,6 @@ export default function BoardDetailScreen() {
         day,
         time,
         type: actType,
-        duration: item.duration ?? (actType === 'food' ? 60 : 90),
         category: item.category,
         cost: item.cost,
         description: item.description,
@@ -1069,11 +1069,17 @@ export default function BoardDetailScreen() {
                 accessibilityRole="button"
               >
                 <View style={[styles.emptyOptionIcon, { backgroundColor: theme.primaryMuted }]}>
-                  <SymbolView name="link" size={20} tintColor={theme.primary} />
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 }}>
+                    <FontAwesome5 name="instagram" size={13} color="#E4405F" />
+                    <FontAwesome5 name="tiktok" size={13} color="#000000" />
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 4 }}>
+                    <FontAwesome5 name="youtube" size={13} color="#FF0000" />
+                  </View>
                 </View>
                 <View style={styles.emptyOptionText}>
-                  <ThemedText style={styles.emptyOptionTitle}>Paste a link</ThemedText>
-                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>Add a place from any URL</ThemedText>
+                  <ThemedText style={styles.emptyOptionTitle}>Save a post</ThemedText>
+                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>Paste a link from social media and AI finds the place</ThemedText>
                 </View>
                 <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
               </Pressable>
@@ -1130,8 +1136,14 @@ export default function BoardDetailScreen() {
                 style={({ pressed }) => [styles.addBtn, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
                 accessibilityRole="button"
               >
-                <SymbolView name="link" size={16} tintColor={theme.text} />
-                <ThemedText style={styles.addBtnLabel}>Link</ThemedText>
+                <View style={{ alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', gap: 3 }}>
+                    <FontAwesome5 name="instagram" size={10} color="#E4405F" />
+                    <FontAwesome5 name="tiktok" size={10} color="#000000" />
+                  </View>
+                  <FontAwesome5 name="youtube" size={10} color="#FF0000" style={{ marginTop: 2 }} />
+                </View>
+                <ThemedText style={styles.addBtnLabel}>Post</ThemedText>
               </Pressable>
               <Pressable
                 onPress={() => handleAddScreenshot()}

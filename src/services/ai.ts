@@ -1,7 +1,7 @@
 /**
- * Travonal AI Service
+ * Tripseek AI Service
  *
- * Thin client that calls the Supabase Edge Function `ai-travonal`.
+ * Thin client that calls the Supabase Edge Function `ai-toveli`.
  * All trip/profile context is sent from the device — the edge function
  * is a stateless Claude proxy, keeping the Anthropic API key server-side.
  *
@@ -66,10 +66,16 @@ async function callEdgeFunction<T>(action: string, payload: unknown): Promise<T>
   if (!response.ok) {
     let errorMsg = 'AI request failed (HTTP ' + response.status + ')';
     try {
-      const errJson = await response.json();
-      if (errJson.error) errorMsg = errJson.error;
+      const rawText = await response.text();
+      try {
+        const errJson = JSON.parse(rawText);
+        if (errJson.error) errorMsg = errJson.error;
+      } catch {
+        // Include the raw body in the error for debugging
+        errorMsg += ': ' + rawText.substring(0, 200);
+      }
     } catch {
-      // Could not parse error body
+      // Could not read response body at all
     }
     throw new Error(errorMsg);
   }
@@ -90,12 +96,12 @@ export interface GenerateTripResult {
 export async function generateTripAI(params: {
   trip: Trip;
   profile: TravelProfile;
-  memory: { detail: string }[];
+  memory: { detail: string; type: string; category: string }[];
 }): Promise<GenerateTripResult> {
   return callEdgeFunction('generate_trip', params);
 }
 
-// ─── 2. Chat / Ask Travonal ───────────────────────────────────────────────────
+// ─── 2. Chat / Ask Tripseek ───────────────────────────────────────────────────
 
 export type TripAction =
   // Activity operations
@@ -137,7 +143,14 @@ export interface ChatPlace {
   lat?: number | null;
   lng?: number | null;
   types?: string[];
+  primaryTypeLabel?: string;
   photoRefs?: string[];
+}
+
+export interface ChatMemorySignal {
+  type: string;
+  category: string;
+  detail: string;
 }
 
 export interface ChatResult {
@@ -146,6 +159,7 @@ export interface ChatResult {
   places?: ChatPlace[];
   suggestions?: string[];
   context?: string;
+  memorySignals?: ChatMemorySignal[];
 }
 
 export async function chatAI(params: {
@@ -184,7 +198,7 @@ export interface EnhanceProfileResult {
 
 export async function enhanceProfileAI(params: {
   profile: TravelProfile;
-  memory: { detail: string }[];
+  memory: { detail: string; type: string; category: string }[];
 }): Promise<EnhanceProfileResult> {
   return callEdgeFunction('enhance_profile', params);
 }
@@ -220,25 +234,6 @@ export async function importPlaceAI(params: {
   mimeType?: string;
 }): Promise<ImportPlaceResult> {
   return callEdgeFunction('import_place', params);
-}
-
-// ─── 5b. Import Booking (place + booking details) ────────────────────────────
-
-export interface ImportBookingResult extends ImportPlaceResult {
-  confirmationNumber?: string;
-  bookingDate?: string;
-  checkoutDate?: string;
-  bookingTime?: string;
-  price?: number;
-  currency?: string;
-  reservationType?: string;
-}
-
-export async function importBookingAI(params: {
-  content: string;
-  contentType: 'url' | 'text';
-}): Promise<ImportBookingResult> {
-  return callEdgeFunction('import_booking', params);
 }
 
 // ─── 6. Explore Ranking ───────────────────────────────────────────────────────
@@ -388,7 +383,7 @@ export async function prepareFixAI(params: {
   trip: Trip;
   alert: { type: string; message: string; day?: number; activityId?: string };
   profile: TravelProfile;
-  memory?: { detail: string }[];
+  memory?: { detail: string; type: string; category: string }[];
 }): Promise<PrepareFixResult> {
   return callEdgeFunction('prepare_fix', params);
 }
@@ -403,7 +398,7 @@ export interface TripAnalysisCategory {
   summary: string;
   suggestions: {
     text: string;
-    actionCommand?: string; // TravonalCommand to run
+    actionCommand?: string; // ToveliCommand to run
     actionDay?: number;
   }[];
 }
@@ -464,30 +459,4 @@ export async function markBookingImportedAI(id: string): Promise<void> {
   return callEdgeFunction('mark_booking_imported', { id });
 }
 
-// ─── 17. Gmail Sync ────────────────────────────────────────────────────────
-
-/** Get Gmail OAuth authorization URL */
-export async function getGmailAuthUrlAI(): Promise<{ url: string }> {
-  return callEdgeFunction('gmail_auth_url', {});
-}
-
-/** Exchange Gmail OAuth code for tokens */
-export async function exchangeGmailCodeAI(code: string): Promise<void> {
-  return callEdgeFunction('gmail_exchange_code', { code });
-}
-
-/** Disconnect Gmail sync */
-export async function disconnectGmailAI(): Promise<void> {
-  return callEdgeFunction('gmail_disconnect', {});
-}
-
-/** Check Gmail connection status */
-export async function getGmailStatusAI(): Promise<{ connected: boolean; lastSync?: string }> {
-  return callEdgeFunction('gmail_status', {});
-}
-
-/** Trigger a Gmail sync to scan for new bookings */
-export async function syncGmailAI(): Promise<{ found: number }> {
-  return callEdgeFunction('gmail_sync', {});
-}
 

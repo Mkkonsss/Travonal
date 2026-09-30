@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,8 +27,6 @@ import { prefetchPhotosFromCache, getCachedPhotoUrl } from '@/services/free-phot
 
 import { formatDateRange } from '@/services/trip-helpers';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
-import { getDestinationNow } from '@/services/trip-status';
-import { compareByTime } from '@/services/itinerary-engine';
 
 // ---------- Helpers ----------
 
@@ -51,176 +49,6 @@ function daysUntil(dateStr: string) {
   return `In ${diff} days`;
 }
 
-// ---------- TodayCard (active trip) ----------
-
-function TodayCard({ trip }: { trip: Trip }) {
-  const router = useRouter();
-  const theme = useTheme();
-
-  const { dateStr: destDateStr, timeStr: nowTime } = getDestinationNow();
-
-  const [sy, sm, sd] = trip.startDate.split('-').map(Number);
-  const [ey, em, ed] = trip.endDate.split('-').map(Number);
-  const startUtc = Date.UTC(sy, sm - 1, sd);
-  const endUtc = Date.UTC(ey, em - 1, ed);
-  const totalDays = Math.round((endUtc - startUtc) / 86400000) + 1;
-
-  const [dy, dm, dd] = destDateStr.split('-').map(Number);
-  const todayUtcDest = Date.UTC(dy, dm - 1, dd);
-  const currentDay = Math.max(1, Math.round((todayUtcDest - startUtc) / 86400000) + 1);
-
-  const todayActivities = trip.activities
-    .filter((a) => a.day === currentDay)
-    .sort(compareByTime);
-
-  const completedCount = todayActivities.filter((a) => {
-    const endMin = (parseInt(a.time.split(':')[0]) * 60 + parseInt(a.time.split(':')[1])) + (a.duration ?? 60);
-    const nowMin = parseInt(nowTime.split(':')[0]) * 60 + parseInt(nowTime.split(':')[1]);
-    return endMin <= nowMin;
-  }).length;
-
-  const nextActivity = todayActivities.find((a) => a.time >= nowTime);
-  const fixedToday = todayActivities.find((a) => a.fixed);
-  const remainingCount = todayActivities.filter((a) => a.time >= nowTime).length;
-  const progressFraction = todayActivities.length > 0 ? completedCount / todayActivities.length : 0;
-
-  // Compute leave-by time (30 min buffer)
-  let leaveByLabel: string | null = null;
-  if (nextActivity && nextActivity.time > nowTime) {
-    const [h, m] = nextActivity.time.split(':').map(Number);
-    const totalMin = h * 60 + m - 30;
-    if (totalMin >= 0) {
-      const lh = Math.floor(totalMin / 60);
-      const lm = totalMin % 60;
-      const ampm = lh >= 12 ? 'PM' : 'AM';
-      const displayH = lh > 12 ? lh - 12 : lh === 0 ? 12 : lh;
-      leaveByLabel = `Leave by ${displayH}:${String(lm).padStart(2, '0')} ${ampm}`;
-    }
-  }
-
-  function formatTime(time: string) {
-    const [h, m] = time.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
-    return `${displayH}:${String(m).padStart(2, '0')} ${ampm}`;
-  }
-
-  return (
-    <Animated.View entering={FadeIn.duration(400)}>
-      <Pressable
-        onPress={() => router.push(`/trip/${trip.id}` as any)}
-        style={({ pressed }) => [
-          styles.todayCard,
-          {
-            borderColor: theme.live,
-            backgroundColor: theme.backgroundElement,
-            opacity: pressed ? 0.92 : 1,
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`Active trip: Day ${currentDay} of ${totalDays} in ${trip.destination}`}
-      >
-        <View style={styles.todayCardHeader}>
-          <View style={[styles.liveDot, { backgroundColor: theme.live }]} />
-          <ThemedText type="eyebrow" style={{ color: theme.live }}>
-            Live
-          </ThemedText>
-        </View>
-
-        <ThemedText type="headline">
-          Day {currentDay} of {totalDays} {'\u00B7'} {trip.title ?? trip.destination}
-        </ThemedText>
-
-        {/* Progress bar */}
-        {todayActivities.length > 0 && (
-          <View style={styles.progressRow}>
-            <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-              <View style={[styles.progressFill, { width: `${Math.round(progressFraction * 100)}%`, backgroundColor: theme.live }]} />
-            </View>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              {completedCount}/{todayActivities.length} done
-            </ThemedText>
-          </View>
-        )}
-
-        {nextActivity ? (
-          <View style={styles.todayInfo}>
-            <ThemedText style={{ color: theme.text }}>
-              Next: {formatTime(nextActivity.time)} {'\u2014'} {nextActivity.title}
-            </ThemedText>
-            {leaveByLabel && (
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {leaveByLabel}
-              </ThemedText>
-            )}
-            {remainingCount > 1 && (
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {remainingCount - 1} more {remainingCount - 1 === 1 ? 'activity' : 'activities'} today
-              </ThemedText>
-            )}
-          </View>
-        ) : todayActivities.length === 0 ? (
-          <ThemedText style={{ color: theme.textSecondary }}>
-            No activities planned today
-          </ThemedText>
-        ) : (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <ThemedText style={{ color: theme.textSecondary }}>
-              All done for today
-            </ThemedText>
-            <SymbolView name="checkmark.circle.fill" size={16} tintColor={theme.live} />
-          </View>
-        )}
-
-        {fixedToday && fixedToday !== nextActivity && (
-          <ThemedText type="smallBold" style={{ color: theme.primary }}>
-            Fixed: {fixedToday.title} at {formatTime(fixedToday.time)}
-          </ThemedText>
-        )}
-
-        <View style={styles.quickActionRow}>
-          <Pressable
-            onPress={() => {
-              if (currentDay > totalDays) {
-                Alert.alert('Trip ended', `This trip ended on ${trip.endDate}. You can still view it.`, [
-                  { text: 'View trip', onPress: () => router.push(`/trip/${trip.id}` as any) },
-                  { text: 'Cancel', style: 'cancel' },
-                ]);
-              } else {
-                router.push(`/trip/${trip.id}?day=${currentDay}` as any);
-              }
-            }}
-            style={[styles.todayButton, { backgroundColor: theme.primary }]}
-            accessibilityRole="button"
-            accessibilityLabel="View today's activities"
-          >
-            <ThemedText style={[styles.todayButtonText, { color: theme.primaryText }]}>View trip</ThemedText>
-          </Pressable>
-          {nextActivity && (nextActivity.address || (nextActivity.lat && nextActivity.lng)) && (
-            <Pressable
-              onPress={() => {
-                const query = nextActivity.address
-                  ? encodeURIComponent(nextActivity.address)
-                  : `${nextActivity.lat},${nextActivity.lng}`;
-                const url = Platform.select({
-                  ios: `maps:?q=${query}`,
-                  android: `geo:0,0?q=${query}`,
-                  default: `https://www.google.com/maps/search/?api=1&query=${query}`,
-                });
-                Linking.openURL(url!);
-              }}
-              style={[styles.quickActionChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Directions to ${nextActivity.title}`}
-            >
-              <ThemedText style={[styles.quickActionChipText, { color: theme.primary }]}>Directions</ThemedText>
-            </Pressable>
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-}
 
 // ---------- NextTripHero ----------
 
@@ -357,58 +185,13 @@ function TripCardCarousel({ trips: cardTrips, onDelete }: { trips: Trip[]; onDel
   );
 }
 
-function LiveTripCarousel({ trips: liveTrips }: { trips: Trip[] }) {
-  const theme = useTheme();
-  const { width } = useWindowDimensions();
-  const cardWidth = width - Spacing.four * 2;
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  if (liveTrips.length === 1) {
-    return <TodayCard trip={liveTrips[0]} />;
-  }
-
-  return (
-    <View style={styles.carouselContainer}>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        snapToInterval={cardWidth + 12}
-        contentContainerStyle={{ gap: 12 }}
-        onScroll={(e) => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / (cardWidth + 12));
-          setActiveIndex(idx);
-        }}
-        scrollEventThrottle={16}
-      >
-        {liveTrips.map((trip) => (
-          <View key={trip.id} style={{ width: cardWidth }}>
-            <TodayCard trip={trip} />
-          </View>
-        ))}
-      </ScrollView>
-      <View style={styles.carouselDots}>
-        {liveTrips.map((_, i) => (
-          <View
-            key={i}
-            style={[
-              styles.carouselDot,
-              { backgroundColor: i === activeIndex ? theme.live : theme.border },
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
 
 // ---------- Worth a visit nearby Inspiration ----------
 
 // ── Persistent caches (module-level, survive re-renders) ──────────────────────
 
-const NY_PLACES_KEY = '@travonal_near_you_places_v2';
-const NY_PHOTOS_KEY = '@travonal_near_you_photos_v1';
+const NY_PLACES_KEY = '@toveli_near_you_places_v2';
+const NY_PHOTOS_KEY = '@toveli_near_you_photos_v1';
 const NY_PLACES_TTL = 30 * 60 * 1000; // 30 min
 
 // Photo URL cache — loaded from AsyncStorage once, then kept in memory
@@ -919,31 +702,32 @@ export default function HomeScreen() {
       >
         {!hasTrips ? (
           <>
-            {/* Header — Bookings + Boards */}
+            {/* Header — Bookings | Logo | Boards */}
             <View style={styles.headerRow}>
               <Pressable
                 onPress={() => router.push('/bookings' as any)}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel="My bookings"
                 hitSlop={10}
               >
-                <BookingsIcon size={28} color={theme.textSecondary} />
+                <BookingsIcon size={28} color={theme.text} />
               </Pressable>
+              <Image
+                source={theme.background === '#FFFFFF'
+                  ? require('@/assets/images/logo-dark.png')
+                  : require('@/assets/images/logo-light.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
               <Pressable
                 onPress={() => router.push('/inbox' as any)}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel="Open boards"
                 hitSlop={10}
               >
-                <BoardsIcon size={24} color={theme.textSecondary} />
+                <BoardsIcon size={24} color={theme.text} />
               </Pressable>
             </View>
 
@@ -955,14 +739,11 @@ export default function HomeScreen() {
                 <View style={styles.ctaList}>
                   <Pressable
                     onPress={() => router.push('/add-trip')}
-                    style={({ pressed }) => [
-                      styles.ctaCard,
-                      { backgroundColor: theme.backgroundElement, borderColor: theme.text, opacity: pressed ? 0.92 : 1 },
-                    ]}
+                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
                     accessibilityRole="button"
                     accessibilityLabel="Plan a trip"
                   >
-                    <View style={[styles.ctaIcon, { backgroundColor: theme.primaryMuted }]}>
+                    <View style={styles.ctaIcon}>
                       <SuitcaseIcon size={18} color={theme.primary} />
                     </View>
                     <View style={styles.ctaTextCol}>
@@ -973,19 +754,31 @@ export default function HomeScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => router.push('/inbox' as any)}
-                    style={({ pressed }) => [
-                      styles.ctaCard,
-                      { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.92 : 1 },
-                    ]}
+                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
                     accessibilityRole="button"
                     accessibilityLabel="Create a board"
                   >
-                    <View style={[styles.ctaIcon, { backgroundColor: theme.primaryMuted }]}>
+                    <View style={styles.ctaIcon}>
                       <BoardsIcon size={18} color={theme.primary} />
                     </View>
                     <View style={styles.ctaTextCol}>
                       <ThemedText style={styles.ctaTitle}>Create a board</ThemedText>
-                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>Collect ideas, links & screenshots</ThemedText>
+                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>Save and organize your travel inspiration</ThemedText>
+                    </View>
+                    <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => router.push('/bookings' as any)}
+                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="My Bookings"
+                  >
+                    <View style={styles.ctaIcon}>
+                      <BookingsIcon size={18} color={theme.primary} />
+                    </View>
+                    <View style={styles.ctaTextCol}>
+                      <ThemedText style={styles.ctaTitle}>My Bookings</ThemedText>
+                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>View and manage your trip bookings</ThemedText>
                     </View>
                     <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
                   </Pressable>
@@ -1027,39 +820,43 @@ export default function HomeScreen() {
           </>
         ) : (
           <>
-            {/* Header — Bookings + Boards */}
+            {/* Header — Bookings | Logo | Boards */}
             <View style={styles.headerRow}>
               <Pressable
                 onPress={() => router.push('/bookings' as any)}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel="My bookings"
                 hitSlop={10}
               >
-                <BookingsIcon size={28} color={theme.textSecondary} />
+                <BookingsIcon size={28} color={theme.text} />
               </Pressable>
+              <Image
+                source={theme.background === '#FFFFFF'
+                  ? require('@/assets/images/logo-dark.png')
+                  : require('@/assets/images/logo-light.png')}
+                style={styles.headerLogo}
+                resizeMode="contain"
+              />
               <Pressable
                 onPress={() => router.push('/inbox' as any)}
-                style={({ pressed }) => [
-                  styles.headerBtn,
-                  { opacity: pressed ? 0.6 : 1 },
-                ]}
+                style={({ pressed }) => [styles.headerBtn, { opacity: pressed ? 0.6 : 1 }]}
                 accessibilityRole="button"
                 accessibilityLabel="Open boards"
                 hitSlop={10}
               >
-                <BoardsIcon size={24} color={theme.textSecondary} />
+                <BoardsIcon size={24} color={theme.text} />
               </Pressable>
             </View>
 
             {/* ========== Has trips ========== */}
             <View style={styles.dashboard}>
-            {/* Active trips — swipable carousel when multiple */}
+            {/* Active trips */}
             {activeTrips.length > 0 && (
-              <LiveTripCarousel trips={activeTrips} />
+              <View style={{ gap: 10 }}>
+                <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>In progress</ThemedText>
+                <TripCardCarousel trips={activeTrips} onDelete={handleDeleteTrip} />
+              </View>
             )}
 
             {/* Upcoming trips */}
@@ -1147,7 +944,8 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: Spacing.four },
 
   // Header
-  headerRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: Spacing.six },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
+  headerLogo: { height: 44, width: 132 },
   headerBtn: { width: 36, height: 36, alignItems: 'center' as const, justifyContent: 'center' as const },
 
   // Dashboard
@@ -1162,9 +960,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    padding: 14,
+    paddingVertical: 10,
   },
   ctaIcon: {
     width: 40,
@@ -1190,45 +986,6 @@ const styles = StyleSheet.create({
   },
   boardName: { fontSize: 14, fontWeight: '700', marginTop: 8 },
   boardCount: { fontSize: 12, marginTop: 1 },
-
-  // Today card (active trip)
-  todayCard: {
-    borderRadius: Radius.lg,
-    borderWidth: 1.5,
-    padding: Spacing.three,
-    gap: 8,
-    ...Shadow.subtle,
-  },
-  todayCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  liveDot: { width: 7, height: 7, borderRadius: 3.5 },
-  todayInfo: { gap: 2 },
-  progressRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    marginTop: 4,
-  },
-  progressTrack: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden' as const,
-  },
-  progressFill: {
-    height: '100%' as const,
-    borderRadius: 2,
-  },
-  todayButton: {
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  todayButtonText: { fontSize: 15, fontWeight: '600' },
-  quickActionRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  quickActionChip: { borderRadius: Radius.sm, borderWidth: 1, paddingVertical: 12, paddingHorizontal: 16, justifyContent: 'center' },
-  quickActionChipText: { fontSize: 14, fontWeight: '600' },
 
   // Next trip hero
   heroCard: {

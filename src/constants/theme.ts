@@ -11,24 +11,24 @@ export const Colors = {
   light: {
     text: '#111827',
     background: '#FFFFFF',
-    backgroundElement: '#F4F5FA',
-    backgroundSelected: '#E8EAF6',
+    backgroundElement: '#F5F5F5',
+    backgroundSelected: '#EBEBEB',
     textSecondary: '#6B7280',
     primary: '#111827',
-    primaryMuted: '#F4F5FA',
-    border: '#E8E9F2',
+    primaryMuted: '#F5F5F5',
+    border: '#E5E5E5',
     live: '#10B981',
     danger: '#EF4444',
   },
   dark: {
     text: '#F9FAFB',
-    background: '#09090F',
-    backgroundElement: '#131320',
-    backgroundSelected: '#1C1C30',
+    background: '#0A0A0A',
+    backgroundElement: '#141414',
+    backgroundSelected: '#1F1F1F',
     textSecondary: '#9CA3AF',
     primary: '#F9FAFB',
-    primaryMuted: '#1C1C30',
-    border: '#1F1F35',
+    primaryMuted: '#1F1F1F',
+    border: '#222222',
     live: '#34D399',
     danger: '#F87171',
   },
@@ -111,5 +111,5 @@ export const Shadow = {
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;
-/** Extra bottom padding on scrollable screens to clear the floating Ask Travonal button */
+/** Extra bottom padding on scrollable screens to clear the floating Ask Tripseek button */
 export const FAB_CLEARANCE = 80;

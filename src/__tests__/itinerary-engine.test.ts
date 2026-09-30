@@ -51,19 +51,6 @@ describe('getTripDayCount', () => {
 });
 
 describe('checkConflicts', () => {
-  test('detects overlapping activities when both have explicit durations', () => {
-    const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 90 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
-    ];
-    const conflicts = checkConflicts(activities, 1);
-    const overlaps = conflicts.filter((c) => c.type === 'overlap');
-    expect(overlaps.length).toBe(1);
-    expect(overlaps[0].severity).toBe('error');
-    expect(overlaps[0].activityIds).toContain('1');
-    expect(overlaps[0].activityIds).toContain('2');
-  });
-
   test('detects activities at the exact same time', () => {
     const activities: Activity[] = [
       makeActivity({ id: '1', title: 'A', day: 1, time: '09:00' }),
@@ -73,19 +60,10 @@ describe('checkConflicts', () => {
     expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(1);
   });
 
-  test('no overlap when activities do not collide', () => {
+  test('no overlap when activities have different times', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
-    ];
-    const conflicts = checkConflicts(activities, 1);
-    expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(0);
-  });
-
-  test('no overlap when only one activity has a duration', () => {
-    const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Dinner', day: 1, time: '19:00' }),
-      makeActivity({ id: '2', title: 'Walk', day: 1, time: '19:45', duration: 30 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00'}),
     ];
     const conflicts = checkConflicts(activities, 1);
     expect(conflicts.filter((c) => c.type === 'overlap').length).toBe(0);
@@ -95,9 +73,9 @@ describe('checkConflicts', () => {
 describe('reflowDay', () => {
   test('preserves locked activity times', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Locked', day: 1, time: '12:00', duration: 60, locked: true }),
-      makeActivity({ id: '2', title: 'Flex1', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '3', title: 'Flex2', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Locked', day: 1, time: '12:00', locked: true }),
+      makeActivity({ id: '2', title: 'Flex1', day: 1, time: '09:00'}),
+      makeActivity({ id: '3', title: 'Flex2', day: 1, time: '10:00'}),
     ];
     const result = reflowDay(activities, 1, '09:00');
     const locked = result.find((a) => a.id === '1')!;
@@ -106,8 +84,8 @@ describe('reflowDay', () => {
 
   test('does not move activities from other days', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Day1', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'Day2', day: 2, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Day1', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'Day2', day: 2, time: '10:00'}),
     ];
     const result = reflowDay(activities, 1, '09:00');
     const day2Act = result.find((a) => a.id === '2')!;
@@ -117,8 +95,8 @@ describe('reflowDay', () => {
 
   test('spaces flexible activities with gaps', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00'}),
     ];
     const result = reflowDay(activities, 1, '09:00');
     const day1 = result.filter((a) => a.day === 1).sort((a, b) => a.time.localeCompare(b.time));
@@ -185,8 +163,8 @@ describe('computeChangePreview', () => {
 describe('getPlanHealth', () => {
   test('returns healthy when no issues', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', type: 'food', duration: 60 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '11:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', type: 'food'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '11:00'}),
     ];
     const health = getPlanHealth(activities, 1);
     expect(health.status).toBe('healthy');
@@ -195,21 +173,31 @@ describe('getPlanHealth', () => {
 
   test('returns issues when there are hard conflicts', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00'}),
     ];
     const health = getPlanHealth(activities, 1);
     expect(health.status).toBe('issues');
     expect(health.issueCount).toBeGreaterThan(0);
+  });
+
+  test('returns healthy when activities have different times', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00'}),
+    ];
+    const health = getPlanHealth(activities, 1);
+    expect(health.status).toBe('healthy');
+    expect(health.issueCount).toBe(0);
   });
 });
 
 describe('reflowFromTime', () => {
   test('pushes upcoming activities forward by delay', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Past', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'Upcoming1', day: 1, time: '11:00', duration: 60 }),
-      makeActivity({ id: '3', title: 'Upcoming2', day: 1, time: '14:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Past', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'Upcoming1', day: 1, time: '11:00'}),
+      makeActivity({ id: '3', title: 'Upcoming2', day: 1, time: '14:00'}),
     ];
     const result = reflowFromTime(activities, 1, '10:30', 30);
     expect(result.find((a) => a.id === '1')!.time).toBe('09:00'); // before fromTime, unchanged
@@ -219,8 +207,8 @@ describe('reflowFromTime', () => {
 
   test('does not move locked activities', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Locked', day: 1, time: '12:00', duration: 60, locked: true }),
-      makeActivity({ id: '2', title: 'Flexible', day: 1, time: '14:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Locked', day: 1, time: '12:00', locked: true }),
+      makeActivity({ id: '2', title: 'Flexible', day: 1, time: '14:00'}),
     ];
     const result = reflowFromTime(activities, 1, '11:00', 60);
     expect(result.find((a) => a.id === '1')!.time).toBe('12:00'); // locked, unchanged
@@ -229,7 +217,7 @@ describe('reflowFromTime', () => {
 
   test('caps activities at 23:30', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Late', day: 1, time: '22:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Late', day: 1, time: '22:00'}),
     ];
     const result = reflowFromTime(activities, 1, '21:00', 120);
     expect(result[0].time).toBe('23:30');
@@ -237,8 +225,8 @@ describe('reflowFromTime', () => {
 
   test('does not affect other days', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Day1', day: 1, time: '10:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'Day2', day: 2, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'Day1', day: 1, time: '10:00'}),
+      makeActivity({ id: '2', title: 'Day2', day: 2, time: '10:00'}),
     ];
     const result = reflowFromTime(activities, 1, '09:00', 30);
     expect(result.find((a) => a.id === '1')!.time).toBe('10:30');

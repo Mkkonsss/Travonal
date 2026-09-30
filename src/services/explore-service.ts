@@ -1,7 +1,7 @@
 /**
  * Explore service — fetches places for the Explore tab using Google Places API.
  *
- * All Google API calls go through the Supabase Edge Function (ai-travonal)
+ * All Google API calls go through the Supabase Edge Function (ai-toveli)
  * so the API key stays server-side. Results include ratings, photos, hours,
  * and editorial summaries.
  */

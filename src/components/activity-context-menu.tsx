@@ -1,11 +1,12 @@
 /**
- * ActivityContextMenu — full-screen context menu shown on long-press or "..." tap.
+ * ActivityContextMenu — overlay context menu shown on "..." tap.
  *
- * Consolidates the action sheet and inline controls into one clean surface.
- * Dimmed backdrop, activity preview, primary actions, and reaction options.
+ * Uses absolute positioning instead of Modal to avoid iOS presentation
+ * conflicts with in-app browser (openBrowserAsync / SFSafariViewController).
  */
 
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 
@@ -13,12 +14,13 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Activity } from '@/context/trips';
+import type { MemoryCategory } from '@/context/memory';
 
 export interface ReactionOption {
   label: string;
   icon: string;
   memoryDetail: (activity: Activity) => string;
-  memoryCategory: string;
+  memoryCategory: MemoryCategory;
 }
 
 export const REACTIONS: ReactionOption[] = [
@@ -61,15 +63,6 @@ const TYPE_LABELS: Record<Activity['type'], string> = {
   food: 'Food',
 };
 
-function formatDuration(minutes: number): string {
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m ? `${h}h ${m}m` : `${h}h`;
-  }
-  return `${minutes}m`;
-}
-
 interface ActivityContextMenuProps {
   activity: Activity | null;
   visible: boolean;
@@ -79,8 +72,6 @@ interface ActivityContextMenuProps {
   onReplace: (activity: Activity) => void;
   onMove: (activity: Activity) => void;
   onEdit: (activity: Activity) => void;
-  onCustomize?: (activity: Activity) => void;
-  onLock: (activity: Activity) => void;
   onRemove: (activity: Activity) => void;
   onReaction: (activity: Activity, reaction: ReactionOption) => void;
 }
@@ -94,16 +85,12 @@ export function ActivityContextMenu({
   onReplace,
   onMove,
   onEdit,
-  onCustomize,
-  onLock,
   onRemove,
   onReaction,
 }: ActivityContextMenuProps) {
   const theme = useTheme();
 
-  if (!activity) return null;
-
-  const isProtected = !!(activity.locked || activity.fixed);
+  if (!visible || !activity) return null;
 
   function act(fn: (a: Activity) => void) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -112,132 +99,98 @@ export function ActivityContextMenu({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      style={styles.overlay}
     >
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.handle} />
+          <Animated.View entering={SlideInDown.duration(250)} style={[styles.sheet, { backgroundColor: theme.background }]}>
+          <Pressable onPress={(e) => e.stopPropagation()}>
+            <View style={styles.handle} />
 
-          {/* Activity preview */}
-          <View style={[styles.preview, { backgroundColor: theme.backgroundElement }]}>
-            <View style={styles.previewInfo}>
-              <ThemedText style={styles.previewTitle} numberOfLines={2}>
-                {activity.title}
-              </ThemedText>
-              <ThemedText style={[styles.previewMeta, { color: theme.textSecondary }]}>
-                {TYPE_LABELS[activity.type]}
-                {activity.duration ? ` \u00B7 ${formatDuration(activity.duration)}` : ''}
-                {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
-              </ThemedText>
-              {activity.description ? (
-                <ThemedText style={[styles.previewDesc, { color: theme.textSecondary }]} numberOfLines={2}>
-                  {activity.description}
+            {/* Activity preview */}
+            <View style={[styles.preview, { backgroundColor: theme.backgroundElement }]}>
+              <View style={styles.previewInfo}>
+                <ThemedText style={styles.previewTitle} numberOfLines={2}>
+                  {activity.title}
                 </ThemedText>
-              ) : null}
-            </View>
-            {isProtected && (
-              <View style={[styles.protectedBadge, { backgroundColor: theme.primaryMuted }]}>
-                <SymbolView name="lock.fill" size={10} tintColor={theme.textSecondary} />
-                <ThemedText style={[styles.protectedBadgeText, { color: theme.textSecondary }]}>
-                  {activity.fixed ? 'Fixed' : 'Locked'}
+                <ThemedText style={[styles.previewMeta, { color: theme.textSecondary }]}>
+                  {TYPE_LABELS[activity.type]}
+                  {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
                 </ThemedText>
+                {activity.description ? (
+                  <ThemedText style={[styles.previewDesc, { color: theme.textSecondary }]} numberOfLines={2}>
+                    {activity.description}
+                  </ThemedText>
+                ) : null}
               </View>
-            )}
-          </View>
+            </View>
 
-          <ScrollView style={styles.actionsScroll} bounces={false}>
-            {/* Primary actions */}
-            {onBook && (
-              <MenuItem
-                icon="link"
-                label={bookLabel ?? 'Find tickets'}
-                color={theme.primary}
-                theme={theme}
-                onPress={() => act(onBook)}
-              />
-            )}
+            <ScrollView style={styles.actionsScroll} bounces={false}>
+              {/* Primary actions */}
+              {onBook && (
+                <MenuItem
+                  icon="link"
+                  label={bookLabel ?? 'Find tickets'}
+                  color={theme.primary}
+                  theme={theme}
+                  onPress={() => act(onBook)}
+                />
+              )}
 
-            {!isProtected && (
               <MenuItem
                 icon="arrow.triangle.2.circlepath"
                 label="Replace"
                 theme={theme}
                 onPress={() => act(onReplace)}
               />
-            )}
 
-            <MenuItem
-              icon="calendar"
-              label="Move"
-              theme={theme}
-              onPress={() => act(onMove)}
-            />
-
-            <MenuItem
-              icon="pencil"
-              label="Edit"
-              theme={theme}
-              onPress={() => act(onEdit)}
-            />
-
-            {onCustomize && !isProtected && (
               <MenuItem
-                icon="slider.horizontal.3"
-                label="Customize"
+                icon="calendar"
+                label="Move"
                 theme={theme}
-                onPress={() => act(onCustomize)}
+                onPress={() => act(onMove)}
               />
-            )}
 
-            {!activity.fixed && (
               <MenuItem
-                icon={activity.locked ? 'lock.open.fill' : 'lock.fill'}
-                label={activity.locked ? 'Unlock' : 'Lock'}
+                icon="pencil"
+                label="Edit"
                 theme={theme}
-                onPress={() => act(onLock)}
+                onPress={() => act(onEdit)}
               />
-            )}
 
-            {/* Divider */}
-            {!isProtected && (
-              <>
-                <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-                  WHAT'S WRONG WITH THIS?
-                </ThemedText>
-                {REACTIONS.map((reaction) => (
-                  <MenuItem
-                    key={reaction.label}
-                    icon={reaction.icon}
-                    label={reaction.label}
-                    theme={theme}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      onClose();
-                      onReaction(activity, reaction);
-                    }}
-                  />
-                ))}
-              </>
-            )}
+              <MenuItem
+                icon="trash"
+                label="Remove"
+                color={theme.danger}
+                theme={theme}
+                onPress={() => act(onRemove)}
+              />
 
-            {/* Remove — always last */}
-            <View style={[styles.divider, { backgroundColor: theme.border }]} />
-            <MenuItem
-              icon="trash"
-              label="Remove"
-              color={theme.danger}
-              theme={theme}
-              onPress={() => act(onRemove)}
-            />
-          </ScrollView>
-        </Pressable>
+              {/* Reactions */}
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+                WHAT'S WRONG WITH THIS?
+              </ThemedText>
+              {REACTIONS.map((reaction) => (
+                <MenuItem
+                  key={reaction.label}
+                  icon={reaction.icon}
+                  label={reaction.label}
+                  theme={theme}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onClose();
+                    onReaction(activity, reaction);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Animated.View>
       </Pressable>
-    </Modal>
+    </Animated.View>
   );
 }
 
@@ -263,6 +216,14 @@ function MenuItem({ icon, label, color, theme, onPress }: {
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -302,22 +263,6 @@ const styles = StyleSheet.create({
   previewDesc: {
     fontSize: 13,
     marginTop: 4,
-  },
-  protectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.xs,
-    marginTop: 8,
-  },
-  protectedBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   actionsScroll: {
     paddingHorizontal: Spacing.four,

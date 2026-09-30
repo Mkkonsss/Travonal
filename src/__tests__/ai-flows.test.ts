@@ -391,13 +391,12 @@ describe('extractHTMLText', () => {
 // ─── validateGeneratedActivities ───────────────────────────────────────────
 
 describe('validateGeneratedActivities', () => {
-  const makeAct = (day: number, time: string, title: string, duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type: 'activity',
-    duration,
   });
 
   test('detects pace overload for relaxed trip', () => {
@@ -412,13 +411,12 @@ describe('validateGeneratedActivities', () => {
   });
 
   test('no pace issue for 3 meals on relaxed trip', () => {
-    const makeFoodAct = (day: number, time: string, title: string, duration = 60): Activity => ({
+    const makeFoodAct = (day: number, time: string, title: string): Activity => ({
       id: 'id-' + day + '-' + time,
       day,
       time,
       title,
       type: 'food',
-      duration,
     });
     const acts = [
       makeFoodAct(1, '08:00', 'Breakfast', 60),
@@ -463,8 +461,8 @@ describe('validateGeneratedActivities', () => {
 
   test('detects overlap between activities', () => {
     const acts = [
-      makeAct(1, '10:00', 'Museum', 120), // ends 12:00
-      makeAct(1, '11:00', 'Park', 60),    // starts 11:00 — overlap!
+      makeAct(1, '10:00', 'Museum'),  // assumed 60-min slot ends 11:00
+      makeAct(1, '10:30', 'Park'),    // starts 10:30 — within 60 min of 10:00, overlap!
     ];
     const issues = validateGeneratedActivities(acts, 1, 'moderate');
     expect(issues.some((i) => i.type === 'overlap')).toBe(true);
@@ -629,13 +627,12 @@ describe('generateActivityId (enhanced)', () => {
 // ─── repairActivities ──────────────────────────────────────────────────────
 
 describe('repairActivities', () => {
-  const makeAct = (id: string, day: number, time: string, title: string, duration = 60, extra: Partial<Activity> = {}): Activity => ({
+  const makeAct = (id: string, day: number, time: string, title: string, extra: Partial<Activity> = {}): Activity => ({
     id,
     day,
     time,
     title,
     type: 'activity',
-    duration,
     ...extra,
   });
 
@@ -651,22 +648,22 @@ describe('repairActivities', () => {
     expect(repaired.find((a) => a.id === 'a2')).toBeUndefined();
   });
 
-  test('removes overlapping activities (shorter one)', () => {
+  test('removes overlapping activities (later one removed)', () => {
     const acts = [
-      makeAct('a1', 1, '10:00', 'Museum', 120), // ends 12:00
-      makeAct('a2', 1, '11:00', 'Cafe', 30),     // starts 11:00 - overlap!
-      makeAct('a3', 1, '14:00', 'Park', 60),
+      makeAct('a1', 1, '10:00', 'Museum'),      // 60-min slot ends 11:00
+      makeAct('a2', 1, '10:30', 'Cafe'),          // starts 10:30 — within 60 min of 10:00, overlap!
+      makeAct('a3', 1, '14:00', 'Park'),
     ];
     const repaired = repairActivities(acts, 1, 'moderate');
-    // Cafe is shorter, should be removed
+    // Later overlapping activity should be removed
     expect(repaired.find((a) => a.id === 'a2')).toBeUndefined();
     expect(repaired.find((a) => a.id === 'a1')).toBeDefined();
   });
 
   test('never removes locked/fixed activities during overlap repair', () => {
     const acts = [
-      makeAct('a1', 1, '10:00', 'Long Tour', 180),
-      makeAct('a2', 1, '11:00', 'Flight', 120, { fixed: true }),
+      makeAct('a1', 1, '10:00', 'Long Tour'),
+      makeAct('a2', 1, '10:30', 'Flight', { fixed: true }),  // within 60 min of 10:00, overlap!
     ];
     const repaired = repairActivities(acts, 1, 'moderate');
     // Fixed activity must survive, unlocked one removed
@@ -676,11 +673,11 @@ describe('repairActivities', () => {
 
   test('trims pace overload keeping meals and fixed', () => {
     const acts = [
-      makeAct('a1', 1, '08:00', 'Breakfast', 60, { type: 'food' }),
-      makeAct('a2', 1, '10:00', 'Museum', 90),
-      makeAct('a3', 1, '12:00', 'Lunch', 60, { type: 'food' }),
-      makeAct('a4', 1, '14:00', 'Park', 60),
-      makeAct('a5', 1, '16:00', 'Shopping', 60),
+      makeAct('a1', 1, '08:00', 'Breakfast', { type: 'food' }),
+      makeAct('a2', 1, '10:00', 'Museum'),
+      makeAct('a3', 1, '12:00', 'Lunch', { type: 'food' }),
+      makeAct('a4', 1, '14:00', 'Park'),
+      makeAct('a5', 1, '16:00', 'Shopping'),
     ];
     // relaxed pace = max 2 main + 3 meals
     const repaired = repairActivities(acts, 1, 'relaxed');
@@ -692,10 +689,10 @@ describe('repairActivities', () => {
 
   test('does not trim when within pace limits', () => {
     const acts = [
-      makeAct('a1', 1, '10:00', 'Museum', 90),
-      makeAct('a2', 1, '12:00', 'Lunch', 60),
-      makeAct('a3', 1, '14:00', 'Park', 60),
-      makeAct('a4', 1, '19:00', 'Dinner', 90),
+      makeAct('a1', 1, '10:00', 'Museum'),
+      makeAct('a2', 1, '12:00', 'Lunch'),
+      makeAct('a3', 1, '14:00', 'Park'),
+      makeAct('a4', 1, '19:00', 'Dinner'),
     ];
     const repaired = repairActivities(acts, 1, 'moderate');
     expect(repaired).toHaveLength(4);
@@ -705,13 +702,12 @@ describe('repairActivities', () => {
 // ─── validateGeneratedActivities with trip pace ────────────────────────────
 
 describe('validateGeneratedActivities with trip pace', () => {
-  const makeAct = (day: number, time: string, title: string, duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type: 'activity',
-    duration,
   });
 
   test('uses trip pace (relaxed) over default moderate', () => {
@@ -974,13 +970,12 @@ describe('TripAction mutation verification', () => {
 // ─── Issue 1: Relaxed pace - meals not counted as main ─────────────────────
 
 describe('validateGeneratedActivities - relaxed pace meals separate', () => {
-  const makeAct = (day: number, time: string, title: string, type: Activity['type'] = 'activity', duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string, type: Activity['type'] = 'activity'): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type,
-    duration,
   });
 
   test('relaxed pace: 2 experiences + 3 meals = no pace overload', () => {
@@ -1023,13 +1018,12 @@ describe('validateGeneratedActivities - relaxed pace meals separate', () => {
 // ─── Issue 1: repairActivities trims main but preserves meals ──────────────
 
 describe('repairActivities - meals vs main separation', () => {
-  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'activity', duration = 60, extra: Partial<Activity> = {}): Activity => ({
+  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'activity', extra: Partial<Activity> = {}): Activity => ({
     id,
     day,
     time,
     title,
     type,
-    duration,
     ...extra,
   });
 
@@ -1068,7 +1062,7 @@ describe('computeChangePreview', () => {
     time,
     title,
     type: 'activity',
-    duration: 60,
+    
     ...extra,
   });
 
@@ -1147,13 +1141,12 @@ describe('validateAIOutput additional', () => {
 // ─── Issue 5: Breakfast at 12:15 flagged ───────────────────────────────────
 
 describe('Meal timing edge cases', () => {
-  const makeAct = (day: number, time: string, title: string, duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type: 'food',
-    duration,
   });
 
   test('breakfast at 12:15 flagged as meal_timing', () => {
@@ -1185,13 +1178,13 @@ describe('isSocialUrl', () => {
 describe('mergeDayScopedActivities isolation', () => {
   test('editing day 2 does not affect day 1 or day 3', () => {
     const original: Activity[] = [
-      { id: 'd1-1', title: 'Day1 Museum', day: 1, time: '10:00', type: 'activity', duration: 90 },
-      { id: 'd2-1', title: 'Day2 Park', day: 2, time: '10:00', type: 'activity', duration: 60 },
-      { id: 'd2-2', title: 'Day2 Lunch', day: 2, time: '12:00', type: 'food', duration: 60 },
-      { id: 'd3-1', title: 'Day3 Beach', day: 3, time: '10:00', type: 'activity', duration: 120 },
+      { id: 'd1-1', title: 'Day1 Museum', day: 1, time: '10:00', type: 'activity'},
+      { id: 'd2-1', title: 'Day2 Park', day: 2, time: '10:00', type: 'activity'},
+      { id: 'd2-2', title: 'Day2 Lunch', day: 2, time: '12:00', type: 'food'},
+      { id: 'd3-1', title: 'Day3 Beach', day: 3, time: '10:00', type: 'activity'},
     ];
     const aiDay2: Activity[] = [
-      { id: 'new-d2', title: 'New Day2 Activity', day: 2, time: '11:00', type: 'activity', duration: 90 },
+      { id: 'new-d2', title: 'New Day2 Activity', day: 2, time: '11:00', type: 'activity'},
     ];
     const merged = mergeDayScopedActivities(original, aiDay2, 2);
     // Day 1 intact
@@ -1207,9 +1200,9 @@ describe('mergeDayScopedActivities isolation', () => {
   });
 });
 
-// ─── Fix 1: Ask Travonal action order — success message only after verified ──
+// ─── Fix 1: Ask Tripseek action order — success message only after verified ──
 
-describe('Ask Travonal action verification order', () => {
+describe('Ask Tripseek action verification order', () => {
   test('failed action should NOT show success message', () => {
     // Simulate applyTripAction returning failure
     const failures: string[] = [];
@@ -1277,13 +1270,12 @@ describe('Reservation persistence via addTripWithActivities', () => {
 // ─── Fix 3: Relaxed pace - meals separate from main ─────────────────────────
 
 describe('Relaxed pace meals separate (Fix 3)', () => {
-  const makeAct = (day: number, time: string, title: string, type: Activity['type'] = 'activity', duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string, type: Activity['type'] = 'activity'): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type,
-    duration,
   });
 
   test('2 mains + 3 meals for relaxed pace = no pace_overload', () => {
@@ -1318,13 +1310,12 @@ describe('Relaxed pace meals separate (Fix 3)', () => {
 // ─── Fix 4: Meal time repair and blocking ───────────────────────────────────
 
 describe('Meal time repair (Fix 4)', () => {
-  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food', duration = 60): Activity => ({
+  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food'): Activity => ({
     id,
     day,
     time,
     title,
     type,
-    duration,
   });
 
   test('breakfast at 12:15 is snapped to 08:00 by repairActivities', () => {
@@ -1347,13 +1338,12 @@ describe('Meal time repair (Fix 4)', () => {
 });
 
 describe('Meal time blocking severity (Fix 4)', () => {
-  const makeAct = (day: number, time: string, title: string, duration = 60): Activity => ({
+  const makeAct = (day: number, time: string, title: string): Activity => ({
     id: 'id-' + day + '-' + time,
     day,
     time,
     title,
     type: 'food',
-    duration,
   });
 
   test('breakfast at 12:15 returns severity error meal_timing issue', () => {
@@ -1437,9 +1427,9 @@ describe('normalizeActivity preserves Google Places metadata (Fix 5b)', () => {
   });
 });
 
-// ─── Issue 1 regression: Ask Travonal action verification ─────────────────
+// ─── Issue 1 regression: Ask Tripseek action verification ─────────────────
 
-describe('Issue 1: Ask Travonal — mutation return values', () => {
+describe('Issue 1: Ask Tripseek — mutation return values', () => {
   // Simulate the synchronous success flag pattern used by trips.tsx
   function simulateAddActivity(tripId: string, trips: { id: string }[]) {
     let success = false;
@@ -1482,13 +1472,12 @@ describe('Issue 1: Ask Travonal — mutation return values', () => {
 // ─── Issue 2 regression: Meal validation blocks after repair ──────────────
 
 describe('Issue 2: Meal validation blocks after repair', () => {
-  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food', duration = 60): Activity => ({
+  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food'): Activity => ({
     id,
     day,
     time,
     title,
     type,
-    duration,
   });
 
   test('repairActivities snaps breakfast titled "Breakfast at Le Pain" at 12:15 to 08:00', () => {
@@ -1541,10 +1530,10 @@ describe('Issue 3: Trip Pulse uses trip-specific pace', () => {
   });
 
   const mainAct = (id: string, day: number, time: string, title: string): Activity => ({
-    id, day, time, title, type: 'activity', duration: 60,
+    id, day, time, title, type: 'activity',
   });
   const foodAct = (id: string, day: number, time: string, title: string): Activity => ({
-    id, day, time, title, type: 'food', duration: 60,
+    id, day, time, title, type: 'food',
   });
 
   test('pace mismatch no longer generates alerts', () => {
@@ -1665,38 +1654,37 @@ describe('Issue 1 (v9): tripsRef precondition-based mutation verification', () =
 // ─── Issue 2 (v9): Locked/fixed meal protection in repairActivities ─────────
 
 describe('Issue 2 (v9): repairActivities locked/fixed meal protection', () => {
-  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food', duration = 60, extra: Partial<Activity> = {}): Activity => ({
+  const makeAct = (id: string, day: number, time: string, title: string, type: Activity['type'] = 'food', extra: Partial<Activity> = {}): Activity => ({
     id,
     day,
     time,
     title,
     type,
-    duration,
     ...extra,
   });
 
   test('locked breakfast at 11:00 is NOT snapped', () => {
-    const acts = [makeAct('b1', 1, '11:00', 'Breakfast at hotel', 'food', 60, { locked: true })];
+    const acts = [makeAct('b1', 1, '11:00', 'Breakfast at hotel', 'food', { locked: true })];
     const repaired = repairActivities(acts, 1, 'moderate');
     expect(repaired[0].time).toBe('11:00');
   });
 
   test('fixed dinner at 16:00 is NOT snapped', () => {
-    const acts = [makeAct('d1', 1, '16:00', 'Dinner reservation', 'food', 90, { fixed: true })];
+    const acts = [makeAct('d1', 1, '16:00', 'Dinner reservation', 'food', { fixed: true })];
     const repaired = repairActivities(acts, 1, 'moderate');
     expect(repaired[0].time).toBe('16:00');
   });
 
   test('unlocked breakfast at 11:00 IS snapped to 08:00', () => {
-    const acts = [makeAct('b1', 1, '11:00', 'Breakfast at cafe', 'food', 60)];
+    const acts = [makeAct('b1', 1, '11:00', 'Breakfast at cafe', 'food')];
     const repaired = repairActivities(acts, 1, 'moderate');
     expect(repaired[0].time).toBe('08:00');
   });
 
   test('locked activity overlapping unlocked one: unlocked is removed, locked preserved', () => {
     const acts = [
-      makeAct('a1', 1, '10:00', 'Walking Tour', 'activity', 120),
-      makeAct('a2', 1, '11:00', 'Fixed Meeting', 'activity', 60, { locked: true }),
+      makeAct('a1', 1, '10:00', 'Walking Tour', 'activity'),
+      makeAct('a2', 1, '10:30', 'Fixed Meeting', 'activity', { locked: true }),  // within 60-min slot, overlap!
     ];
     const repaired = repairActivities(acts, 1, 'moderate');
     // The locked meeting must survive
@@ -1707,10 +1695,10 @@ describe('Issue 2 (v9): repairActivities locked/fixed meal protection', () => {
 
   test('pace overload with locked activities: locked ones kept, excess unlocked removed', () => {
     const acts = [
-      makeAct('a1', 1, '08:00', 'Fixed Visit', 'activity', 60, { locked: true }),
-      makeAct('a2', 1, '10:00', 'Museum', 'activity', 90),
-      makeAct('a3', 1, '12:00', 'Temple', 'activity', 90),
-      makeAct('a4', 1, '14:30', 'Shopping', 'activity', 60),
+      makeAct('a1', 1, '08:00', 'Fixed Visit', 'activity', { locked: true }),
+      makeAct('a2', 1, '10:00', 'Museum', 'activity'),
+      makeAct('a3', 1, '12:00', 'Temple', 'activity'),
+      makeAct('a4', 1, '14:30', 'Shopping', 'activity'),
     ];
     // relaxed pace = max 2 main activities
     const repaired = repairActivities(acts, 1, 'relaxed');

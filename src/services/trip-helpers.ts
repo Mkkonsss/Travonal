@@ -3,7 +3,7 @@
  * Exported for direct testing.
  */
 
-import { Trip, ChangeRecord, Activity } from '@/context/trips';
+import { Trip, Activity } from '@/context/trips';
 import { generateId } from '@/services/itinerary-engine';
 
 const SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -21,7 +21,7 @@ export function formatDayLabel(dayNumber: number, startDate?: string, datesKnown
   const start = new Date(startDate + 'T00:00:00');
   const date = new Date(start);
   date.setDate(date.getDate() + dayNumber - 1);
-  return `Day ${dayNumber} — ${SHORT_DAYS[date.getDay()]}, ${SHORT_MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return `Day ${dayNumber} · ${SHORT_DAYS[date.getDay()]}, ${SHORT_MONTHS[date.getMonth()]} ${date.getDate()}`;
 }
 
 /**
@@ -63,18 +63,6 @@ export function createTripRecord(
       { id: id + '-owner', name: 'You', role: 'owner', joinedAt: new Date().toISOString() },
     ],
   };
-}
-
-/** Find the most recent undoable change for a trip.
- * Only the NEWEST (most recently recorded) change is offered for undo.
- * After it is undone, no older change is automatically surfaced. */
-export function findUndoableChange(
-  history: ChangeRecord[],
-  tripId: string,
-): ChangeRecord | undefined {
-  // History is stored newest-first (prepended via [record, ...prev]).
-  // Return the newest non-undone record for this trip.
-  return history.find((c) => c.tripId === tripId && !c.undone);
 }
 
 /** Compute a short, stable hash of the current itinerary state.
@@ -153,6 +141,25 @@ export function sortTripsForPicker(trips: Trip[], destinationHint?: string): Tri
     // Other groups: sort by startDate ascending
     return a.startDate.localeCompare(b.startDate);
   });
+}
+
+/**
+ * Compute an ISO date string for a given day number within a trip.
+ * Day 1 = tripStartDate, Day 2 = tripStartDate + 1, etc.
+ */
+export function computeDateForDay(tripStartDate: string, day: number): string {
+  const d = new Date(tripStartDate + 'T00:00:00');
+  d.setDate(d.getDate() + day - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Format a night range into a human-readable label.
+ * e.g. formatNightRange(1, 1) → "Night 1", formatNightRange(1, 3) → "Night 1–3"
+ */
+export function formatNightRange(start: number, end: number): string {
+  if (start === end) return `Night ${start}`;
+  return `Night ${start}–${end}`;
 }
 
 /** Serialize a TravelProfile for AsyncStorage (round-trip safe). */

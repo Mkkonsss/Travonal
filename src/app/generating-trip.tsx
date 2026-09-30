@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AppState, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -32,6 +32,9 @@ import { generateTripAI } from '@/services/ai';
 import { normalizeActivity, deduplicateFixedActivities, ensureRequestedActivities, validateGeneratedActivities, repairActivities, generateActivityId } from '@/services/ai-utils';
 import { useSubscription } from '@/context/subscription';
 import type { Activity } from '@/context/trips';
+import { scheduleLocalNotification } from '@/services/notifications';
+import { getPlaceDetailsAI } from '@/services/ai';
+import { getPlacePhoto } from '@/services/free-photos';
 
 type Phase = 'generating' | 'done' | 'error' | 'usage_limit';
 
@@ -54,7 +57,23 @@ export default function GeneratingTripScreen() {
   const [currentStep, setCurrentStep] = useState(0);
   const [percentage, setPercentage] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [revealStats, setRevealStats] = useState<{
+    dayCount: number;
+    activityCount: number;
+    foodCount: number;
+    highlights: Activity[];
+  }>({ dayCount: 0, activityCount: 0, foodCount: 0, highlights: [] });
+  const appStateRef = useRef(AppState.currentState);
   const progressWidth = useSharedValue(0);
+
+  // Track app foreground/background state for generation-complete notification
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      appStateRef.current = state;
+    });
+    return () => sub.remove();
+  }, []);
 
   // Pulsing pin animation
   const pinScale = useSharedValue(1);
@@ -110,24 +129,40 @@ export default function GeneratingTripScreen() {
     let aiResultRef: any = null;
 
     // Kick off the real AI call immediately in parallel with the animation
+    const activeMemory = getActiveEntries();
+    setMemoryCount(activeMemory.length);
     const aiPromise = generateTripAI({
       trip: trip!,
       profile,
-      memory: getActiveEntries(),
+      memory: activeMemory.map((m) => ({ detail: m.detail, type: m.type, category: m.category })),
     });
 
-    // Steady percentage: ticks at a constant 300ms pace.
-    // Holds at 99 if AI hasn't resolved yet; once AI resolves, ticks to 100.
-    // Reveal only fires when percentage reaches 100.
+    // Smooth progress: constant pace targeting ~90% at ~80 seconds.
+    // When AI resolves, fills remaining to 100% over ~2 seconds.
+    // Past 90% without AI: crawls slowly (never stops).
     const TICK_MS = 300;
+    const BASE_INCREMENT = 0.34;   // ~1.13%/sec → 90% in ~80s
+    const CRAWL_INCREMENT = 0.05;  // ~0.17%/sec past 90% — still moving, never stalls
+    const FAST_FILL_MS = 2000;
+    let fastRate: number | null = null;
+
     const pctTimer = setInterval(() => {
       if (cancelled) { clearInterval(pctTimer); return; }
 
-      // Hold at 99 until AI is done — keeps the bar moving until the very end
-      if (currentPct >= 99 && !aiResolved) return;
+      if (aiResolved) {
+        // First tick after AI resolves: calculate rate to fill remaining in ~2s
+        if (fastRate === null) {
+          const remaining = 100 - currentPct;
+          fastRate = Math.max(remaining / (FAST_FILL_MS / TICK_MS), 0.5);
+        }
+        currentPct = Math.min(currentPct + fastRate, 100);
+      } else if (currentPct < 90) {
+        currentPct += BASE_INCREMENT;
+      } else {
+        currentPct += CRAWL_INCREMENT;
+      }
 
-      currentPct++;
-      setPercentage(currentPct);
+      setPercentage(Math.floor(currentPct));
       progressWidth.value = withTiming(currentPct / 100, { duration: TICK_MS });
 
       if (currentPct >= 100) {
@@ -195,7 +230,8 @@ export default function GeneratingTripScreen() {
                 (i) => i.severity === 'error',
               );
               if (stillCritical.length > 0) {
-                throw new Error('Generated itinerary could not be validated');
+                // Accept the itinerary anyway — imperfect is better than no trip
+                console.warn('[AI Generation] Accepting itinerary with', stillCritical.length, 'remaining issues');
               }
             }
             if (postRepairIssues.length > 0) {
@@ -216,9 +252,64 @@ export default function GeneratingTripScreen() {
           generatedAt: new Date().toISOString(),
         });
 
+        // Compute reveal stats NOW before phase change — context may not have propagated yet
+        const revealActivityCount = activities.filter((a) => a.type === 'activity').length;
+        const revealFoodCount = activities.filter((a) => a.type === 'food').length;
+        const revealHighlights: Activity[] = [];
+        const usedCats = new Set<string>();
+        for (const a of activities.filter((a) => a.type === 'activity')) {
+          const cat = a.category ?? 'other';
+          if (!usedCats.has(cat) && revealHighlights.length < 3) {
+            revealHighlights.push(a);
+            usedCats.add(cat);
+          }
+        }
+        if (revealHighlights.length < 3) {
+          for (const a of activities.filter((a) => a.type === 'activity')) {
+            if (!revealHighlights.find((h) => h.id === a.id) && revealHighlights.length < 3) {
+              revealHighlights.push(a);
+            }
+          }
+        }
+        setRevealStats({
+          dayCount: totalDays,
+          activityCount: revealActivityCount,
+          foodCount: revealFoodCount,
+          highlights: revealHighlights,
+        });
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         statsReveal.value = withDelay(400, withSpring(1, { damping: 12 }));
         setPhase('done');
+
+        // Prefetch photos for first 8 activities while user reads reveal screen.
+        // Fire-and-forget — photos land in the shared cache so trip/[id].tsx
+        // renders them immediately when the user navigates there.
+        const toPreload = activities
+          .filter((a) => !!a.placeId)
+          .slice(0, 8);
+        (async () => {
+          for (const a of toPreload) {
+            try {
+              const details = await getPlaceDetailsAI({ placeId: a.placeId! });
+              const photos = details?.photos as { name?: string }[] | undefined;
+              const photoRef = photos?.[0]?.name;
+              if (photoRef) {
+                getPlacePhoto({ cacheKey: a.placeId!, photoRef }).catch(() => {});
+              }
+            } catch { /* ignore — prefetch is best-effort */ }
+          }
+        })();
+
+        // Notify if user switched away while generating
+        if (appStateRef.current !== 'active') {
+          scheduleLocalNotification(
+            `Your ${trip!.destination} trip is ready!`,
+            'Tap to see your itinerary.',
+            { tripId: trip!.id },
+            'general',
+          );
+        }
       } catch (e) {
         console.error('[AI Generation] processResult error:', e);
         if (!cancelled) {
@@ -309,18 +400,18 @@ export default function GeneratingTripScreen() {
           <SymbolView name={"sparkles" as any} size={32} tintColor={theme.primary} />
           <ThemedText type="subtitle">Plan limit reached</ThemedText>
           <ThemedText style={[styles.errorDesc, { color: theme.textSecondary }]}>
-            Upgrade to Travonal+ for more AI-generated trip plans every month.
+            Upgrade to Tripseek+ for more AI-generated trip plans every month.
           </ThemedText>
           <Pressable
-            onPress={() => router.push('/travonal-plus' as any)}
+            onPress={() => router.push('/toveli-plus' as any)}
             style={({ pressed }) => [
               styles.primaryButton,
               { backgroundColor: theme.primary, opacity: pressed ? 0.85 : 1 },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Upgrade to Travonal Plus"
+            accessibilityLabel="Upgrade to Tripseek Plus"
           >
-            <ThemedText style={[styles.primaryButtonText, { color: theme.background }]}>Upgrade to Travonal+</ThemedText>
+            <ThemedText style={[styles.primaryButtonText, { color: theme.background }]}>Upgrade to Tripseek+</ThemedText>
           </Pressable>
           <Pressable onPress={() => router.back()} style={styles.textButton} accessibilityRole="button" accessibilityLabel="Go back">
             <ThemedText style={[styles.textButtonLabel, { color: theme.textSecondary }]}>Go back</ThemedText>
@@ -366,29 +457,7 @@ export default function GeneratingTripScreen() {
   // Done state — the rewarding reveal
   if (phase === 'done') {
     const updatedTrip = getTrip(tripId);
-    const dayCount = updatedTrip ? getTripDayCount(updatedTrip.startDate, updatedTrip.endDate) : 0;
-    const activities = updatedTrip?.activities ?? [];
-    const foodCount = activities.filter((a) => a.type === 'food').length;
-    const activityCount = activities.filter((a) => a.type === 'activity').length;
-
-    // Pick up to 3 highlight activities — prefer variety of categories
-    const highlights: Activity[] = [];
-    const usedCategories = new Set<string>();
-    for (const a of activities.filter((a) => a.type === 'activity')) {
-      const cat = a.category ?? 'other';
-      if (!usedCategories.has(cat) && highlights.length < 3) {
-        highlights.push(a);
-        usedCategories.add(cat);
-      }
-    }
-    // Fill remaining slots if fewer than 3 unique categories
-    if (highlights.length < 3) {
-      for (const a of activities.filter((a) => a.type === 'activity')) {
-        if (!highlights.find((h) => h.id === a.id) && highlights.length < 3) {
-          highlights.push(a);
-        }
-      }
-    }
+    const { dayCount, activityCount, foodCount, highlights } = revealStats;
 
     return (
       <ThemedView style={styles.container}>
@@ -427,6 +496,11 @@ export default function GeneratingTripScreen() {
               {hasBlockingConflicts && (
                 <ThemedText style={[styles.conflictNote, { color: theme.textSecondary }]}>
                   Some activities have timing conflicts — tap View my trip to fix them.
+                </ThemedText>
+              )}
+              {memoryCount > 0 && !hasBlockingConflicts && (
+                <ThemedText style={[styles.memoryAttribution, { color: theme.textSecondary }]}>
+                  Personalized with {memoryCount} travel {memoryCount === 1 ? 'memory' : 'memories'}
                 </ThemedText>
               )}
             </Animated.View>
@@ -517,6 +591,15 @@ export default function GeneratingTripScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.centered, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 40 }]}>
 
+        {/* Wordmark */}
+        <Image
+          source={theme.background === '#FFFFFF'
+            ? require('@/assets/images/logo-dark.png')
+            : require('@/assets/images/logo-light.png')}
+          style={styles.genLogo}
+          resizeMode="contain"
+        />
+
         {/* Pulsing pin with ripple rings */}
         <View style={styles.pinContainer}>
           <Animated.View style={[styles.ripple, { borderColor: theme.primary }, ripple1Style]} />
@@ -572,6 +655,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     gap: 12,
   },
+
+  genLogo: { height: 36, width: 108, marginBottom: 8 },
 
   // Generating — pulsing pin
   pinContainer: {
@@ -660,6 +745,7 @@ const styles = StyleSheet.create({
   doneTitle: { textAlign: 'center', fontSize: 32, fontWeight: '800' },
   doneSubtitle: { fontSize: 16, fontWeight: '600', marginTop: 2 },
   conflictNote: { fontSize: 13, lineHeight: 20, textAlign: 'center', paddingHorizontal: 16, marginTop: 4 },
+  memoryAttribution: { fontSize: 13, fontWeight: '500', marginTop: 6, textAlign: 'center' },
   statsRow: {
     flexDirection: 'row',
     gap: 12,

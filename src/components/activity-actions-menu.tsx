@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Activity } from '@/context/trips';
+import type { MemoryCategory } from '@/context/memory';
 
 export interface ReactionOption {
   label: string;
@@ -24,7 +25,7 @@ export interface ReactionOption {
   /** Memory detail to save when this reaction is chosen */
   memoryDetail: (activity: Activity) => string;
   /** Memory category */
-  memoryCategory: string;
+  memoryCategory: MemoryCategory;
 }
 
 const REACTIONS: ReactionOption[] = [

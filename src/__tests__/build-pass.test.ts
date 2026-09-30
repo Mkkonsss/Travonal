@@ -6,7 +6,7 @@
  * - Trip prep context-awareness
  */
 
-import { Trip, Activity, TripMember, Invitation, ChangeRecord } from '@/context/trips';
+import { Trip, Activity, TripMember, Invitation } from '@/context/trips';
 import { createTripRecord } from '@/services/trip-helpers';
 import { pulseInputFingerprint } from '@/components/app-pulse-evaluator';
 import { transformTrip, TransformScope } from '@/services/transformation-service';
@@ -93,17 +93,6 @@ describe('Collaboration foundation', () => {
     expect(inv.inviteCode).toMatch(/^TRV-/);
   });
 
-  test('ChangeRecord includes changedBy field', () => {
-    const record: ChangeRecord = {
-      id: '1',
-      tripId: 't1',
-      description: 'Test change',
-      timestamp: '2026-08-18T00:00:00.000Z',
-      previousActivities: [],
-      changedBy: 'Alice',
-    };
-    expect(record.changedBy).toBe('Alice');
-  });
 });
 
 // ---------- Pulse fingerprint ----------
@@ -114,7 +103,7 @@ describe('pulseInputFingerprint', () => {
       id: 't1',
       startDate: '2026-09-01',
       endDate: '2026-09-03',
-      activities: [makeActivity({ id: 'a1', day: 1, time: '10:00', duration: 60, type: 'activity' })],
+      activities: [makeActivity({ id: 'a1', day: 1, time: '10:00', type: 'activity' })],
     })];
     const profile = { pace: 'moderate', dislikes: [] as string[] };
 
@@ -128,7 +117,7 @@ describe('pulseInputFingerprint', () => {
       id: 't1',
       startDate: '2026-09-01',
       endDate: '2026-09-03',
-      activities: [makeActivity({ id: 'a1', day: 1, time: '10:00', duration: 60, type: 'activity' })],
+      activities: [makeActivity({ id: 'a1', day: 1, time: '10:00', type: 'activity' })],
     });
     const profile = { pace: 'moderate', dislikes: [] as string[] };
 
@@ -136,14 +125,14 @@ describe('pulseInputFingerprint', () => {
 
     const modifiedTrip = {
       ...baseTrip,
-      activities: [makeActivity({ id: 'a1', day: 1, time: '14:00', duration: 60, type: 'activity' })],
+      activities: [makeActivity({ id: 'a1', day: 1, time: '14:00', type: 'activity' })],
     };
     const fp2 = pulseInputFingerprint([modifiedTrip], profile);
 
     expect(fp1).not.toBe(fp2);
   });
 
-  test('fingerprint does not depend on profile dislikes (no longer used for alerts)', () => {
+  test('fingerprint changes when profile dislikes change', () => {
     const trips = [makeTrip({
       id: 't1',
       startDate: '2026-09-01',
@@ -154,7 +143,7 @@ describe('pulseInputFingerprint', () => {
     const fp1 = pulseInputFingerprint(trips, { pace: 'moderate', dislikes: [] });
     const fp2 = pulseInputFingerprint(trips, { pace: 'moderate', dislikes: ['crowds'] });
 
-    expect(fp1).toBe(fp2);
+    expect(fp1).not.toBe(fp2);
   });
 });
 

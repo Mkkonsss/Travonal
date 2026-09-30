@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flow Away — Logo Concepts v4</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f0f0f0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      color: #111;
+      min-height: 100vh;
+      padding: 64px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+    }
+
+    header .round {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    header .inspo {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 44px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .concept-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #ccc;
+      margin-bottom: 36px;
+      align-self: flex-start;
+    }
+
+    .icon-stage {
+      width: 180px;
+      height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: #f0f0f0;
+      margin-bottom: 24px;
+    }
+
+    .mockups {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+
+    .mockup-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mockup-label {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .app-icon {
+      width: 68px;
+      height: 68px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-icon.light {
+      background: #fff;
+      box-shadow: 0 0 0 1px #e4e4e4, 0 4px 20px rgba(0,0,0,0.07);
+    }
+
+    .app-icon.dark {
+      background: #111;
+    }
+
+    .card-meta {
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 5px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="round">Flow Away — Round 4</div>
+  <p>Arc Language, Refined</p>
+  <div class="inspo">Directional. Tapering. Intentional.</div>
+</header>
+
+<div class="grid">
+
+  <!-- CONCEPT 1: THREE TAPERING TRAILS — start bold, dissolve into nothing -->
+  <div class="card">
+    <span class="concept-label">Concept 01</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <defs>
+          <!-- Gradient: full black on left, transparent on right -->
+          <linearGradient id="fadeRight1" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#111" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#111" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="fadeRight2" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#111" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#111" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="fadeRight3" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#111" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#111" stop-opacity="0"/>
+          </linearGradient>
+          <!-- Masks to apply gradient to strokes -->
+          <mask id="mask1"><rect width="160" height="160" fill="url(#fadeRight1)"/></mask>
+          <mask id="mask2"><rect width="160" height="160" fill="url(#fadeRight2)"/></mask>
+          <mask id="mask3"><rect width="160" height="160" fill="url(#fadeRight3)"/></mask>
+        </defs>
+        <!-- Three arcs that taper right — bold left, dissolve right -->
+        <g mask="url(#mask1)">
+          <path d="M20 110 C60 95 110 95 148 110" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/>
+        </g>
+        <g mask="url(#mask2)">
+          <path d="M20 78 C55 60 105 60 148 78" stroke="#111" stroke-width="8" stroke-linecap="round" fill="none"/>
+        </g>
+        <g mask="url(#mask3)">
+          <path d="M20 46 C58 32 104 32 148 46" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        </g>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <defs>
+              <mask id="m1a"><rect width="160" height="160" fill="url(#fadeRight1)"/></mask>
+              <mask id="m2a"><rect width="160" height="160" fill="url(#fadeRight2)"/></mask>
+              <mask id="m3a"><rect width="160" height="160" fill="url(#fadeRight3)"/></mask>
+            </defs>
+            <g mask="url(#m1a)"><path d="M20 110 C60 95 110 95 148 110" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/></g>
+            <g mask="url(#m2a)"><path d="M20 78 C55 60 105 60 148 78" stroke="#111" stroke-width="8" stroke-linecap="round" fill="none"/></g>
+            <g mask="url(#m3a)"><path d="M20 46 C58 32 104 32 148 46" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/></g>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <defs>
+              <linearGradient id="dg1" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fff" stop-opacity="1"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></linearGradient>
+              <linearGradient id="dg2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fff" stop-opacity="1"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></linearGradient>
+              <linearGradient id="dg3" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#fff" stop-opacity="1"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></linearGradient>
+              <mask id="dm1"><rect width="160" height="160" fill="url(#dg1)"/></mask>
+              <mask id="dm2"><rect width="160" height="160" fill="url(#dg2)"/></mask>
+              <mask id="dm3"><rect width="160" height="160" fill="url(#dg3)"/></mask>
+            </defs>
+            <g mask="url(#dm1)"><path d="M20 110 C60 95 110 95 148 110" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/></g>
+            <g mask="url(#dm2)"><path d="M20 78 C55 60 105 60 148 78" stroke="#fff" stroke-width="8" stroke-linecap="round" fill="none"/></g>
+            <g mask="url(#dm3)"><path d="M20 46 C58 32 104 32 148 46" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/></g>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Fading Trails</p>
+      <p class="card-desc">Three arcs that start solid and dissolve into nothing. Unlike Spotify — these are going somewhere. They flow away.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: TWO ARCS DIVERGING — clean, minimal, intentional -->
+  <div class="card">
+    <span class="concept-label">Concept 02</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Two arcs that start close together on the left and spread apart on the right -->
+        <!-- Origin dot -->
+        <circle cx="24" cy="80" r="9" fill="#111"/>
+        <!-- Upper arc — curves upward as it travels right -->
+        <path d="M24 80 C60 80 90 44 148 30" stroke="#111" stroke-width="9" stroke-linecap="round" fill="none"/>
+        <!-- Lower arc — curves downward as it travels right -->
+        <path d="M24 80 C60 80 90 116 148 130" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="24" cy="80" r="9" fill="#111"/>
+            <path d="M24 80 C60 80 90 44 148 30" stroke="#111" stroke-width="9" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C60 80 90 116 148 130" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="24" cy="80" r="9" fill="#fff"/>
+            <path d="M24 80 C60 80 90 44 148 30" stroke="#fff" stroke-width="9" stroke-linecap="round" fill="none"/>
+            <path d="M24 80 C60 80 90 116 148 130" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Diverging Paths</p>
+      <p class="card-desc">One origin, two directions opening up. Suggests boundless possibility — go anywhere. Clean and instantly readable.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: STAGGERED OFFSET ARCS — sequential, like waves passing -->
+  <div class="card">
+    <span class="concept-label">Concept 03</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Three arcs, each starting further right — like sequential waves -->
+        <!-- First wave — starts leftmost -->
+        <path d="M14 80 C14 42 62 22 62 22 C62 22 62 62 62 80 C62 98 62 138 62 138 C62 138 14 118 14 80Z" fill="#111"/>
+        <!-- Second wave -->
+        <path d="M72 80 C72 50 108 34 108 34 C108 34 108 66 108 80 C108 94 108 126 108 126 C108 126 72 110 72 80Z" fill="#111" opacity="0.55"/>
+        <!-- Third wave -->
+        <path d="M118 80 C118 56 146 44 146 44 C146 44 146 68 146 80 C146 92 146 116 146 116 C146 116 118 104 118 80Z" fill="#111" opacity="0.25"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M14 80 C14 42 62 22 62 22 C62 22 62 62 62 80 C62 98 62 138 62 138 C62 138 14 118 14 80Z" fill="#111"/>
+            <path d="M72 80 C72 50 108 34 108 34 C108 34 108 66 108 80 C108 94 108 126 108 126 C108 126 72 110 72 80Z" fill="#111" opacity="0.55"/>
+            <path d="M118 80 C118 56 146 44 146 44 C146 44 146 68 146 80 C146 92 146 116 146 116 C146 116 118 104 118 80Z" fill="#111" opacity="0.25"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M14 80 C14 42 62 22 62 22 C62 22 62 62 62 80 C62 98 62 138 62 138 C62 138 14 118 14 80Z" fill="#fff"/>
+            <path d="M72 80 C72 50 108 34 108 34 C108 34 108 66 108 80 C108 94 108 126 108 126 C108 126 72 110 72 80Z" fill="#fff" opacity="0.55"/>
+            <path d="M118 80 C118 56 146 44 146 44 C146 44 146 68 146 80 C146 92 146 116 146 116 C146 116 118 104 118 80Z" fill="#fff" opacity="0.25"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Wave Sequence</p>
+      <p class="card-desc">Three waves passing through, each fading as it moves away. Filled shapes rather than strokes — bolder, more distinctive.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 4: SINGLE ARC, TWO WEIGHTS — ultra simple, Audible-clean -->
+  <div class="card">
+    <span class="concept-label">Concept 04</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- A clean circle as the "anchor" -->
+        <circle cx="52" cy="108" r="16" fill="#111"/>
+        <!-- Bold sweeping arc — the "away" -->
+        <path d="M52 92 C52 48 88 22 142 20" stroke="#111" stroke-width="13" stroke-linecap="round" fill="none"/>
+        <!-- Thin parallel echo arc above it -->
+        <path d="M64 76 C72 46 100 28 142 28" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="52" cy="108" r="16" fill="#111"/>
+            <path d="M52 92 C52 48 88 22 142 20" stroke="#111" stroke-width="13" stroke-linecap="round" fill="none"/>
+            <path d="M64 76 C72 46 100 28 142 28" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="52" cy="108" r="16" fill="#fff"/>
+            <path d="M52 92 C52 48 88 22 142 20" stroke="#fff" stroke-width="13" stroke-linecap="round" fill="none"/>
+            <path d="M64 76 C72 46 100 28 142 28" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Anchor + Arc</p>
+      <p class="card-desc">A grounded dot with one bold arc lifting away — and a thin echo above it. You stay rooted, the experience flows away. Audible-level simplicity.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

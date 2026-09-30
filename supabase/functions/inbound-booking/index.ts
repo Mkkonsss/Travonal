@@ -8,7 +8,7 @@
  * SendGrid sends a multipart/form-data POST with fields:
  *   from, to, subject, text, html, envelope, ...
  *
- * Recipient format: bookings+{user_id}@travonal.com
+ * Recipient format: bookings+{user_id}@toveli.com
  *
  * Environment variables:
  *   ANTHROPIC_API_KEY, GOOGLE_PLACES_API_KEY,
@@ -32,8 +32,8 @@ const MODEL = "claude-sonnet-4-6";
 
 /**
  * Extract user_id from the recipient email address.
- * Expected format: bookings+{user_id}@travonal.com
- * Also handles "Name <bookings+uuid@travonal.com>" format.
+ * Expected format: bookings+{user_id}@toveli.com
+ * Also handles "Name <bookings+uuid@toveli.com>" format.
  * Returns null if the format doesn't match.
  */
 function extractUserId(toField: string): string | null {
@@ -48,7 +48,7 @@ function extractUserId(toField: string): string | null {
     const angleMatch = trimmed.match(/<([^>]+)>/);
     const email = angleMatch ? angleMatch[1] : trimmed;
 
-    const match = email.match(/^bookings\+([a-f0-9-]{36})@travonal\.com$/i);
+    const match = email.match(/^bookings\+([a-f0-9-]{36})@toveli\.com$/i);
     if (match) {
       return match[1];
     }
@@ -82,7 +82,7 @@ function stripHtml(html: string): string {
 }
 
 /**
- * Extract JSON from AI response text. Same logic as ai-travonal.
+ * Extract JSON from AI response text. Same logic as ai-toveli.
  */
 function extractJSON(text: string) {
   const block = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -140,7 +140,7 @@ function extractJSON(text: string) {
 
 /**
  * Call Claude with system/user prompt and return parsed JSON.
- * Same pattern as ai-travonal.
+ * Same pattern as ai-toveli.
  */
 async function callClaude(
   client: Anthropic,
@@ -169,7 +169,7 @@ async function callClaude(
   }
 }
 
-// ─── Google Places verification (same as ai-travonal) ───────────────────────
+// ─── Google Places verification (same as ai-toveli) ───────────────────────
 
 async function fetchGooglePlaces(query: string, apiKey: string) {
   const url = "https://places.googleapis.com/v1/places:searchText";
@@ -261,7 +261,7 @@ async function verifyWithGooglePlaces(result: Record<string, unknown>, gpKey: st
   return result;
 }
 
-// ─── Booking extraction (same prompt/schema as ai-travonal handleImportBooking) ─
+// ─── Booking extraction (same prompt/schema as ai-toveli handleImportBooking) ─
 
 async function extractBookingFromEmail(
   anthropicClient: Anthropic,

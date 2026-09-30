@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flow Away — Logo Concepts v5</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f0f0f0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      color: #111;
+      min-height: 100vh;
+      padding: 64px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+    }
+
+    header .round {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    header .inspo {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 44px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .concept-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #ccc;
+      margin-bottom: 36px;
+      align-self: flex-start;
+    }
+
+    .icon-stage {
+      width: 180px;
+      height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: #f0f0f0;
+      margin-bottom: 24px;
+    }
+
+    .mockups {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+
+    .mockup-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mockup-label {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .app-icon {
+      width: 68px;
+      height: 68px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-icon.light {
+      background: #fff;
+      box-shadow: 0 0 0 1px #e4e4e4, 0 4px 20px rgba(0,0,0,0.07);
+    }
+
+    .app-icon.dark {
+      background: #111;
+    }
+
+    .card-meta {
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 5px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="round">Flow Away — Round 5</div>
+  <p>Three Arcs, Subtly Travel</p>
+  <div class="inspo">Flight paths. Two cities. Pure abstraction.</div>
+</header>
+
+<div class="grid">
+
+  <!-- CONCEPT 1: THREE ARCS + TWO DOTS — origin and destination -->
+  <div class="card">
+    <span class="concept-label">Concept 01</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Origin dot — left -->
+        <circle cx="22" cy="96" r="7" fill="#111"/>
+        <!-- Destination dot — right -->
+        <circle cx="138" cy="96" r="7" fill="#111"/>
+        <!-- Three arcs — bottom to top, each ascending higher -->
+        <path d="M22 96 C22 96 80 110 138 96" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path d="M22 96 C22 64 80 52 138 96" stroke="#111" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+        <path d="M22 96 C22 36 80 18 138 96" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="22" cy="96" r="7" fill="#111"/>
+            <circle cx="138" cy="96" r="7" fill="#111"/>
+            <path d="M22 96 C22 96 80 110 138 96" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M22 96 C22 64 80 52 138 96" stroke="#111" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+            <path d="M22 96 C22 36 80 18 138 96" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="22" cy="96" r="7" fill="#fff"/>
+            <circle cx="138" cy="96" r="7" fill="#fff"/>
+            <path d="M22 96 C22 96 80 110 138 96" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M22 96 C22 64 80 52 138 96" stroke="#fff" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+            <path d="M22 96 C22 36 80 18 138 96" stroke="#fff" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Two Cities</p>
+      <p class="card-desc">Three flight paths between two points. The dots are cities — the arcs are routes. Instantly travel, completely abstract.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: SAME BUT ASYMMETRIC — one dot, arcs fan out to the right -->
+  <div class="card">
+    <span class="concept-label">Concept 02</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Single origin dot — left -->
+        <circle cx="22" cy="80" r="8" fill="#111"/>
+        <!-- Three arcs fanning out to different destinations -->
+        <path d="M22 80 C60 80 100 48 148 32" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path d="M22 80 C65 80 110 72 148 72" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M22 80 C60 80 100 112 148 128" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <!-- Three destination dots -->
+        <circle cx="148" cy="32" r="5" fill="#111"/>
+        <circle cx="148" cy="72" r="6" fill="#111"/>
+        <circle cx="148" cy="128" r="5" fill="#111"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="22" cy="80" r="8" fill="#111"/>
+            <path d="M22 80 C60 80 100 48 148 32" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M22 80 C65 80 110 72 148 72" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M22 80 C60 80 100 112 148 128" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <circle cx="148" cy="32" r="5" fill="#111"/>
+            <circle cx="148" cy="72" r="6" fill="#111"/>
+            <circle cx="148" cy="128" r="5" fill="#111"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="22" cy="80" r="8" fill="#fff"/>
+            <path d="M22 80 C60 80 100 48 148 32" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M22 80 C65 80 110 72 148 72" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M22 80 C60 80 100 112 148 128" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <circle cx="148" cy="32" r="5" fill="#fff"/>
+            <circle cx="148" cy="72" r="6" fill="#fff"/>
+            <circle cx="148" cy="128" r="5" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">One to Many</p>
+      <p class="card-desc">One home, three destinations. The AI opens up the world from a single point. More dynamic than symmetric arcs.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: ARCS OVER A GLOBE CURVE — ultra subtle earth reference -->
+  <div class="card">
+    <span class="concept-label">Concept 03</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Subtle globe/earth arc at bottom -->
+        <path d="M10 128 C10 128 50 108 80 108 C110 108 150 128 150 128" stroke="#111" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.2"/>
+        <!-- Three flight path arcs above the globe -->
+        <path d="M28 108 C28 80 80 68 132 108" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path d="M28 108 C28 58 80 38 132 108" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M28 108 C28 36 80 16 132 108" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+        <!-- Origin and destination dots sitting on the globe line -->
+        <circle cx="28" cy="108" r="6" fill="#111"/>
+        <circle cx="132" cy="108" r="6" fill="#111"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M10 128 C10 128 50 108 80 108 C110 108 150 128 150 128" stroke="#111" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.2"/>
+            <path d="M28 108 C28 80 80 68 132 108" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M28 108 C28 58 80 38 132 108" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M28 108 C28 36 80 16 132 108" stroke="#111" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+            <circle cx="28" cy="108" r="6" fill="#111"/>
+            <circle cx="132" cy="108" r="6" fill="#111"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M10 128 C10 128 50 108 80 108 C110 108 150 128 150 128" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.3"/>
+            <path d="M28 108 C28 80 80 68 132 108" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+            <path d="M28 108 C28 58 80 38 132 108" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M28 108 C28 36 80 16 132 108" stroke="#fff" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+            <circle cx="28" cy="108" r="6" fill="#fff"/>
+            <circle cx="132" cy="108" r="6" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Arcs Over Earth</p>
+      <p class="card-desc">A ghost of the earth's curve underneath three flight paths. The globe reference is barely there — just a whisper.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 4: CLEAN THREE ARCS + ONE DESTINATION DOT — most minimal -->
+  <div class="card">
+    <span class="concept-label">Concept 04</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Three arcs, equal weight, stacked — like wind arcs but with a single destination dot -->
+        <path d="M18 108 C18 108 80 122 142 108" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+        <path d="M18 80 C18 52 80 40 142 80" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M18 52 C18 24 80 14 142 52" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+        <!-- Single destination dot — top right, where the eye naturally travels -->
+        <circle cx="142" cy="28" r="9" fill="#111"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M18 108 C18 108 80 122 142 108" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <path d="M18 80 C18 52 80 40 142 80" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M18 52 C18 24 80 14 142 52" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <circle cx="142" cy="28" r="9" fill="#111"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M18 108 C18 108 80 122 142 108" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <path d="M18 80 C18 52 80 40 142 80" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M18 52 C18 24 80 14 142 52" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <circle cx="142" cy="28" r="9" fill="#fff"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Three Paths, One Destination</p>
+      <p class="card-desc">The wind arcs you liked, but anchored by a single dot in the corner. Your eye travels there naturally. That dot is the destination.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

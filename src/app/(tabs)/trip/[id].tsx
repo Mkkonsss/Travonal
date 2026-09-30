@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Dimensions, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
@@ -13,48 +14,73 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityCard } from '@/components/activity-card';
 import { ActivityContextMenu, ReactionOption } from '@/components/activity-context-menu';
 import { SwipeableActivityRow } from '@/components/swipeable-activity-row';
-import { LiveDayView } from '@/components/live-day-view';
-import { AskTravonal, TravonalCommand, COMMANDS as AI_COMMANDS, parseTextToCommand } from '@/components/ask-travonal';
+import { AskToveli, ToveliCommand, COMMANDS as AI_COMMANDS, parseTextToCommand } from '@/components/ask-toveli';
 import { DatePickerModal, formatDisplayDate } from '@/components/date-picker-modal';
-import { PostVisitFeedback, FeedbackRating, WhyOption } from '@/components/post-visit-feedback';
-import { PulseBanner } from '@/components/pulse-banner';
-import { TimePickerButton, formatTimeDisplay, defaultTimeForType, defaultDurationForType } from '@/components/time-picker';
+import { PulseAlertList } from '@/components/pulse-alert-list';
+import { TYPE_ICONS } from '@/components/pulse-alert-shared';
+import { TimePickerButton, formatTimeDisplay, defaultTimeForType, HOURS_12, MINUTES_5, parseTime, formatTime } from '@/components/time-picker';
 import { TransformationReveal, SmartReplacePicker } from '@/components/transformation-reveal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing } from '@/constants/theme';
-import { Activity, Invitation, PrepItem, Reservation, ReservationType, TripMember, useTrips } from '@/context/trips';
+import { Radius, Shadow, Spacing } from '@/constants/theme';
+import { Activity, PrepItem, Reservation, ReservationType, useTrips, setLastViewedTripId } from '@/context/trips';
+import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { useMemory } from '@/context/memory';
+import { useMemory, type MemoryEntryType, type MemoryCategory } from '@/context/memory';
 import { useTheme } from '@/hooks/use-theme';
 import { useActivityPhotos } from '@/hooks/use-activity-photos';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
-import { usePulseSolutions } from '@/hooks/use-pulse-solutions';
 import { checkConflicts, getTripDayCount, computeChangePreview, ChangePreview, timeToMinutes, suggestTimeForActivity, reflowFromTime, compareByTime } from '@/services/itinerary-engine';
 import { getDrivingDistance, formatDrivingDistance } from '@/services/driving-distance';
 import { transformTrip, findTopReplacements, TransformScope, validateLockedProtection, findSemanticDuplicates, detectNoChange } from '@/services/transformation-service';
 import { getBookingLinks, getPrimaryBookingLink, getTripReadiness, isBookableActivity, openBookingLink, platformDisplayName, getPlaceBookingLinks } from '@/services/booking-links';
-import { fetchExplorePlaces } from '@/services/explore-service';
-import { getPlacePhoto } from '@/services/free-photos';
-import type { NormalizedPlace } from '@/services/place-model';
+import { fetchExplorePlaces, searchExplorePlaces } from '@/services/explore-service';
+import { getPlacePhoto, prefetchPhotos } from '@/services/free-photos';
+import { categoryToActivityType, type NormalizedPlace } from '@/services/place-model';
 import { hasDestinationData } from '@/services/alternatives-pool';
-import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, importPlaceAI, analyzeTripAI, TripAnalysisResult, TripAnalysisCategory } from '@/services/ai';
+import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getBookingEmailAI, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI } from '@/services/ai';
+import { AddBookingModal, TYPE_SYMBOLS, TYPE_LABELS, formatBookingDate } from '@/components/add-booking-modal';
+import { ChatPlaceCard, placeStyles as chatPlaceStyles } from '@/components/chat-place-card';
+import { ChatMarkdown } from '@/components/chat-markdown';
 import { useGate } from '@/hooks/use-gate';
 import { UpgradePrompt } from '@/components/upgrade-prompt';
 import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
-import { isTripActive, getTripDayNumber, getDestinationNow } from '@/services/trip-status';
 import { useTripPulse, shouldRunTripPulse } from '@/context/trip-pulse';
-import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse } from '@/services/storage';
-import { makePulseDismissalKey, isPulseDismissed, formatDayLabel } from '@/services/trip-helpers';
+import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads } from '@/services/storage';
+import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
+import { type StayBlock, type StaysData } from '@/components/stays-section';
+import { StaysStrip } from '@/components/stays-strip';
 import { usePulseHistory } from '@/context/pulse-history';
 import { useToast } from '@/context/toast';
 import { TripMap } from '@/components/trip-map';
-import { scheduleBookingReminders, cancelBookingReminders } from '@/services/notifications';
+import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings } from '@/services/notifications';
+import { exportTripPDF } from '@/services/trip-export';
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '\u20AC', GBP: '\u00A3', JPY: '\u00A5', AUD: 'A$', CAD: 'C$', CHF: 'CHF', CNY: '\u00A5', KRW: '\u20A9', THB: '\u0E3F', INR: '\u20B9', MXN: 'MX$', BRL: 'R$' };
 function getCurrSymbol(cur: string) { return CURRENCY_SYMBOLS[cur] ?? cur + ' '; }
+
+/** WMO weather code → SF Symbol name + label */
+function weatherForCode(code: number): { icon: string; label: string } {
+  if (code === 0) return { icon: 'sun.max.fill', label: 'Clear' };
+  if (code <= 3) return { icon: 'cloud.sun.fill', label: 'Partly cloudy' };
+  if (code <= 48) return { icon: 'cloud.fog.fill', label: 'Foggy' };
+  if (code <= 57) return { icon: 'cloud.drizzle.fill', label: 'Drizzle' };
+  if (code <= 67) return { icon: 'cloud.rain.fill', label: 'Rain' };
+  if (code <= 77) return { icon: 'cloud.snow.fill', label: 'Snow' };
+  if (code <= 82) return { icon: 'cloud.heavyrain.fill', label: 'Showers' };
+  if (code <= 86) return { icon: 'cloud.snow.fill', label: 'Snow showers' };
+  return { icon: 'cloud.bolt.rain.fill', label: 'Thunderstorm' };
+}
+
+/** Friendly category label from raw category strings like "food/restaurant" → "Restaurant" */
+function formatCategoryLabel(category?: string, type?: string): string {
+  const raw = category || type || '';
+  const last = raw.split('/').pop() || raw;
+  if (!last) return '';
+  return last.charAt(0).toUpperCase() + last.slice(1).replace(/_/g, ' ');
+}
 
 /** Shows driving distance + duration between two activities, fetched from OSRM. */
 function DistanceIndicator({ lat1, lng1, lat2, lng2, theme }: {
@@ -72,10 +98,186 @@ function DistanceIndicator({ lat1, lng1, lat2, lng2, theme }: {
   if (!label) return null;
   return (
     <View style={styles.distanceIndicator}>
+      <SymbolView name="car.fill" size={10} tintColor={theme.textSecondary} />
       <ThemedText style={[styles.distanceText, { color: theme.textSecondary }]}>
         {label}
       </ThemedText>
     </View>
+  );
+}
+
+/** Async photo loader for activity confirmation popup. */
+function ActivityConfirmPhoto({ place, theme }: { place: NormalizedPlace; theme: any }) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    Keyboard.dismiss();
+    let cancelled = false;
+    const ref = place.photos?.[0]?.reference;
+    if (!ref) return;
+    getPlacePhoto({ cacheKey: place.placeId ?? place.name, photoRef: ref, name: place.name }).then((r) => {
+      if (!cancelled && r) setPhotoUrl(r.url);
+    });
+    return () => { cancelled = true; };
+  }, [place.placeId, place.name]);
+
+  if (photoUrl) {
+    return <ExpoImage source={{ uri: photoUrl }} style={{ width: '100%', height: 160 }} contentFit="cover" cachePolicy="memory-disk" />;
+  }
+  if (place.photos?.[0]?.reference) {
+    return <View style={{ width: '100%', height: 160, backgroundColor: theme.backgroundElement }} />;
+  }
+  return null;
+}
+
+/** Confirmation popup for adding a place from search results. Loads photo async and dismisses keyboard. */
+function StayConfirmPopup({ place, theme, onDismiss, onAdd, onViewDetails, addLabel, addIcon }: {
+  place: NormalizedPlace; theme: any;
+  onDismiss: () => void; onAdd: () => void; onViewDetails: () => void;
+  addLabel?: string; addIcon?: string;
+}) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    Keyboard.dismiss();
+    let cancelled = false;
+    const ref = place.photos?.[0]?.reference;
+    if (!ref) return;
+    getPlacePhoto({ cacheKey: place.placeId ?? place.name, photoRef: ref, name: place.name }).then((r) => {
+      if (!cancelled && r) setPhotoUrl(r.url);
+    });
+    return () => { cancelled = true; };
+  }, [place.placeId, place.name]);
+
+  return (
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+    >
+      <Pressable
+        onPress={onDismiss}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+      >
+        <Pressable onPress={(e) => e.stopPropagation()} style={{ margin: 16, marginBottom: 24 }}>
+          <Animated.View
+            entering={SlideInDown.duration(250)}
+            style={{
+              backgroundColor: theme.background, borderRadius: 20, overflow: 'hidden',
+              ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
+            }}
+          >
+            {/* Photo banner */}
+            {photoUrl ? (
+              <ExpoImage source={{ uri: photoUrl }} style={{ width: '100%', height: 160 }} contentFit="cover" cachePolicy="memory-disk" />
+            ) : place.photos?.[0]?.reference ? (
+              <View style={{ width: '100%', height: 160, backgroundColor: theme.backgroundElement }} />
+            ) : null}
+
+            <View style={{ padding: 20 }}>
+              {/* Place info */}
+              <ThemedText style={{ fontSize: 19, fontWeight: '700' }} numberOfLines={2}>{place.name}</ThemedText>
+              {place.rating != null && (
+                <ThemedText style={{ fontSize: 14, color: theme.textSecondary, marginTop: 4 }}>
+                  ★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${place.reviewCount})` : ''}
+                </ThemedText>
+              )}
+              {place.address && (
+                <ThemedText style={{ fontSize: 14, color: theme.textSecondary, marginTop: 2 }} numberOfLines={2}>
+                  {place.address}
+                </ThemedText>
+              )}
+
+              {/* Add to Stays button */}
+              <Pressable
+                onPress={onAdd}
+                style={({ pressed }) => [{
+                  backgroundColor: theme.primary, borderRadius: 14,
+                  paddingVertical: 14, alignItems: 'center',
+                  marginTop: 18, opacity: pressed ? 0.85 : 1,
+                }]}
+                accessibilityRole="button"
+                accessibilityLabel="Add to stays"
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <SymbolView name={addIcon ?? 'bed.double.fill'} size={18} tintColor={theme.primaryText} />
+                  <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.primaryText }}>{addLabel ?? 'Add to Stays'}</ThemedText>
+                </View>
+              </Pressable>
+
+              {/* View Full Details link */}
+              <Pressable
+                onPress={onViewDetails}
+                style={({ pressed }) => [{ marginTop: 10, paddingVertical: 10, alignItems: 'center', opacity: pressed ? 0.7 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel="View full details"
+              >
+                <ThemedText style={{ fontSize: 15, color: theme.primary, fontWeight: '600' }}>View Full Details</ThemedText>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Search result row with async-loaded photo for stays search. */
+function StaySearchResultRow({ place, theme, onPress }: { place: NormalizedPlace; theme: any; onPress: () => void }) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoLoaded, setPhotoLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ref = place.photos?.[0]?.reference;
+    if (!ref) { setPhotoLoaded(true); return; }
+    getPlacePhoto({ cacheKey: place.placeId ?? place.name, photoRef: ref, name: place.name }).then((r) => {
+      if (!cancelled) { if (r) setPhotoUrl(r.url); setPhotoLoaded(true); }
+    }).catch(() => { if (!cancelled) setPhotoLoaded(true); });
+    return () => { cancelled = true; };
+  }, [place.placeId, place.name]);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [{
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        paddingVertical: 10, paddingHorizontal: 4,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border,
+        opacity: pressed ? 0.7 : 1,
+      }]}
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${place.name}`}
+    >
+      {(photoUrl || !photoLoaded) && (
+        <View style={{
+          width: 44, height: 44, borderRadius: 8, backgroundColor: theme.backgroundElement,
+          overflow: 'hidden',
+        }}>
+          {photoUrl ? (
+            <ExpoImage source={{ uri: photoUrl }} style={{ width: 44, height: 44 }} contentFit="cover" cachePolicy="memory-disk" />
+          ) : (
+            <View style={{ width: 44, height: 44, backgroundColor: theme.backgroundElement }} />
+          )}
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <ThemedText style={{ fontSize: 15, fontWeight: '600' }} numberOfLines={1}>{place.name}</ThemedText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          {place.rating != null && (
+            <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
+              ★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${place.reviewCount})` : ''}
+            </ThemedText>
+          )}
+          {place.address && (
+            <ThemedText style={{ fontSize: 12, color: theme.textSecondary, flex: 1 }} numberOfLines={1}>
+              {place.rating != null ? ' · ' : ''}{place.address}
+            </ThemedText>
+          )}
+        </View>
+      </View>
+      <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
+    </Pressable>
   );
 }
 
@@ -237,9 +439,10 @@ function tripDuration(start: string, end: string) {
 }
 
 export default function TripWorkspace() {
-  const { id, openEdit, day: dayParam, addActivity: addActivityParam, applyCommand, applyDay, applySearch, applyStartAfter } = useLocalSearchParams<{ id: string; openEdit?: string; day?: string; addActivity?: string; applyCommand?: string; applyDay?: string; applySearch?: string; applyStartAfter?: string }>();
-  const { getTrip, loaded: tripsLoaded, toggleLock, setTripActivities, addActivity, updateActivity, updateTrip, undoChange, getUndoableChange, updateTripPrepItems, updateTripBudget, updateTripExpenses, addReservation, updateReservation, removeReservation, addInvitation, removeMember } = useTrips();
+  const { id, openEdit, day: dayParam, addActivity: addActivityParam, applyCommand, applyDay, applySearch, applyStartAfter, openPulse: openPulseParam, fromStaySearch } = useLocalSearchParams<{ id: string; openEdit?: string; day?: string; addActivity?: string; applyCommand?: string; applyDay?: string; applySearch?: string; applyStartAfter?: string; openPulse?: string; fromStaySearch?: string }>();
+  const { trips, getTrip, loaded: tripsLoaded, toggleLock, setTripActivities, addActivity, removeActivity, moveActivity, replaceActivity, updateActivity, updateTrip, updateTripPrepItems, updateTripBudget, updateTripExpenses, addReservation, attachReservation, updateReservation, removeReservation } = useTrips();
   const { profile } = useProfile();
+  const { session } = useAuth();
   const { entries: memoryEntries, addEntry: addMemoryEntry } = useMemory();
   const theme = useTheme();
   const { showToast } = useToast();
@@ -250,15 +453,48 @@ export default function TripWorkspace() {
   const [askVisible, setAskVisible] = useState(false);
   const [aiEditLoading, setAiEditLoading] = useState(false);
   const [selectedDay, setSelectedDay] = useState<number | undefined>();
-  const [aiViewQuery, setAiViewQuery] = useState('');
-  const [aiViewError, setAiViewError] = useState('');
-  const [tripAnalysis, setTripAnalysis] = useState<TripAnalysisResult | null>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisExpanded, setAnalysisExpanded] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<'itinerary' | 'ai' | 'map' | 'prep' | 'budget' | 'reservations' | 'members'>('itinerary');
+
+  // Edit chat state
+  interface EditChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    text: string;
+    suggestions?: string[];
+    actionResults?: { label: string; detail?: string }[];
+    pendingActions?: TripAction[];
+    places?: ChatPlace[];
+    context?: string;
+    failed?: boolean;
+    timestamp: number;
+  }
+  interface EditChatThread {
+    id: string;
+    title: string;
+    messages: EditChatMessage[];
+    updatedAt: number;
+    pinned?: boolean;
+  }
+  const [editChatMessages, setEditChatMessages] = useState<EditChatMessage[]>([]);
+  const [editChatInput, setEditChatInput] = useState('');
+  const [editChatTyping, setEditChatTyping] = useState(false);
+  const [editChatTypingMessage, setEditChatTypingMessage] = useState('Working on it...');
+  const [editChatKeyboardVisible, setEditChatKeyboardVisible] = useState(false);
+  const [editChatSuggestions, setEditChatSuggestions] = useState<string[]>([]);
+  const editChatLoadedRef = useRef<string | null>(null);
+  // Thread management
+  const [editThreads, setEditThreads] = useState<EditChatThread[]>([]);
+  const [editActiveThreadId, setEditActiveThreadId] = useState<string | null>(null);
+  const [showEditThreadList, setShowEditThreadList] = useState(false);
+  const [editThreadOptionsId, setEditThreadOptionsId] = useState<string | null>(null);
+  const [editRenameThreadId, setEditRenameThreadId] = useState<string | null>(null);
+  const [editRenameText, setEditRenameText] = useState('');
+  const [viewMode, setViewMode] = useState<'itinerary' | 'ai' | 'map' | 'prep' | 'budget' | 'reservations' | 'alerts'>('itinerary');
   const [newPrepItem, setNewPrepItem] = useState('');
   const [editingPrepId, setEditingPrepId] = useState<string | null>(null);
   const [editPrepText, setEditPrepText] = useState('');
+  const [showAddPrep, setShowAddPrep] = useState(false);
+  const [newPrepCategory, setNewPrepCategory] = useState<PrepItem['category']>('other');
+  const [collapsedPrepCats, setCollapsedPrepCats] = useState<Set<string>>(new Set());
   const [editBudgetTotal, setEditBudgetTotal] = useState(false);
   const [budgetTotalInput, setBudgetTotalInput] = useState('');
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -272,10 +508,19 @@ export default function TripWorkspace() {
   const [editExpenseCategory, setEditExpenseCategory] = useState('Other');
   const [editExpenseDay, setEditExpenseDay] = useState<string>('');
   const [addingToDay, setAddingToDay] = useState<number | null>(null);
+  const [actSearchQuery, setActSearchQuery] = useState('');
+  const [actSearchResults, setActSearchResults] = useState<NormalizedPlace[]>([]);
+  const [actSearchLoading, setActSearchLoading] = useState(false);
+  const actSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actSearchReturnDay = useRef<number | null>(null);
+  const [actSuggestions, setActSuggestions] = useState<NormalizedPlace[]>([]);
+  const [actSuggestionsLoaded, setActSuggestionsLoaded] = useState(false);
+  const [actSelectedPlace, setActSelectedPlace] = useState<NormalizedPlace | null>(null);
+  const [actConfirmStep, setActConfirmStep] = useState<'preview' | 'time'>('preview');
+  const [actConfirmTime, setActConfirmTime] = useState('10:00');
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('10:00');
   const [newType, setNewType] = useState<Activity['type']>('activity');
-  const [newDuration, setNewDuration] = useState(60);
   const [newCost, setNewCost] = useState<string>('');
   const [newAddress, setNewAddress] = useState('');
   const [newActivityNotes, setNewActivityNotes] = useState('');
@@ -283,13 +528,7 @@ export default function TripWorkspace() {
 
   // Day filter
   const [filterDay, setFilterDay] = useState<number | null>(null);
-
-  // Live mode — active trips auto-switch to today's schedule
-  const [liveMode, setLiveMode] = useState<boolean | null>(null); // null = not yet initialized
-
-  // Undo: tracks the last persisted ChangeRecord id so we can auto-show/dismiss the banner
-  const [undoDismissedId, setUndoDismissedId] = useState<string | null>(null);
-  const [autoHideUndoId, setAutoHideUndoId] = useState<string | null>(null);
+  const [activeDayCardIdx, setActiveDayCardIdx] = useState(0);
 
   // Quick action chips
   const [quickActionDay, setQuickActionDay] = useState<number | null>(null);
@@ -306,7 +545,6 @@ export default function TripWorkspace() {
   const [editTitle, setEditTitle] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editType, setEditType] = useState<Activity['type']>('activity');
-  const [editDuration, setEditDuration] = useState(60);
 
   const [transformResult, setTransformResult] = useState<{
     summary: string;
@@ -320,17 +558,32 @@ export default function TripWorkspace() {
   } | null>(null);
   // Trip Pulse dismissed state — persisted with trip-scoped keys (tripId:alertId)
   const [dismissedPulse, setDismissedPulse] = useState<Set<string>>(new Set());
-  const { enabled: tripPulseEnabled, loaded: tripPulseLoaded } = useTripPulse();
+  const { enabled: tripPulseEnabled, loaded: tripPulseLoaded, setEnabled: setTripPulseEnabled } = useTripPulse();
   const pulseHistory = usePulseHistory();
-  // Track which pulse alert is pending so we dismiss only on apply, not cancel
-  const [pendingPulseAlertId, setPendingPulseAlertId] = useState<string | null>(null);
   // Track which pulse alerts the user has already seen (for new-issue badge)
   const [seenPulse, setSeenPulse] = useState<Set<string>>(new Set());
-  // Show pulse modal from outside
-  const [showPulseModal, setShowPulseModal] = useState(false);
+  // Switch to alerts tab when navigated from a notification tap
+  useEffect(() => {
+    if (openPulseParam === '1') {
+      setViewMode('alerts');
+      handlePulseOpen();
+    }
+  }, [openPulseParam]);
 
-  // Post-visit feedback
-  const [feedbackDay, setFeedbackDay] = useState<number | null>(null);
+  // Scroll to highlighted activity after navigating from an alert
+  useEffect(() => {
+    if (!highlightedActivityId) return;
+    const timer = setTimeout(() => {
+      const layout = itemLayoutsRef.current.get(highlightedActivityId);
+      if (layout) {
+        scrollRef.current?.scrollTo({ y: layout.y, animated: true });
+      }
+    }, 400);
+    const clearTimer = setTimeout(() => {
+      setHighlightedActivityId(null);
+    }, 3000);
+    return () => { clearTimeout(timer); clearTimeout(clearTimer); };
+  }, [highlightedActivityId, filterDay]);
 
   useEffect(() => {
     loadDismissedPulse().then((ids) => {
@@ -350,7 +603,7 @@ export default function TripWorkspace() {
   const [editNotes, setEditNotes] = useState('');
   const [editTravelers, setEditTravelers] = useState('');
   const [editDepartureFrom, setEditDepartureFrom] = useState('');
-  const [editBudget, setEditBudget] = useState<'budget' | 'moderate' | 'premium'>('moderate');
+  const [editBudget, setEditBudget] = useState<'$' | '$$' | '$$$' | '$$$$'>('$$');
   const [editPace, setEditPace] = useState<'relaxed' | 'moderate' | 'active'>('moderate');
   const [editTravelWith, setEditTravelWith] = useState<'solo' | 'partner' | 'family' | 'friends' | 'group'>('solo');
   const [editRestrictions, setEditRestrictions] = useState('');
@@ -358,32 +611,31 @@ export default function TripWorkspace() {
   const [showEditStartPicker, setShowEditStartPicker] = useState(false);
   const [showEditEndPicker, setShowEditEndPicker] = useState(false);
 
-  // Reservations
-  const [showAddReservationModal, setShowAddReservationModal] = useState(false);
-  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
-  const [resType, setResType] = useState<ReservationType>('restaurant');
-  const [resTitle, setResTitle] = useState('');
-  const [resDay, setResDay] = useState<string>('');
-  const [resTime, setResTime] = useState('');
-  const [resConfirmation, setResConfirmation] = useState('');
-  const [resBookingUrl, setResBookingUrl] = useState('');
-  const [resPrice, setResPrice] = useState('');
-  const [resNotes, setResNotes] = useState('');
-  const [resAddress, setResAddress] = useState('');
-  const [resCurrency, setResCurrency] = useState('USD');
-  const [resDate, setResDate] = useState('');
-  // Entry mode for creating a new reservation
-  const [resEntryMode, setResEntryMode] = useState<'choose' | 'link' | 'manual'>('choose');
-  const [resLinkUrl, setResLinkUrl] = useState('');
-  const [resLinkLoading, setResLinkLoading] = useState(false);
-  const [resLinkError, setResLinkError] = useState('');
-  const [resCheckoutDate, setResCheckoutDate] = useState('');
+  // Stay search modal (search-to-add-stay)
+  const [showStaySearchModal, setShowStaySearchModal] = useState(false);
+  const [resSearchQuery, setResSearchQuery] = useState('');
+  const [resSearchResults, setResSearchResults] = useState<NormalizedPlace[]>([]);
+  const [resSearchLoading, setResSearchLoading] = useState(false);
+  const resSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [resSelectedPlace, setResSelectedPlace] = useState<NormalizedPlace | null>(null);
+
+  // Booking modal (AddBookingModal — shared with My Bookings & stay-detail)
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingEditRes, setBookingEditRes] = useState<{ res: Reservation; tripId: string } | null>(null);
+
+  // Email forwarding for bookings
+  const [bookingEmail, setBookingEmail] = useState('');
+  const [emailCopied, setEmailCopied] = useState(false);
+
+  // Pending bookings from email
+  const [pendingBookings, setPendingBookings] = useState<ParsedBooking[]>([]);
+  const [pendingImportData, setPendingImportData] = useState<ParsedBooking | null>(null);
+
+  // Expandable card tracking + photos for booked items
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [bookingPhotoMap, setBookingPhotoMap] = useState<Map<string, string>>(new Map());
 
   // Members tab form
-  const [inviteName, setInviteName] = useState('');
-  const [inviteContact, setInviteContact] = useState('');
-  const [inviteRole, setInviteRole] = useState<'member' | 'viewer'>('member');
-  const [lastInviteCode, setLastInviteCode] = useState('');
 
   // Move activity to different day/time
   const [movingActivity, setMovingActivity] = useState<Activity | null>(null);
@@ -393,18 +645,16 @@ export default function TripWorkspace() {
   // Smart Replace picker
   const [replaceTarget, setReplaceTarget] = useState<Activity | null>(null);
   const [replaceAlternatives, setReplaceAlternatives] = useState<{
-    title: string; description: string; cost: string; crowdLevel: string; duration: number; whyFits: string;
+    title: string; description: string; cost: string; crowdLevel: string; whyFits: string;
   }[]>([]);
 
   // Manual Replace modal
   const [manualReplaceTarget, setManualReplaceTarget] = useState<Activity | null>(null);
   const [manualReplaceName, setManualReplaceName] = useState('');
   const [manualReplaceTime, setManualReplaceTime] = useState('');
-  const [manualReplaceDuration, setManualReplaceDuration] = useState(60);
 
-  // Hotel suggestions ("Where to stay" card)
+  // Hotel suggestions (stays strip)
   const [hotelSuggestions, setHotelSuggestions] = useState<NormalizedPlace[]>([]);
-  const [hotelsDismissed, setHotelsDismissed] = useState(false);
   const [hotelPhotoUrls, setHotelPhotoUrls] = useState<Map<string, string>>(new Map());
 
   // Activity-specific customization target
@@ -412,8 +662,9 @@ export default function TripWorkspace() {
   // Context menu state (hold or "..." tap)
   const [contextMenuActivity, setContextMenuActivity] = useState<Activity | null>(null);
   const [droppedActivityId, setDroppedActivityId] = useState<string | null>(null);
+  const [highlightedActivityId, setHighlightedActivityId] = useState<string | null>(null);
 
-  const [scopePickerCommand, setScopePickerCommand] = useState<TravonalCommand | null>(null);
+  const [scopePickerCommand, setScopePickerCommand] = useState<ToveliCommand | null>(null);
   const [scopePickerDays, setScopePickerDays] = useState<Set<number>>(new Set());
   const [scopePickerSearchTerms, setScopePickerSearchTerms] = useState<string | undefined>(undefined);
   const [scopePickerStartAfter, setScopePickerStartAfter] = useState<string | undefined>(undefined);
@@ -424,20 +675,22 @@ export default function TripWorkspace() {
     summary: string;
     changes: string[];
     whyFits?: string;
-    memoryEntry?: { type: string; category: string; detail: string };
+    memoryEntry?: { type: MemoryEntryType; category: MemoryCategory; detail: string };
     preview?: ChangePreview;
     conflicts?: ReturnType<typeof checkConflicts>;
   } | null>(null);
 
   // Subscription gates
+  const chatGate = useGate('chat');
   const editGate = useGate('edit_trip');
-  const analyzeGate = useGate('analyze_trip');
   const searchGate = useGate('natural_search');
+  const exportGate = useGate('export_pdf');
   const { refresh: refreshSubscription } = useSubscription();
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place'>('edit_trip');
+  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place' | 'chat' | 'export_pdf'>('edit_trip');
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
-  const trip = getTrip(id);
+  const trip = trips.find((t) => t.id === id);
 
   useEffect(() => {
     if (trip) {
@@ -455,20 +708,29 @@ export default function TripWorkspace() {
   }, [dayParam]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Auto-detect active trip and switch to live mode on mount
+  // Reopen reservation modal in search mode when returning from place-detail
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!trip || liveMode !== null || dayParam) return; // skip if already set or deep-linked to a day
-    if (isTripActive(trip, undefined)) {
-      const todayDay = getTripDayNumber(trip.startDate, trip.endDate, undefined);
-      if (todayDay >= 1) {
-        setFilterDay(todayDay);
-        setLiveMode(true);
-      }
+    if (fromStaySearch === '1') {
+      setShowStaySearchModal(true);
+      router.setParams({ fromStaySearch: undefined as any });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trip?.id]);
+  }, [fromStaySearch]);
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      if (actSearchReturnDay.current != null) {
+        setAddingToDay(actSearchReturnDay.current);
+        actSearchReturnDay.current = null;
+      }
+    });
+    return unsub;
+  }, [navigation]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Track last-viewed trip so the chat tab can use it as default context
+  useEffect(() => {
+    if (trip?.id) setLastViewedTripId(trip.id);
+  }, [trip?.id]);
 
   // Open edit modal when navigated with ?openEdit=1
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -496,53 +758,10 @@ export default function TripWorkspace() {
   }, [addActivityParam, trip?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Auto-hide the undo banner after ~10 seconds (without removing the snapshot)
+  // Fetch hotel suggestions when there are uncovered nights or no stays at all
+  const tripHasHotel = trip?.activities.some((a) => a.type === 'hotel') ?? false;
   useEffect(() => {
-    const undoable = getUndoableChange(id);
-    if (!undoable || undoable.id === undoDismissedId || undoable.id === autoHideUndoId) return;
-    const timer = setTimeout(() => {
-      setAutoHideUndoId(undoable.id);
-    }, 10000);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, undoDismissedId]);
-
-  // Initialize default prep items — must be before early returns to avoid hook-order crash
-  const prepTripId = trip?.id;
-  useEffect(() => {
-    if (!trip) return;
-    if (viewMode === 'prep' && (!trip.prepItems || trip.prepItems.length === 0)) {
-      const dest = trip.destination;
-      const country = trip.country;
-      const hasHotel = trip.activities.some((a) => a.type === 'hotel');
-      // Detect domestic trips (US-to-US) to skip passport/visa items
-      const domesticCountries = ['united states', 'usa', 'us'];
-      const isDomestic = domesticCountries.includes(country?.toLowerCase?.() ?? '');
-      const items: PrepItem[] = [];
-      if (!isDomestic) {
-        items.push(
-          { id: 'prep-1', text: 'Pack passport / ID', done: false, custom: false, category: 'documents' },
-          { id: 'prep-2', text: `Check visa requirements for ${dest}`, done: false, custom: false, category: 'documents' },
-        );
-      }
-      if (!hasHotel) {
-        items.push({ id: 'prep-3', text: 'Book accommodation', done: false, custom: false, category: 'accommodation' });
-      }
-      items.push(
-        { id: 'prep-5', text: `Download offline maps for ${dest}`, done: false, custom: false, category: 'packing' },
-      );
-      if (!isDomestic) {
-        items.push({ id: 'prep-4', text: 'Arrange travel insurance', done: false, custom: false, category: 'health' });
-      }
-      updateTripPrepItems(trip.id, items);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, prepTripId]);
-
-  // Fetch hotel suggestions when trip has no hotel
-  const tripHasHotel = trip?.activities.some((a) => a.type === 'hotel') ?? true;
-  useEffect(() => {
-    if (!trip || tripHasHotel || hotelsDismissed) return;
+    if (!trip || tripHasHotel) return;
     let cancelled = false;
     fetchExplorePlaces(
       { type: 'trip', tripId: trip.id, destination: trip.destination, label: trip.destination },
@@ -551,7 +770,12 @@ export default function TripWorkspace() {
       if (cancelled) return;
       const top = places.slice(0, 3);
       setHotelSuggestions(top);
-      // Fetch photos for hotel cards
+      // Batch-prefetch all photos at once (cache check + parallel Google fetches)
+      const photoPlaces = top
+        .filter((p) => p.photos?.[0]?.reference)
+        .map((p) => ({ cacheKey: p.placeId ?? p.name, photoRef: p.photos![0].reference, name: p.name, category: p.category }));
+      prefetchPhotos(photoPlaces);
+      // Also fire individual requests to update state as each resolves
       top.forEach((place) => {
         const photoRef = place.photos?.[0]?.reference;
         if (!photoRef) return;
@@ -573,7 +797,45 @@ export default function TripWorkspace() {
     }).catch(() => {});
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trip?.id, tripHasHotel, hotelsDismissed]);
+  }, [trip?.id, tripHasHotel]);
+
+  // Fetch booking forwarding email on mount
+  useEffect(() => {
+    getBookingEmailAI().then((r) => setBookingEmail(r.email)).catch(() => {});
+  }, []);
+
+  // Fetch pending bookings from email (refresh when modal closes)
+  useEffect(() => {
+    getParsedBookingsAI()
+      .then((res) => setPendingBookings(res.bookings.filter((b: ParsedBooking) => b.status === 'pending')))
+      .catch(() => {});
+  }, [showBookingModal]);
+
+  // Fetch activity suggestions for "add activity" modal
+  useEffect(() => {
+    if (!trip || actSuggestionsLoaded) return;
+    let cancelled = false;
+    fetchExplorePlaces(
+      { type: 'trip', tripId: trip.id, destination: trip.destination, label: trip.destination },
+      'for_you',
+    ).then((places) => {
+      if (!cancelled) {
+        // Filter out places already in the trip
+        const existingPlaceIds = new Set(trip.activities.map((a) => a.placeId).filter(Boolean));
+        const filtered = places.filter((p) => !p.placeId || !existingPlaceIds.has(p.placeId));
+        const top = filtered.slice(0, 8);
+        setActSuggestions(top);
+        setActSuggestionsLoaded(true);
+        // Batch-prefetch all photos at once so StaySearchResultRow gets instant cache hits
+        const photoPlaces = top
+          .filter((p) => p.photos?.[0]?.reference)
+          .map((p) => ({ cacheKey: p.placeId ?? p.name, photoRef: p.photos![0].reference, name: p.name, category: p.category }));
+        prefetchPhotos(photoPlaces);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, actSuggestionsLoaded]);
 
   // Destination photo — must be before early returns (hook ordering rule)
   const heroPhotoQuery = trip ? `${trip.destination}, ${trip.country}` : '';
@@ -585,19 +847,31 @@ export default function TripWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip?.id, trip?.activities.length],
   );
-  const activityPhotos = useActivityPhotos(activityPlaceIds);
+  const activityPhotoHints = useMemo(
+    () => (trip?.activities ?? [])
+      .filter((a): a is typeof a & { placeId: string } => !!a.placeId)
+      .map((a) => ({ placeId: a.placeId, name: a.title, destination: trip?.destination })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trip?.id, trip?.activities.length],
+  );
+  const activityNameHints = useMemo(
+    () => (trip?.activities ?? [])
+      .filter((a) => !a.placeId && !!a.title)
+      .map((a) => ({ key: a.id, name: a.title, destination: trip?.destination })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trip?.id, trip?.activities.length],
+  );
+  const activityPhotos = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
 
-  // Weather forecast for weather-aware pulse alerts + live view
+  // Weather forecast for weather-aware pulse alerts
   const [weatherForecast, setWeatherForecast] = useState<import('@/services/weather').TripWeatherForecast | null>(null);
   useEffect(() => {
     if (!trip) return;
     const actWithCoords = trip.activities.find((a) => a.lat != null && a.lng != null);
     if (!actWithCoords || actWithCoords.lat == null || actWithCoords.lng == null) return;
     let cancelled = false;
-    const isActive = isTripActive(trip);
     import('@/services/weather').then((wx) => {
-      const fetchFn = isActive ? wx.fetchWeatherForecastActive : wx.fetchWeatherForecast;
-      fetchFn(actWithCoords.lat!, actWithCoords.lng!, trip.startDate, trip.endDate).then((forecast) => {
+      wx.fetchWeatherForecast(actWithCoords.lat!, actWithCoords.lng!, trip.startDate, trip.endDate).then((forecast) => {
         if (!cancelled) setWeatherForecast(forecast);
       });
     });
@@ -609,14 +883,6 @@ export default function TripWorkspace() {
   const prePulseAlerts = (trip && shouldRunTripPulse(tripPulseLoaded, tripPulseEnabled))
     ? runTripPulse(trip, profile, memoryEntries, 5, weatherForecast)
     : [];
-
-  // Pulse solutions hook — prepares AI fixes in the background
-  const { getSolution, isPreparing: isSolutionPreparing } = usePulseSolutions(
-    trip,
-    prePulseAlerts,
-    profile,
-    memoryEntries,
-  );
 
   // Notification scheduling is handled centrally by AppPulseEvaluator — no local scheduling here.
 
@@ -648,16 +914,40 @@ export default function TripWorkspace() {
   const bookedCount = trip?.activities.filter((a) => a.bookingStatus === 'booked').length ?? 0;
   useEffect(() => {
     if (!trip) return;
-    const unbookedCritical = trip.activities.filter(
-      (a) => (a.type === 'hotel' || a.type === 'flight') && a.bookingStatus !== 'booked',
-    );
-    if (unbookedCritical.length > 0) {
-      scheduleBookingReminders(trip.id, trip.destination, unbookedCritical.length, trip.startDate);
-    } else {
-      cancelBookingReminders(trip.id);
-    }
+    loadBookingRemindersEnabled().then((enabled) => {
+      if (!enabled) { cancelBookingReminders(trip.id); return; }
+      const unbookedCritical = trip.activities.filter(
+        (a) => (a.type === 'hotel' || a.type === 'flight') && a.bookingStatus !== 'booked',
+      );
+      if (unbookedCritical.length > 0) {
+        scheduleBookingReminders(trip.id, trip.destination, unbookedCritical.length, trip.startDate);
+      } else {
+        cancelBookingReminders(trip.id);
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, bookedCount]);
+
+  // Schedule departure reminder + daily briefings when trip is viewed
+  useEffect(() => {
+    if (!trip || trip.activities.length === 0) return;
+    loadDepartureReminderEnabled().then((enabled) => {
+      if (enabled) scheduleDepartureReminder(trip.id, trip.destination, trip.startDate);
+    });
+    loadDailyBriefingEnabled().then((enabled) => {
+      if (!enabled) return;
+      const byDay = new Map<number, string[]>();
+      for (const a of trip.activities) {
+        if (a.type === 'activity' || a.type === 'food') {
+          const list = byDay.get(a.day) ?? [];
+          list.push(a.title);
+          byDay.set(a.day, list);
+        }
+      }
+      scheduleDailyBriefings(trip.id, trip.destination, trip.startDate, trip.endDate, byDay);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.id, trip?.activities.length]);
 
   // Loading state while AsyncStorage hydrates
   if (!tripsLoaded) {
@@ -680,6 +970,87 @@ export default function TripWorkspace() {
   const currentTrip = trip;
   const totalDays = getTripDayCount(currentTrip.startDate, currentTrip.endDate);
 
+  // Fetch photos for booked reservations
+  const reservationCount = (currentTrip.reservations ?? []).length;
+  useEffect(() => {
+    const reservations = currentTrip.reservations ?? [];
+    if (reservations.length === 0) return;
+    const fetchPhotos = async () => {
+      const newMap = new Map(bookingPhotoMap);
+      let changed = false;
+      for (const res of reservations) {
+        if (newMap.has(res.id) || res.cancelled) continue;
+        try {
+          const photo = await getPlacePhoto({
+            cacheKey: `booking-${res.id}`,
+            name: res.title,
+            category: res.type === 'hotel' ? 'stay' : res.type === 'restaurant' ? 'food' : 'activity',
+          });
+          if (photo?.url) { newMap.set(res.id, photo.url); changed = true; }
+        } catch { /* ignore */ }
+      }
+      if (changed) setBookingPhotoMap(new Map(newMap));
+    };
+    fetchPhotos();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservationCount]);
+
+  // Stays data — compute night-by-night hotel coverage
+  const staysData = useMemo((): StaysData => {
+    const hotelActivities = currentTrip.activities
+      .filter((a) => a.type === 'hotel')
+      .sort((a, b) => a.day - b.day);
+    const reservations = currentTrip.reservations ?? [];
+    const blocks: StayBlock[] = [];
+
+    for (let idx = 0; idx < hotelActivities.length; idx++) {
+      const hotel = hotelActivities[idx];
+      const linkedRes = hotel.reservationId
+        ? reservations.find((r) => r.id === hotel.reservationId)
+        : undefined;
+
+      // Determine check-out day (exclusive)
+      let checkOutDay = hotel.day + 1;
+      // Prefer the structured checkOutDate field; fall back to legacy notes regex
+      const rawCheckOut = linkedRes?.checkOutDate
+        ?? linkedRes?.notes?.match(/Check-out:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (rawCheckOut && currentTrip.datesKnown !== false) {
+        const tripStart = new Date(currentTrip.startDate + 'T00:00:00');
+        const coDate = new Date(rawCheckOut + 'T00:00:00');
+        const diffDays = Math.round((coDate.getTime() - tripStart.getTime()) / 86400000) + 1;
+        checkOutDay = Math.max(hotel.day + 1, Math.min(diffDays, totalDays + 1));
+      }
+      // Clamp to next hotel's check-in if overlapping
+      const nextHotel = hotelActivities[idx + 1];
+      if (nextHotel && checkOutDay > nextHotel.day) {
+        checkOutDay = nextHotel.day;
+      }
+
+      const nights: number[] = [];
+      for (let n = hotel.day; n < checkOutDay && n <= totalDays; n++) nights.push(n);
+
+      blocks.push({ hotel, reservation: linkedRes, checkInDay: hotel.day, checkOutDay, nights });
+    }
+
+    // Uncovered nights
+    const covered = new Set(blocks.flatMap((b) => b.nights));
+    const uncovered: number[] = [];
+    for (let n = 1; n <= totalDays; n++) if (!covered.has(n)) uncovered.push(n);
+
+    // Group into contiguous ranges
+    const uncoveredRanges: { start: number; end: number }[] = [];
+    let rangeStart = -1;
+    for (let i = 0; i < uncovered.length; i++) {
+      if (rangeStart < 0) rangeStart = uncovered[i];
+      if (i === uncovered.length - 1 || uncovered[i + 1] !== uncovered[i] + 1) {
+        uncoveredRanges.push({ start: rangeStart, end: uncovered[i] });
+        rangeStart = -1;
+      }
+    }
+
+    return { blocks, uncoveredRanges, hasAnyStay: blocks.length > 0 };
+  }, [currentTrip.activities, currentTrip.reservations, currentTrip.startDate, currentTrip.datesKnown, totalDays]);
+
   // Monotonic revision counter — scopes pulse dismissals so they expire when activities change
   const itineraryRevision = currentTrip.itineraryRevision ?? 0;
 
@@ -687,8 +1058,6 @@ export default function TripWorkspace() {
   const allPulseAlerts = prePulseAlerts;
   const activePulseAlerts = allPulseAlerts
     .filter((a) => !isPulseDismissed(dismissedPulse, currentTrip.id, a.id, itineraryRevision));
-  const dismissedPulseAlerts = allPulseAlerts
-    .filter((a) => isPulseDismissed(dismissedPulse, currentTrip.id, a.id, itineraryRevision));
   // Compute new-issue badge count: active alerts not yet seen (trip-scoped)
   const makeSeenKey = (alertId: string) => `${currentTrip.id}:${alertId}`;
   const newIssueCount = activePulseAlerts.filter((a) => !seenPulse.has(makeSeenKey(a.id))).length;
@@ -719,37 +1088,13 @@ export default function TripWorkspace() {
   }
 
   function handlePulseAction(alert: PulseAlert) {
-    // Check if we have a prepared solution from the background AI
-    const solution = getSolution(alert.id);
-    if (solution) {
-      setPendingPulseAlertId(alert.id);
-      // Route directly to TransformationReveal with the prepared solution
-      const preview = computeChangePreview(
-        currentTrip.activities,
-        solution.activities,
-        solution.summary,
-      );
-      const solutionConflicts = checkConflicts(solution.activities, totalDays);
-      setPendingTransform({
-        activities: solution.activities,
-        summary: solution.summary,
-        changes: solution.changes,
-        preview,
-        conflicts: solutionConflicts,
-      });
-      setTransformResult({
-        summary: solution.summary,
-        changes: solution.changes,
-      });
-      return;
+    // Navigate to the problem in the itinerary
+    setViewMode('itinerary');
+    if (alert.day != null) {
+      setFilterDay(alert.day);
     }
-
-    if (alert.command) {
-      setPendingPulseAlertId(alert.id);
-      handleCommand(alert.command as TravonalCommand, alert.day);
-    } else {
-      // Non-command actions dismiss immediately
-      dismissPulseAlert(alert.id);
+    if (alert.activityId) {
+      setHighlightedActivityId(alert.activityId);
     }
   }
 
@@ -773,6 +1118,7 @@ export default function TripWorkspace() {
       tripId: currentTrip.id,
       isGlobal: true,
       origin: `Reaction on "${activity.title}" in ${currentTrip.destination}`,
+      destination: currentTrip.destination,
     });
     showToast('Preference saved', 'success');
     // Trigger smart replace to find an alternative
@@ -838,29 +1184,93 @@ export default function TripWorkspace() {
     return link?.shortLabel ?? 'Book';
   }
 
-  // Post-visit feedback handler — saves rating + reason to memory
-  function handlePostVisitFeedback(activity: Activity, rating: FeedbackRating, why?: WhyOption) {
-    const typeLabel = rating === 'loved' ? 'recommendation_accepted'
-      : rating === 'liked' ? 'recommendation_accepted'
-      : 'recommendation_rejected';
-    const detail = why
-      ? why.memoryDetail(activity)
-      : rating === 'loved' ? `Loved "${activity.title}"`
-      : rating === 'liked' ? `Liked "${activity.title}"`
-      : `Didn't enjoy "${activity.title}"`;
-    addMemoryEntry({
-      type: typeLabel,
-      category: why?.memoryCategory ?? activity.type,
-      detail,
-      tripId: currentTrip.id,
-      isGlobal: true,
-      origin: `Post-visit feedback in ${currentTrip.destination}`,
-    });
+  // Email forwarding — copy booking email address
+  async function handleCopyBookingEmail() {
+    if (!bookingEmail) return;
+    await Clipboard.setStringAsync(bookingEmail);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setEmailCopied(true);
+    setTimeout(() => setEmailCopied(false), 2000);
   }
 
-  // Group activities by day
+  // Import a pending booking from email — auto-match hotels to activities in this trip
+  function handleImportPendingBooking(booking: ParsedBooking) {
+    const data = booking.booking_data;
+    const resType = data.reservationType ?? 'other';
+
+    if (resType === 'hotel' && data.name) {
+      const nameLC = data.name.toLowerCase();
+      const matchActivity = currentTrip.activities.find(
+        (act) => act.type === 'hotel' && !act.reservationId &&
+        (act.title.toLowerCase().includes(nameLC) || nameLC.includes(act.title.toLowerCase())),
+      );
+
+      if (matchActivity) {
+        Alert.alert(
+          'Existing Stay Found',
+          `"${matchActivity.title}" is already in your trip. Link this booking to it?`,
+          [
+            {
+              text: 'Link to Stay',
+              onPress: async () => {
+                attachReservation(currentTrip.id, matchActivity.id, {
+                  type: 'hotel',
+                  title: data.name!,
+                  day: matchActivity.day,
+                  confirmationNumber: data.confirmationNumber ?? undefined,
+                  price: data.price ?? undefined,
+                  currency: data.currency ?? undefined,
+                  date: data.bookingDate ?? undefined,
+                  checkOutDate: data.checkoutDate ?? undefined,
+                  fixed: true,
+                });
+                await markBookingImportedAI(booking.id).catch(() => {});
+                setPendingBookings((prev) => prev.filter((b) => b.id !== booking.id));
+                showToast(`Linked to ${matchActivity.title}`, 'success');
+              },
+            },
+            {
+              text: 'Add as New',
+              onPress: () => {
+                setBookingEditRes(null);
+                setPendingImportData(booking);
+                setShowBookingModal(true);
+              },
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ],
+        );
+        return;
+      }
+    }
+
+    setBookingEditRes(null);
+    setPendingImportData(booking);
+    setShowBookingModal(true);
+  }
+
+  // Dismiss a pending email booking
+  async function handleDismissPendingBooking(booking: ParsedBooking) {
+    try {
+      await dismissParsedBookingAI(booking.id);
+      setPendingBookings((prev) => prev.filter((b) => b.id !== booking.id));
+      showToast('Booking dismissed', 'success');
+    } catch {
+      showToast('Could not dismiss', 'error');
+    }
+  }
+
+  // Copy confirmation number to clipboard
+  async function handleCopyConfirmationNumber(text: string) {
+    await Clipboard.setStringAsync(text);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    showToast('Copied to clipboard', 'success');
+  }
+
+  // Group activities by day (exclude hotels — shown in Stays section)
   const dayMap = new Map<number, Activity[]>();
   for (const act of currentTrip.activities) {
+    if (act.type === 'hotel') continue;
     const existing = dayMap.get(act.day) ?? [];
     existing.push(act);
     dayMap.set(act.day, existing);
@@ -872,23 +1282,21 @@ export default function TripWorkspace() {
     allDays.push(d);
   }
 
-  // Live mode — determine if we're showing today's live view
-  const tripIsActive = isTripActive(currentTrip, undefined);
-  const todayDayNumber = tripIsActive
-    ? getTripDayNumber(currentTrip.startDate, currentTrip.endDate, undefined)
-    : 0;
-  const isViewingToday = filterDay === todayDayNumber && todayDayNumber >= 1;
-  const showLiveView = liveMode === true && isViewingToday && tripIsActive;
+  // Day card carousel dimensions — slightly narrower so next card peeks in
+  const screenWidth = Dimensions.get('window').width;
+  const dayCardWidth = screenWidth - Spacing.four * 2 - 40;
 
-  // Today's weather for live view header
-  const todayWeather = (() => {
-    if (!showLiveView || !weatherForecast || todayDayNumber < 1) return null;
-    const start = new Date(currentTrip.startDate + 'T00:00:00');
-    const target = new Date(start);
-    target.setDate(target.getDate() + todayDayNumber - 1);
-    const targetStr = target.toISOString().split('T')[0];
-    return weatherForecast.days.find((d) => d.date === targetStr) ?? null;
-  })();
+  // Collect up to 3 photo URLs for a day's activities (for day card collage)
+  const getDayPhotoUrls = useCallback((day: number): string[] => {
+    const activities = (dayMap.get(day) ?? []).sort(compareByTime);
+    const urls: string[] = [];
+    for (const a of activities) {
+      if (urls.length >= 3) break;
+      const url = activityPhotos.get(a.placeId ?? a.id);
+      if (url && !urls.includes(url)) urls.push(url);
+    }
+    return urls;
+  }, [dayMap, activityPhotos]);
 
   // Navigate to place-detail for an activity
   function handleActivityTap(activity: Activity) {
@@ -898,6 +1306,10 @@ export default function TripWorkspace() {
     if (activity.address) url += `&address=${encodeURIComponent(activity.address)}`;
     if (activity.lat != null) url += `&lat=${activity.lat}`;
     if (activity.lng != null) url += `&lng=${activity.lng}`;
+    if (activity.rating != null) url += `&rating=${activity.rating}`;
+    if (activity.reviewCount != null) url += `&reviewCount=${activity.reviewCount}`;
+    if (activity.category) url += `&category=${encodeURIComponent(activity.category)}`;
+    if (currentTrip.destination) url += `&destination=${encodeURIComponent(currentTrip.destination)}`;
     router.push(url as any);
   }
 
@@ -947,7 +1359,7 @@ export default function TripWorkspace() {
     if (before) {
       // Slot after the previous activity ends
       const [bh, bm] = before.time.split(':').map(Number);
-      const beforeEnd = bh * 60 + bm + (before.duration ?? 60);
+      const beforeEnd = bh * 60 + bm + 60;
       return minutesToTime(beforeEnd + GAP);
     } else if (after) {
       // First position — take the first activity's time (pushing it to be "before" the existing first)
@@ -987,7 +1399,7 @@ export default function TripWorkspace() {
       const prev = targetDayActs[i - 1];
       const curr = targetDayActs[i];
       if (curr.locked || curr.fixed) continue; // don't push locked activities
-      const prevEnd = timeToMin(prev.time) + (prev.duration ?? 60);
+      const prevEnd = timeToMin(prev.time) + 60;
       const currStart = timeToMin(curr.time);
       if (currStart < prevEnd + GAP) {
         targetDayActs[i] = { ...curr, time: minutesToTime(prevEnd + GAP) };
@@ -1025,7 +1437,6 @@ export default function TripWorkspace() {
               setManualReplaceTarget(target);
               setManualReplaceName('');
               setManualReplaceTime(target.time);
-              setManualReplaceDuration(target.duration ?? 60);
             },
           },
         ],
@@ -1111,7 +1522,7 @@ export default function TripWorkspace() {
       const alternatives = hasCurated ? findTopReplacements(currentTrip.destination, target, {
         interests: profile.interests,
         dislikes: profile.dislikes,
-        budget: currentTrip.budget ?? profile.budget ?? 'moderate',
+        budget: currentTrip.budget ?? profile.budget ?? '$$',
         existingTitles,
       }) : [];
       if (alternatives.length === 0) {
@@ -1126,7 +1537,6 @@ export default function TripWorkspace() {
           description: alt.description ?? '',
           cost: alt.cost,
           crowdLevel: alt.crowdLevel ?? 'medium',
-          duration: alt.duration ?? 60,
           whyFits: alt.tags.filter((t) => profile.interests.includes(t)).join(', ') || alt.tags[0] || 'Good fit',
         })));
       }
@@ -1156,7 +1566,6 @@ export default function TripWorkspace() {
                     type: target.type,
                     day: target.day,
                     time: manualReplaceTime || target.time,
-                    duration: manualReplaceDuration,
                     category: target.category,
                     cost: target.cost,
                     description: '',
@@ -1183,7 +1592,7 @@ export default function TripWorkspace() {
     const costLabel = picked.cost === 'free' ? 'Free' : picked.cost === 'budget' ? '$' : picked.cost === 'moderate' ? '$$' : '$$$';
     Alert.alert(
       'Replace activity?',
-      `Replace "${replaceTarget.title}" with "${picked.title}"?\n\nTime: ${formatTimeDisplay(replaceTarget.time)}\nDuration: ${picked.duration} min\nCost: ${costLabel}`,
+      `Replace "${replaceTarget.title}" with "${picked.title}"?\n\nTime: ${formatTimeDisplay(replaceTarget.time)}\nCost: ${costLabel}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -1194,18 +1603,8 @@ export default function TripWorkspace() {
     );
   }
 
-  function applyReplacement(picked: { title: string; description: string; cost: string; duration: number }) {
+  function applyReplacement(picked: { title: string; description: string; cost: string }) {
     if (!replaceTarget) return;
-
-    // Cap duration to avoid overlapping the next activity on the same day
-    const nextActivity = currentTrip.activities
-      .filter((a) => a.day === replaceTarget.day && a.time > replaceTarget.time)
-      .sort(compareByTime)[0];
-    let duration = Math.min(picked.duration, 240);
-    if (nextActivity) {
-      const gap = timeToMinutes(nextActivity.time) - timeToMinutes(replaceTarget.time) - 15;
-      duration = Math.min(duration, Math.max(30, gap));
-    }
 
     const result = currentTrip.activities.map((a) =>
       a.id === replaceTarget.id
@@ -1215,7 +1614,6 @@ export default function TripWorkspace() {
             type: replaceTarget.type,
             day: replaceTarget.day,
             time: replaceTarget.time,
-            duration,
             category: replaceTarget.category,
             cost: picked.cost as Activity['cost'],
             description: picked.description,
@@ -1223,6 +1621,23 @@ export default function TripWorkspace() {
         : a
     );
     setTripActivities(currentTrip.id, result, `Replaced "${replaceTarget.title}" with "${picked.title}"`);
+
+    // Save memory with context about what was chosen over what
+    const rejected = replaceAlternatives
+      .filter((_, i) => replaceAlternatives[i]?.title !== picked.title)
+      .map((a) => a.title)
+      .slice(0, 2);
+    const overText = rejected.length > 0 ? ` over ${rejected.map((t) => `"${t}"`).join(' and ')}` : '';
+    addMemoryEntry({
+      type: 'activity_replaced',
+      category: 'preference',
+      detail: `Chose "${picked.title}"${overText} to replace "${replaceTarget.title}" in ${currentTrip.destination}`,
+      tripId: currentTrip.id,
+      isGlobal: true,
+      origin: `Smart Replace in ${currentTrip.destination}`,
+      destination: currentTrip.destination,
+    });
+
     setReplaceTarget(null);
     setReplaceAlternatives([]);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1243,7 +1658,6 @@ export default function TripWorkspace() {
         day,
         time: finalTime,
         type: newType,
-        duration: newDuration,
         cost: (newCost || undefined) as Activity['cost'],
         description: [newAddress.trim(), newActivityNotes.trim()].filter(Boolean).join(' — ') || undefined,
         fixed: newFixed || undefined,
@@ -1251,7 +1665,6 @@ export default function TripWorkspace() {
       });
       setNewTitle('');
       setNewTime(defaultTimeForType('activity'));
-      setNewDuration(60);
       setNewType('activity');
       setNewCost('');
       setNewAddress('');
@@ -1271,7 +1684,7 @@ export default function TripWorkspace() {
     );
   }
 
-  function handleCommand(command: TravonalCommand, dayOverride?: number, scopeOverride?: TransformScope, searchTerms?: string, startAfter?: string) {
+  function handleCommand(command: ToveliCommand, dayOverride?: number, scopeOverride?: TransformScope, searchTerms?: string, startAfter?: string) {
     if (command === 'add_activity') {
       const targetDay = dayOverride ?? selectedDay ?? filterDay ?? 1;
       setAiAddDay(targetDay);
@@ -1425,14 +1838,13 @@ export default function TripWorkspace() {
       type: suggestion.type === 'food' ? 'food' : 'activity',
       description: suggestion.description,
       cost: suggestion.cost as Activity['cost'],
-      duration: 90,
     });
     showToast(`"${suggestion.title}" added to Day ${day}`, 'success');
     setShowAIAddSheet(false);
     setAiAddSuggestions([]);
   }
 
-  function applyLocalTransform(command: TravonalCommand, scope: TransformScope, searchTerms?: string, startAfter?: string) {
+  function applyLocalTransform(command: ToveliCommand, scope: TransformScope, searchTerms?: string, startAfter?: string) {
     const result = transformTrip(currentTrip, command, scope, profile, memoryEntries, undefined, searchTerms, startAfter);
 
     if (result.summary) {
@@ -1491,15 +1903,10 @@ export default function TripWorkspace() {
     }
     // Record in persistent history via changeDescription
     setTripActivities(currentTrip.id, pendingTransform.activities, pendingTransform.summary);
-    // Dismiss the pulse alert that triggered this transform (if any)
-    if (pendingPulseAlertId) {
-      dismissPulseAlert(pendingPulseAlertId);
-      setPendingPulseAlertId(null);
-    }
     // Save memory preference ONLY after successful apply
     if (memoryAction && pendingTransform.memoryEntry) {
       addMemoryEntry({
-        type: pendingTransform.memoryEntry.type as any,
+        type: pendingTransform.memoryEntry.type,
         category: pendingTransform.memoryEntry.category,
         detail: pendingTransform.memoryEntry.detail,
         tripId: currentTrip.id,
@@ -1592,26 +1999,447 @@ export default function TripWorkspace() {
     }
   }
 
-  function handleUndo() {
-    const undoable = getUndoableChange(currentTrip.id);
-    if (undoable) {
-      undoChange(currentTrip.id);
-      setUndoDismissedId(undoable.id);
-      setAutoHideUndoId(null);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // ─── Edit Chat ──────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (viewMode === 'ai') {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 100);
+    }
+  }, [viewMode, editActiveThreadId]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
+      setEditChatKeyboardVisible(true);
+      if (viewMode === 'ai') {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+      }
+    });
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setEditChatKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, [viewMode]);
+
+  function editGenerateId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function formatEditThreadTitle(text: string): string {
+    let t = text.trim().replace(/\n.*/s, '');
+    t = t.replace(/^(hey|hi|hello|yo|ok|okay|so)\s*,?\s*/i, '');
+    t = t.replace(/^(can you|could you|would you|please|i want to|i'd like to|i need to|i want|i need|make|add|remove|delete|swap|move|replace|fix|change|update)\s+/i, '');
+    t = t.replace(/\b(some|the best|really good|good|great|nice|really|very)\b/gi, '');
+    t = t.replace(/\s+/g, ' ').trim();
+    t = t.charAt(0).toUpperCase() + t.slice(1);
+    if (t.length > 30) {
+      t = t.slice(0, 30).replace(/\s+\S*$/, '') + '\u2026';
+    }
+    return t || 'New edit';
+  }
+
+  function saveEditCurrentThread() {
+    if (!currentTrip?.id) return;
+    const threadId = editActiveThreadId || editGenerateId();
+    setEditThreads((prev) => {
+      const existing = prev.find((t) => t.id === threadId);
+      const firstUserMsg = editChatMessages.find((m) => m.role === 'user');
+      const autoTitle = firstUserMsg ? formatEditThreadTitle(firstUserMsg.text) : 'New edit';
+      const thread: EditChatThread = {
+        id: threadId,
+        title: autoTitle,
+        messages: editChatMessages,
+        updatedAt: Date.now(),
+        pinned: existing?.pinned,
+      };
+      const filtered = prev.filter((t) => t.id !== threadId);
+      const updated = [thread, ...filtered].slice(0, 50);
+      saveTripEditThreads(currentTrip!.id, updated);
+      return updated;
+    });
+    if (!editActiveThreadId) setEditActiveThreadId(threadId);
+  }
+
+  function handleEditNewConversation() {
+    if (editChatMessages.length > 0 && editActiveThreadId) {
+      saveEditCurrentThread();
+    }
+    setEditChatMessages([]);
+    setEditChatSuggestions([]);
+    setEditActiveThreadId(null);
+    setShowEditThreadList(false);
+  }
+
+  function loadEditThread(thread: EditChatThread) {
+    if (editChatMessages.length > 0 && editActiveThreadId) {
+      saveEditCurrentThread();
+    }
+    setEditChatMessages(thread.messages);
+    setEditActiveThreadId(thread.id);
+    setEditChatTyping(false);
+    setEditChatSuggestions([]);
+    setShowEditThreadList(false);
+  }
+
+  function deleteEditThread(threadId: string) {
+    if (!currentTrip?.id) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setEditThreads((prev) => {
+      const updated = prev.filter((t) => t.id !== threadId);
+      saveTripEditThreads(currentTrip!.id, updated);
+      return updated;
+    });
+    if (editActiveThreadId === threadId) {
+      setEditChatMessages([]);
+      setEditActiveThreadId(null);
+    }
+    setEditThreadOptionsId(null);
+  }
+
+  function togglePinEditThread(threadId: string) {
+    if (!currentTrip?.id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setEditThreads((prev) => {
+      const updated = prev.map((t) => t.id === threadId ? { ...t, pinned: !t.pinned } : t);
+      saveTripEditThreads(currentTrip!.id, updated);
+      return updated;
+    });
+    setEditThreadOptionsId(null);
+  }
+
+  function startRenameEditThread(threadId: string) {
+    const thread = editThreads.find((t) => t.id === threadId);
+    if (thread) {
+      setEditRenameText(thread.title);
+      setEditRenameThreadId(threadId);
+      setEditThreadOptionsId(null);
     }
   }
 
-  const persistedUndoable = getUndoableChange(currentTrip.id);
-  const canUndo = !!persistedUndoable && persistedUndoable.id !== undoDismissedId && persistedUndoable.id !== autoHideUndoId;
-  const undoLabel = persistedUndoable?.description || '';
+  function confirmEditRename() {
+    if (!editRenameThreadId || !editRenameText.trim() || !currentTrip?.id) return;
+    const newTitle = editRenameText.trim();
+    setEditThreads((prev) => {
+      const updated = prev.map((t) => t.id === editRenameThreadId ? { ...t, title: newTitle } : t);
+      saveTripEditThreads(currentTrip!.id, updated);
+      return updated;
+    });
+    setEditRenameThreadId(null);
+    setEditRenameText('');
+  }
+
+  // Load threads on trip change
+  useEffect(() => {
+    if (!currentTrip?.id || editChatLoadedRef.current === currentTrip.id) return;
+    editChatLoadedRef.current = currentTrip.id;
+    loadTripEditThreads<EditChatThread[]>(currentTrip.id, []).then((savedThreads) => {
+      setEditThreads(savedThreads);
+      if (savedThreads.length > 0) {
+        const mostRecent = savedThreads[0];
+        setEditChatMessages(mostRecent.messages);
+        setEditActiveThreadId(mostRecent.id);
+      } else {
+        setEditChatMessages([]);
+        setEditActiveThreadId(null);
+      }
+    });
+  }, [currentTrip?.id]);
+
+  // Auto-save thread after each message
+  useEffect(() => {
+    if (!currentTrip?.id || editChatMessages.length === 0) return;
+    const threadId = editActiveThreadId || editGenerateId();
+    if (!editActiveThreadId) setEditActiveThreadId(threadId);
+    setEditThreads((prev) => {
+      const existing = prev.find((t) => t.id === threadId);
+      const firstUserMsg = editChatMessages.find((m) => m.role === 'user');
+      const autoTitle = firstUserMsg ? formatEditThreadTitle(firstUserMsg.text) : 'New edit';
+      const thread: EditChatThread = {
+        id: threadId,
+        title: autoTitle,
+        messages: editChatMessages,
+        updatedAt: Date.now(),
+        pinned: existing?.pinned,
+      };
+      const filtered = prev.filter((t) => t.id !== threadId);
+      const updated = [thread, ...filtered].slice(0, 50);
+      saveTripEditThreads(currentTrip!.id, updated);
+      return updated;
+    });
+  }, [editChatMessages, currentTrip?.id]);
+
+  function buildTripEditContext(): string {
+    if (!currentTrip) return '';
+    const lines: string[] = [];
+    const now = new Date();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const pad2 = (n: number) => n.toString().padStart(2, '0');
+    const hr = now.getHours(), mn = now.getMinutes();
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    const hr12 = hr % 12 || 12;
+    lines.push(`Current time: ${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())} ${hr12}:${pad2(mn)} ${ampm} (${days[now.getDay()]})`);
+
+    // Profile
+    const profileParts = [`pace=${profile.pace}`];
+    if (profile.flexibility) profileParts.push(`flexibility=${profile.flexibility}`);
+    if (profile.budget) profileParts.push(`budget=${profile.budget}`);
+    lines.push(`\nTraveler profile: ${profileParts.join(', ')}`);
+    if (profile.interests.length) lines.push(`Interests: ${profile.interests.join(', ')}`);
+    if (profile.dislikes.length) lines.push(`Dislikes: ${profile.dislikes.join(', ')}`);
+    if (profile.dietaryRestrictions?.length) lines.push(`Dietary: ${profile.dietaryRestrictions.join(', ')}`);
+    if (profile.crowdTolerance) lines.push(`Crowd tolerance: ${profile.crowdTolerance}`);
+    if (profile.absoluteRules?.length) lines.push(`Absolute rules: ${profile.absoluteRules.join(', ')}`);
+
+    // Trip
+    lines.push(`\n--- EDITING TRIP ---`);
+    lines.push(`[tripId:${currentTrip.id}] "${currentTrip.title}" — ${currentTrip.destination}, ${currentTrip.country}`);
+    lines.push(`Dates: ${currentTrip.startDate} to ${currentTrip.endDate} (${totalDays} days)`);
+    if (currentTrip.notes) lines.push(`Notes: ${currentTrip.notes}`);
+
+    // Activities
+    if (currentTrip.activities.length === 0) {
+      lines.push('  (no activities yet)');
+    } else {
+      const sorted = [...currentTrip.activities].sort((a, b) => a.day - b.day || compareByTime(a, b));
+      for (const a of sorted) {
+        const parts: string[] = [a.type];
+        if (a.category) parts.push(a.category);
+        if (a.cost) parts.push(a.cost);
+        const meta = `[${parts.join(', ')}]`;
+        const flags: string[] = [];
+        if (a.locked) flags.push('LOCKED');
+        if (a.fixed) flags.push('FIXED');
+        const flagStr = flags.length ? ` [${flags.join(',')}]` : '';
+        const rating = a.rating ? ` ★${a.rating.toFixed(1)}` : '';
+        const addr = a.address ? ` @${a.address.split(',')[0].trim()}` : '';
+        lines.push(`  [id:${a.id}] Day${a.day} ${a.time} — ${a.title} ${meta}${rating}${addr}${flagStr}`);
+      }
+    }
+
+    // Reservations
+    const res = ((currentTrip as any).reservations ?? []).filter((r: any) => !r.cancelled);
+    if (res.length) {
+      lines.push('  Reservations:');
+      for (const r of res) {
+        const when = r.day ? `Day${r.day}` : (r.date ?? '');
+        const time = r.time ? ` ${r.time}` : '';
+        const conf = r.confirmationNumber ? ` #${r.confirmationNumber}` : '';
+        lines.push(`    [resId:${r.id}] ${r.type}: ${r.title}${when ? ' ' + when : ''}${time}${conf}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  function applyEditAction(action: TripAction): { ok: boolean; label: string; detail?: string } {
+    if (!currentTrip) return { ok: false, label: 'No trip' };
+    const tripId = currentTrip.id;
+
+    // Normalize time helper
+    const normTime = (t?: string) => {
+      if (!t) return t;
+      const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (m) {
+        let h = parseInt(m[1], 10);
+        if (m[3].toUpperCase() === 'PM' && h < 12) h += 12;
+        if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
+        return `${h.toString().padStart(2, '0')}:${m[2]}`;
+      }
+      return t;
+    };
+
+    switch (action.type) {
+      case 'add_activity': {
+        const act = { ...action.activity, time: normTime(action.activity.time) ?? '10:00' };
+        addActivity(tripId, act);
+        return { ok: true, label: 'Activity added', detail: `Day ${act.day}: ${act.title}` };
+      }
+      case 'remove_activity': {
+        const existing = currentTrip.activities.find((a) => a.id === action.activityId);
+        removeActivity(tripId, action.activityId, true);
+        return { ok: true, label: 'Activity removed', detail: existing ? `${existing.title}` : undefined };
+      }
+      case 'update_activity': {
+        const updates = { ...action.updates };
+        if (updates.time) updates.time = normTime(updates.time);
+        updateActivity(tripId, action.activityId, updates, true);
+        const existing = currentTrip.activities.find((a) => a.id === action.activityId);
+        return { ok: true, label: 'Activity updated', detail: existing?.title };
+      }
+      case 'move_activity': {
+        moveActivity(tripId, action.activityId, action.newDay, normTime(action.newTime) ?? action.newTime, true);
+        const existing = currentTrip.activities.find((a) => a.id === action.activityId);
+        return { ok: true, label: 'Activity moved', detail: existing ? `${existing.title} → Day ${action.newDay}` : undefined };
+      }
+      case 'replace_activity': {
+        const newAct = { ...action.newActivity, time: normTime(action.newActivity.time) ?? '10:00' };
+        const old = currentTrip.activities.find((a) => a.id === action.oldActivityId);
+        replaceActivity(tripId, action.oldActivityId, newAct, true);
+        return { ok: true, label: 'Activity replaced', detail: old ? `${old.title} → ${newAct.title}` : newAct.title };
+      }
+      case 'swap_days': {
+        const acts = currentTrip.activities.map((a) => {
+          if (a.locked || a.fixed) return a;
+          if (a.day === action.day1) return { ...a, day: action.day2 };
+          if (a.day === action.day2) return { ...a, day: action.day1 };
+          return a;
+        });
+        setTripActivities(tripId, acts, `Swapped Day ${action.day1} ↔ Day ${action.day2}`);
+        return { ok: true, label: 'Days swapped', detail: `Day ${action.day1} ↔ Day ${action.day2}` };
+      }
+      case 'add_reservation': {
+        addReservation(tripId, action.reservation as any);
+        return { ok: true, label: 'Reservation added', detail: action.reservation.title };
+      }
+      case 'update_reservation': {
+        updateReservation(tripId, { id: action.reservationId, ...action.updates } as any);
+        return { ok: true, label: 'Reservation updated', detail: action.updates.title ?? undefined };
+      }
+      case 'remove_reservation': {
+        removeReservation(tripId, action.reservationId);
+        return { ok: true, label: 'Reservation removed' };
+      }
+      case 'toggle_lock': {
+        toggleLock(tripId, action.activityId);
+        const existing = currentTrip.activities.find((a) => a.id === action.activityId);
+        return { ok: true, label: existing?.locked ? 'Activity unlocked' : 'Activity locked', detail: existing?.title };
+      }
+      default:
+        return { ok: false, label: 'Unsupported action' };
+    }
+  }
+
+  const DESTRUCTIVE_ACTIONS = new Set(['swap_days']);
+
+  async function sendEditChatMessage(text: string) {
+    if (!currentTrip || !text.trim()) return;
+
+    // Gate check
+    if (!chatGate.allowed) {
+      setUpgradeFeature('chat');
+      setShowUpgradePrompt(true);
+      return;
+    }
+
+    const userMsg: EditChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: text.trim(),
+      timestamp: Date.now(),
+    };
+    setEditChatMessages((prev) => [...prev, userMsg]);
+    setEditChatInput('');
+    setEditChatSuggestions([]);
+    const lower = text.toLowerCase();
+    if (/add|suggest|recommend|find|where|what's good/i.test(lower)) setEditChatTypingMessage('Finding the best spots...');
+    else if (/remove|scratch|delete|get rid/i.test(lower)) setEditChatTypingMessage('Removing that for you...');
+    else if (/move|later|earlier|push|shift/i.test(lower)) setEditChatTypingMessage('Rearranging your schedule...');
+    else if (/swap|switch|flip/i.test(lower)) setEditChatTypingMessage('Swapping things around...');
+    else if (/replace|instead|better|cheaper|alternative/i.test(lower)) setEditChatTypingMessage('Looking for alternatives...');
+    else if (/\?|what|how|when|why|tell me|explain/i.test(lower)) setEditChatTypingMessage('Looking into that...');
+    else setEditChatTypingMessage('Working on it...');
+    setEditChatTyping(true);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+
+    try {
+      // Build conversation history (last 10 messages)
+      const history = editChatMessages.slice(-10).map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.text,
+      }));
+
+      const context = buildTripEditContext();
+      const result = await chatAI({
+        message: text.trim(),
+        history,
+        tripContext: context,
+        profile,
+        activeTripId: currentTrip.id,
+        activeTrip: currentTrip,
+      });
+
+      // Fix trip IDs — the AI may use fabricated IDs
+      for (const action of result.actions) {
+        if ('tripId' in action && (action as any).tripId !== currentTrip.id) {
+          (action as any).tripId = currentTrip.id;
+        }
+      }
+
+      // Separate safe vs destructive
+      const safe = result.actions.filter((a) => !DESTRUCTIVE_ACTIONS.has(a.type));
+      const destructive = result.actions.filter((a) => DESTRUCTIVE_ACTIONS.has(a.type));
+
+      // Execute safe actions immediately (with validation)
+      const actionResults: { label: string; detail?: string }[] = [];
+      for (const action of safe) {
+        // Validate add/replace actions have required fields
+        if (action.type === 'add_activity' || action.type === 'replace_activity') {
+          const a = (action as any).activity ?? (action as any).newActivity;
+          if (!a?.day || !a?.time || !a?.title) continue;
+        }
+        const r = applyEditAction(action);
+        if (r.ok) actionResults.push({ label: r.label, detail: r.detail });
+      }
+
+      const assistantMsg: EditChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        text: result.message,
+        suggestions: result.suggestions,
+        context: result.context ?? undefined,
+        places: result.places && result.places.length > 0 ? result.places : undefined,
+        actionResults: actionResults.length > 0 ? actionResults : undefined,
+        pendingActions: destructive.length > 0 ? destructive : undefined,
+        timestamp: Date.now(),
+      };
+
+      setEditChatMessages((prev) => [...prev, assistantMsg]);
+      setEditChatSuggestions(result.suggestions ?? []);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+
+      if (actionResults.length > 0) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {
+      const failMsg: EditChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        text: 'Something went wrong. Please try again.',
+        failed: true,
+        timestamp: Date.now(),
+      };
+      setEditChatMessages((prev) => [...prev, failMsg]);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+    } finally {
+      setEditChatTyping(false);
+    }
+  }
+
+  function handleEditConfirm(messageId: string) {
+    setEditChatMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId || !m.pendingActions) return m;
+        const results: { label: string; detail?: string }[] = [...(m.actionResults ?? [])];
+        for (const action of m.pendingActions) {
+          const r = applyEditAction(action);
+          if (r.ok) results.push({ label: r.label, detail: r.detail });
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return { ...m, pendingActions: undefined, actionResults: results };
+      }),
+    );
+  }
+
+  function handleEditDismiss(messageId: string) {
+    setEditChatMessages((prev) =>
+      prev.map((m) => m.id === messageId ? { ...m, pendingActions: undefined } : m),
+    );
+  }
+
+  // ─── End Edit Chat ─────────────────────────────────────────────────────────
 
   function handleStartEdit(activity: Activity) {
     setEditingActivity(activity);
     setEditTitle(activity.title);
     setEditTime(activity.time);
     setEditType(activity.type);
-    setEditDuration(activity.duration ?? 60);
   }
 
   function handleSaveEdit() {
@@ -1621,7 +2449,6 @@ export default function TripWorkspace() {
       title: editTitle.trim(),
       time: isValidTime(time) ? time : editingActivity.time,
       type: editType,
-      duration: editDuration,
     };
 
     // For locked/fixed activities, use setTripActivities with bypass to allow edit
@@ -1657,7 +2484,7 @@ export default function TripWorkspace() {
     setEditNotes(currentTrip.notes || '');
     setEditTravelers(currentTrip.travelers ? String(currentTrip.travelers) : '');
     setEditDepartureFrom(currentTrip.departurePoint || '');
-    setEditBudget(currentTrip.budget || profile.budget || 'moderate');
+    setEditBudget(currentTrip.budget || profile.budget || '$$');
     setEditPace(currentTrip.pace || profile.pace);
     setEditTravelWith(currentTrip.travelWith || profile.travelWith || 'solo');
     setEditRestrictions(currentTrip.restrictions || '');
@@ -1722,7 +2549,6 @@ export default function TripWorkspace() {
   function handleConfirmMove() {
     if (!movingActivity) return;
     const time = isValidTime(moveTime) ? moveTime : movingActivity.time;
-    // Record as a change so undo works: create updated activities and use setTripActivities
     const updatedActivities = currentTrip.activities.map((a) =>
       a.id === movingActivity.id ? { ...a, day: moveDay, time } : a
     );
@@ -1735,75 +2561,8 @@ export default function TripWorkspace() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
-  // Trip Prep helpers
-  function getDefaultPrepItems(): PrepItem[] {
-    const dest = currentTrip.destination;
-    const country = currentTrip.country;
-    const hasHotel = currentTrip.activities.some((a) => a.type === 'hotel');
-    const travelers = currentTrip.travelers ?? 1;
-    const reservations = currentTrip.reservations ?? [];
-    const members = currentTrip.members ?? [];
-    const restrictions = currentTrip.restrictions;
-    const hasFlight = currentTrip.activities.some((a) => a.type === 'flight') || reservations.some((r) => r.type === 'flight');
-    const hasFlightRes = reservations.some((r) => r.type === 'flight');
-    const hasHotelRes = reservations.some((r) => r.type === 'hotel');
-    const domesticCountries = ['united states', 'usa', 'us'];
-    const isDomestic = domesticCountries.includes(country?.toLowerCase?.() ?? '');
-
-    const items: PrepItem[] = [];
-    if (!isDomestic) {
-      items.push(
-        { id: 'prep-1', text: 'Pack passport / ID', done: false, custom: false, category: 'documents' },
-        { id: 'prep-2', text: `Check visa requirements for ${dest}`, done: false, custom: false, category: 'documents' },
-      );
-    }
-    items.push(
-      { id: 'prep-5', text: `Download offline maps for ${dest}`, done: false, custom: false, category: 'packing' },
-    );
-    if (!isDomestic) {
-      items.push({ id: 'prep-4', text: 'Arrange travel insurance', done: false, custom: false, category: 'health' });
-    }
-    if (!hasHotel && !hasHotelRes) {
-      items.push({ id: 'prep-3', text: 'Book accommodation', done: false, custom: false, category: 'accommodation' });
-    }
-    // Travelers context
-    if (travelers > 1) {
-      items.push({ id: 'prep-travelers', text: `Confirm plans with all ${travelers} travelers`, done: false, custom: false, category: 'other' });
-    }
-    if (members.length > 1) {
-      const otherNames = members.filter((m) => m.role !== 'owner').map((m) => m.name).join(', ');
-      if (otherNames) {
-        items.push({ id: 'prep-members', text: `Share final itinerary with ${otherNames}`, done: false, custom: false, category: 'other' });
-      }
-    }
-    // Reservation context
-    if (hasFlightRes) {
-      items.push({ id: 'prep-flight-check', text: 'Confirm flight reservation details', done: false, custom: false, category: 'transport' });
-    } else if (hasFlight) {
-      items.push({ id: 'prep-flight-book', text: 'Book flights', done: false, custom: false, category: 'transport' });
-    }
-    if (reservations.some((r) => r.type === 'restaurant')) {
-      items.push({ id: 'prep-dining', text: 'Confirm restaurant reservations', done: false, custom: false, category: 'other' });
-    }
-    // Accessibility / restrictions context
-    if (restrictions) {
-      items.push({ id: 'prep-access', text: `Verify accessibility needs: ${restrictions}`, done: false, custom: false, category: 'health' });
-    }
-    if (profile.mobilityNeeds.length > 0) {
-      items.push({ id: 'prep-mobility', text: 'Arrange mobility assistance if needed', done: false, custom: false, category: 'health' });
-    }
-    if (profile.dietaryRestrictions.length > 0) {
-      items.push({ id: 'prep-dietary', text: `Note dietary needs: ${profile.dietaryRestrictions.join(', ')}`, done: false, custom: false, category: 'health' });
-    }
-    return items;
-  }
-
-  // (prep useEffect moved before early returns to fix hook-order crash)
-
   // Active prep items — always read from trip (never mutate during render)
-  const prepItems = currentTrip.prepItems && currentTrip.prepItems.length > 0
-    ? currentTrip.prepItems
-    : getDefaultPrepItems();
+  const prepItems = currentTrip.prepItems ?? [];
 
   function togglePrepItem(id: string) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1812,6 +2571,7 @@ export default function TripWorkspace() {
   }
 
   function addPrepItem() {
+    Keyboard.dismiss();
     const text = newPrepItem.trim();
     if (!text) return;
     // Deduplicate: don't add if item with same text already exists
@@ -1824,56 +2584,121 @@ export default function TripWorkspace() {
       text,
       done: false,
       custom: true,
+      category: newPrepCategory,
     };
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     updateTripPrepItems(currentTrip.id, [...prepItems, newItem]);
     setNewPrepItem('');
+    setNewPrepCategory('other');
+    setShowAddPrep(false);
   }
 
   function removePrepItem(id: string) {
     updateTripPrepItems(currentTrip.id, prepItems.filter((i) => i.id !== id));
   }
 
-  function handleShareItinerary() {
-    let text = `${currentTrip.title ?? currentTrip.destination} - ${currentTrip.destination}\n`;
-    text += `${formatDate(currentTrip.startDate)} to ${formatDate(currentTrip.endDate)} (${totalDays} days)\n\n`;
-
-    for (let d = 1; d <= totalDays; d++) {
-      const dayActivities = (dayMap.get(d) ?? []).sort(compareByTime);
-      text += `${formatDayLabel(d, currentTrip.startDate, currentTrip.datesKnown)}\n`;
-      if (dayActivities.length === 0) {
-        text += '  (no activities planned)\n';
-      } else {
-        for (const a of dayActivities) {
-          const dur = a.duration ? ` (${a.duration} min)` : '';
-          text += `  \u2022 ${formatTimeDisplay(a.time)} ${a.title}${dur}\n`;
-        }
-      }
-      text += '\n';
-    }
-
-    // Include reservations
-    const reservations = (currentTrip.reservations ?? []).filter((r) => !r.cancelled);
-    if (reservations.length > 0) {
-      text += 'Bookings\n';
-      for (const r of reservations) {
-        const timeStr = r.time ? ` at ${formatTimeDisplay(r.time)}` : '';
-        const dayStr = r.day ? ` (Day ${r.day})` : r.date ? ` (${r.date})` : '';
-        const confStr = r.confirmationNumber ? ` — #${r.confirmationNumber}` : '';
-        text += `  \u2022 ${r.title}${timeStr}${dayStr}${confStr}\n`;
-      }
-      text += '\n';
-    }
-
-    if (currentTrip.notes) {
-      text += `Notes: ${currentTrip.notes}\n\n`;
-    }
-    text += 'Shared from Travonal';
-
-    Share.share({ message: text });
+  function clearCompletedPrepItems() {
+    const remaining = prepItems.filter((i) => !i.done);
+    const clearedCount = prepItems.length - remaining.length;
+    Alert.alert('Clear completed items', `Remove ${clearedCount} completed item${clearedCount === 1 ? '' : 's'}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear', style: 'destructive', onPress: () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        updateTripPrepItems(currentTrip.id, remaining);
+      }},
+    ]);
   }
 
-  const QUICK_ACTIONS: { label: string; command: TravonalCommand }[] = [
+  async function createShareLink(permission: 'view' | 'edit') {
+    const token = session?.access_token;
+    if (!token) {
+      // Fallback to text share for signed-out users
+      let text = `${currentTrip.title ?? currentTrip.destination} — ${currentTrip.destination}\n`;
+      text += `${formatDate(currentTrip.startDate)} to ${formatDate(currentTrip.endDate)} (${totalDays} days)\n\n`;
+      for (let d = 1; d <= totalDays; d++) {
+        const dayActivities = (dayMap.get(d) ?? []).sort(compareByTime);
+        text += `${formatDayLabel(d, currentTrip.startDate, currentTrip.datesKnown)}\n`;
+        if (dayActivities.length === 0) {
+          text += '  (no activities planned)\n';
+        } else {
+          for (const a of dayActivities) {
+            text += `  \u2022 ${formatTimeDisplay(a.time)} ${a.title}\n`;
+          }
+        }
+        text += '\n';
+      }
+      text += 'Shared from Tripseek';
+      Share.share({ message: text });
+      return;
+    }
+
+    showToast('Creating share link…');
+    try {
+      const edgeFnUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/share-trip`;
+      const tripData = {
+        title: currentTrip.title ?? currentTrip.destination,
+        destination: currentTrip.destination,
+        startDate: currentTrip.startDate,
+        endDate: currentTrip.endDate,
+        activities: currentTrip.activities,
+        reservations: (currentTrip.reservations ?? []).filter((r) => !r.cancelled),
+        notes: currentTrip.notes,
+      };
+
+      const res = await fetch(edgeFnUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tripId: currentTrip.id, permission, tripData }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create link');
+      const { url } = await res.json();
+
+      Share.share({
+        message: `Check out my trip to ${currentTrip.destination}!\n${url}`,
+        url,
+      });
+    } catch {
+      showToast('Could not create link — sharing as text');
+      // Fallback to text
+      let text = `${currentTrip.title ?? currentTrip.destination} — ${currentTrip.destination}\n`;
+      for (let d = 1; d <= totalDays; d++) {
+        const dayActivities = (dayMap.get(d) ?? []).sort(compareByTime);
+        text += `${formatDayLabel(d, currentTrip.startDate, currentTrip.datesKnown)}\n`;
+        for (const a of dayActivities) {
+          text += `  \u2022 ${formatTimeDisplay(a.time)} ${a.title}\n`;
+        }
+        text += '\n';
+      }
+      text += 'Shared from Tripseek';
+      Share.share({ message: text });
+    }
+  }
+
+  function handleShareItinerary() {
+    setShowShareSheet(true);
+  }
+
+  async function handleExportPDF() {
+    setShowShareSheet(false);
+    if (!exportGate.allowed) {
+      setUpgradeFeature('export_pdf');
+      setShowUpgradePrompt(true);
+      return;
+    }
+    try {
+      showToast('Generating PDF…');
+      await exportTripPDF(currentTrip);
+    } catch {
+      showToast('Could not generate PDF', 'error');
+    }
+  }
+
+  const QUICK_ACTIONS: { label: string; command: ToveliCommand }[] = [
     { label: 'More relaxed', command: 'make_relaxed' },
     { label: 'More adventurous', command: 'make_adventurous' },
     { label: 'Start later', command: 'reflow_day' },
@@ -1905,15 +2730,31 @@ export default function TripWorkspace() {
           </Pressable>
         </View>
       ) : (
+      <>
+      {/* Minimal header when in AI mode — fixed above ScrollView */}
+      {viewMode === 'ai' && (
+        <View style={[styles.editChatHeader, { paddingTop: insets.top + 8 }]}>
+          <Pressable onPress={() => { setViewMode('itinerary'); setTimeout(() => scrollRef.current?.scrollTo({ y: 0, animated: false }), 50); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back to itinerary">
+            <SymbolView name="chevron.left" size={20} tintColor={theme.text} />
+          </Pressable>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <ThemedText style={styles.editChatHeaderTitle} numberOfLines={1}>{trip?.title ?? 'Edit with AI'}</ThemedText>
+          </View>
+          <View style={{ width: 20 }} />
+        </View>
+      )}
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+        contentContainerStyle={{ paddingBottom: viewMode === 'ai' ? 0 : insets.bottom + 80 }}
+        automaticallyAdjustKeyboardInsets={viewMode === 'ai' || viewMode === 'budget' || viewMode === 'prep'}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+        delaysContentTouches={false}
         onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
         scrollEventThrottle={16}
       >
         {/* Hero — photo background with gradient overlay */}
-        <View style={[styles.hero, { height: 260 + insets.top }]}>
+        {viewMode !== 'ai' && <View style={[styles.hero, { height: 260 + insets.top }]}>
           {/* Photo or gradient fallback */}
           {heroPhoto ? (
             <ExpoImage
@@ -1952,6 +2793,15 @@ export default function TripWorkspace() {
                 accessibilityLabel="Edit trip details"
               >
                 <SymbolView name="pencil" size={18} tintColor="#fff" />
+              </Pressable>
+              <Pressable
+                onPress={() => router.push(`/trip-members?id=${currentTrip.id}` as any)}
+                hitSlop={8}
+                style={styles.heroIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Trip members"
+              >
+                <SymbolView name="person.2" size={18} tintColor="#fff" />
               </Pressable>
               <Pressable
                 onPress={handleShareItinerary}
@@ -1999,25 +2849,34 @@ export default function TripWorkspace() {
               </ThemedText>
             ) : null}
           </View>
-        </View>
+        </View>}
 
         {/* View toggle — underline segment */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexShrink: 0 }}>
+        {viewMode !== 'ai' && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexShrink: 0 }}>
           <View style={[styles.toggleRow, { borderBottomColor: theme.border }]}>
-            {(['itinerary', 'prep', 'map', 'reservations', 'budget', 'members'] as const).map((mode, modeIdx) => {
+            {(['itinerary', 'alerts', 'reservations', 'map', 'budget', 'prep'] as const).map((mode, modeIdx) => {
               const readiness = mode === 'reservations' ? getTripReadiness(currentTrip.activities) : null;
               const showBadge = readiness && readiness.total > 0;
+              const alertBadge = mode === 'alerts' && newIssueCount > 0;
+              const tabLabel = mode === 'itinerary' ? 'Itinerary' : mode === 'prep' ? 'Prep' : mode === 'budget' ? 'Budget' : mode === 'reservations' ? 'Bookings' : mode === 'alerts' ? 'Alerts' : 'Map';
               return (
                 <Fragment key={mode}>
-                  <Pressable onPress={() => setViewMode(mode)} style={styles.toggleItem} accessibilityRole="button" accessibilityLabel={mode === 'itinerary' ? 'Itinerary tab' : mode === 'prep' ? 'Prep tab' : mode === 'budget' ? 'Budget tab' : mode === 'reservations' ? 'Bookings tab' : mode === 'members' ? 'Members tab' : 'Map tab'}>
+                  <Pressable onPress={() => { setViewMode(mode); if (mode === 'alerts') handlePulseOpen(); }} style={styles.toggleItem} accessibilityRole="button" accessibilityLabel={`${tabLabel} tab`}>
                     <View style={styles.toggleTabContent}>
                       <ThemedText style={[styles.toggleText, { color: viewMode === mode ? theme.primary : theme.textSecondary }]}>
-                        {mode === 'itinerary' ? 'Itinerary' : mode === 'prep' ? 'Prep' : mode === 'budget' ? 'Budget' : mode === 'reservations' ? 'Bookings' : mode === 'members' ? 'Members' : 'Map'}
+                        {tabLabel}
                       </ThemedText>
                       {showBadge && (
                         <View style={[styles.toggleBadge, { backgroundColor: readiness.percentage === 100 ? '#10B981' : theme.primary + '20' }]}>
                           <ThemedText style={[styles.toggleBadgeText, { color: readiness.percentage === 100 ? '#fff' : theme.primary }]}>
                             {readiness.booked}/{readiness.total}
+                          </ThemedText>
+                        </View>
+                      )}
+                      {alertBadge && (
+                        <View style={[styles.toggleBadge, { backgroundColor: theme.primary + '20' }]}>
+                          <ThemedText style={[styles.toggleBadgeText, { color: theme.primary }]}>
+                            {newIssueCount}
                           </ThemedText>
                         </View>
                       )}
@@ -2032,7 +2891,6 @@ export default function TripWorkspace() {
                       accessibilityLabel="Edit with AI"
                     >
                       <View style={styles.toggleTabContent}>
-                        <SymbolView name="sparkles" size={13} tintColor={viewMode === 'ai' ? theme.primary : theme.textSecondary} />
                         <ThemedText style={[styles.toggleText, { color: viewMode === 'ai' ? theme.primary : theme.textSecondary }]}>Edit with AI</ThemedText>
                       </View>
                       {viewMode === 'ai' && <View style={[styles.toggleIndicator, { backgroundColor: theme.primary }]} />}
@@ -2042,355 +2900,112 @@ export default function TripWorkspace() {
               );
             })}
           </View>
-        </ScrollView>
+        </ScrollView>}
 
-        {/* Day selector */}
-        {viewMode === 'itinerary' && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.daySelectorRow}
-            style={styles.daySelectorScroll}
-          >
-            <Pressable
-              onPress={() => { setFilterDay(null); setLiveMode(false); }}
-              style={[
-                styles.daySelectorPill,
-                filterDay === null
-                  ? { backgroundColor: theme.primary }
-                  : { borderWidth: 1, borderColor: theme.border, backgroundColor: 'transparent' },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="All days"
-            >
-              <ThemedText
-                style={[
-                  styles.daySelectorText,
-                  filterDay === null && styles.daySelectorTextActive,
-                  filterDay === null && { color: theme.primaryText },
-                ]}
-              >
-                All
-              </ThemedText>
-            </Pressable>
-            {allDays.map((day) => {
-              const isTodayPill = tripIsActive && day === todayDayNumber;
-              return (
-              <Pressable
-                key={day}
-                onPress={() => {
-                  setFilterDay(day);
-                  // Auto-enable live mode when tapping today's pill on an active trip
-                  if (isTodayPill) setLiveMode(true);
-                  else setLiveMode(false);
-                }}
-                style={[
-                  styles.daySelectorPill,
-                  filterDay === day
-                    ? { backgroundColor: isTodayPill && liveMode ? theme.live : theme.primary }
-                    : { borderWidth: 1, borderColor: isTodayPill ? theme.live + '60' : theme.border, backgroundColor: 'transparent' },
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={isTodayPill ? `Today — Day ${day}` : `Day ${day} activities`}
-              >
-                {isTodayPill && filterDay !== day && (
-                  <View style={[styles.liveDotSmall, { backgroundColor: theme.live }]} />
-                )}
-                <ThemedText
-                  style={[
-                    styles.daySelectorText,
-                    filterDay === day && styles.daySelectorTextActive,
-                    filterDay === day && { color: theme.primaryText },
-                  ]}
-                >
-                  {isTodayPill ? 'Today' : `Day ${day}`}
-                </ThemedText>
-              </Pressable>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        {/* Live / Plan toggle — shown when viewing today on an active trip */}
-        {viewMode === 'itinerary' && isViewingToday && tripIsActive && (
-          <View style={styles.liveToggleRow}>
-            <Pressable
-              onPress={() => setLiveMode(true)}
-              style={[styles.liveToggleBtn, showLiveView && { backgroundColor: theme.live + '18' }]}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to live view"
-            >
-              {showLiveView && <View style={[styles.liveDotSmall, { backgroundColor: theme.live }]} />}
-              <ThemedText style={[styles.liveToggleText, { color: showLiveView ? theme.live : theme.textSecondary }]}>
-                Live
-              </ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={() => setLiveMode(false)}
-              style={[styles.liveToggleBtn, !showLiveView && { backgroundColor: theme.primary + '18' }]}
-              accessibilityRole="button"
-              accessibilityLabel="Switch to planning view"
-            >
-              <ThemedText style={[styles.liveToggleText, { color: !showLiveView ? theme.primary : theme.textSecondary }]}>
-                Plan
-              </ThemedText>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Undo banner */}
-        {canUndo && viewMode === 'itinerary' && (
-          <Animated.View
-            entering={SlideInDown.springify()}
-            exiting={FadeOut.duration(200)}
-            style={[styles.undoBanner, { backgroundColor: 'rgba(229,229,229,0.1)' }]}
-          >
-            <ThemedText style={styles.undoText} numberOfLines={1}>
-              {undoLabel}
-            </ThemedText>
-            <Pressable onPress={handleUndo} style={[styles.undoBtn, { backgroundColor: theme.primary }]} accessibilityRole="button" accessibilityLabel="Undo last change">
-              <ThemedText style={[styles.undoBtnText, { color: theme.primaryText }]}>Undo</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={() => setUndoDismissedId(persistedUndoable?.id ?? null)}
-              hitSlop={8}
-              style={styles.undoDismissBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss undo"
-            >
-              <SymbolView name="xmark" size={12} tintColor={theme.textSecondary} />
-            </Pressable>
-          </Animated.View>
-        )}
-
-        {/* Trip Alerts — itinerary only */}
-        {viewMode === 'itinerary' && (
-          <PulseBanner
-            alerts={activePulseAlerts}
-            onAction={handlePulseAction}
-            onDismiss={handlePulseDismiss}
-            dismissedAlerts={dismissedPulseAlerts}
-            resolvedHistory={resolvedHistoryForTrip}
-            newIssueCount={newIssueCount}
-            onOpen={handlePulseOpen}
-            externalOpen={showPulseModal}
-            onExternalClose={() => setShowPulseModal(false)}
-            hasSolution={(alertId) => !!getSolution(alertId)}
-            isPreparing={isSolutionPreparing}
-          />
-        )}
-
-        {/* Booking progress bar — itinerary only */}
-        {viewMode === 'itinerary' && (() => {
-          const readiness = getTripReadiness(currentTrip.activities);
-          if (readiness.total === 0) return null;
-          if (readiness.percentage === 100) return null;
-          return (
-            <Pressable
-              onPress={() => setViewMode('reservations')}
-              style={[styles.bookingProgressBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel={`${readiness.booked} of ${readiness.total} booked. Tap to view reservations.`}
-            >
-              <View style={styles.bookingProgressInfo}>
-                <SymbolView name={"calendar.badge.checkmark" as any} size={16} tintColor={theme.primary} />
-                <ThemedText style={styles.bookingProgressText}>
-                  {readiness.booked} of {readiness.total} booked
-                </ThemedText>
-                <ThemedText style={[styles.bookingProgressAction, { color: theme.primary }]}>
-                  View all
-                </ThemedText>
-              </View>
-              <View style={[styles.bookingProgressTrack, { backgroundColor: theme.border }]}>
-                <View style={[styles.bookingProgressFill, { width: `${readiness.percentage}%`, backgroundColor: theme.primary }]} />
-              </View>
-            </Pressable>
-          );
-        })()}
-
-        {/* Booking nudge banner — when trip is within 14 days and has unbooked hotels/flights */}
-        {viewMode === 'itinerary' && (() => {
-          const now = new Date();
-          const start = new Date(currentTrip.startDate + 'T00:00:00');
-          const daysUntil = Math.ceil((start.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-          if (daysUntil < 0 || daysUntil > 14) return null;
-          const unbookedCritical = currentTrip.activities.filter(
-            (a) => (a.type === 'hotel' || a.type === 'flight') && a.bookingStatus !== 'booked',
-          );
-          if (unbookedCritical.length === 0) return null;
-          const hotelCount = unbookedCritical.filter((a) => a.type === 'hotel').length;
-          const flightCount = unbookedCritical.filter((a) => a.type === 'flight').length;
-          const parts: string[] = [];
-          if (hotelCount > 0) parts.push(`${hotelCount} hotel${hotelCount > 1 ? 's' : ''}`);
-          if (flightCount > 0) parts.push(`${flightCount} flight${flightCount > 1 ? 's' : ''}`);
-          return (
-            <Pressable
-              onPress={() => setViewMode('reservations')}
-              style={[styles.bookingNudgeBanner, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B40' }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Trip starts in ${daysUntil} days. ${parts.join(' and ')} still need booking.`}
-            >
-              <View style={styles.bookingNudgeContent}>
-                <SymbolView name={"exclamationmark.triangle.fill" as any} size={16} tintColor="#D97706" />
-                <ThemedText style={styles.bookingNudgeText}>
-                  Your trip starts in {daysUntil} day{daysUntil !== 1 ? 's' : ''} — {parts.join(' and ')} still need booking
-                </ThemedText>
-              </View>
-              <ThemedText style={[styles.bookingNudgeAction, { color: '#D97706' }]}>Book now</ThemedText>
-            </Pressable>
-          );
-        })()}
-
-        {/* "Where to Stay" hotel suggestions — shown when no hotel in trip */}
-        {viewMode === 'itinerary' && !tripHasHotel && !hotelsDismissed && hotelSuggestions.length > 0 && (
-          <Animated.View entering={FadeInDown.duration(300)} style={[styles.hotelSuggestSection, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-            <View style={styles.hotelSuggestHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <SymbolView name="bed.double.fill" size={16} tintColor={theme.primary} />
-                <ThemedText style={[styles.hotelSuggestTitle, { color: theme.text }]}>Where to stay</ThemedText>
-              </View>
-              <Pressable onPress={() => setHotelsDismissed(true)} hitSlop={8}>
-                <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>Dismiss</ThemedText>
-              </Pressable>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 2 }}>
-              {hotelSuggestions.map((hotel) => {
-                const photoUrl = hotelPhotoUrls.get(hotel.placeId ?? hotel.name);
-                const links = getPlaceBookingLinks(hotel.name, hotel.category, currentTrip.destination);
-                return (
-                  <Pressable
-                    key={hotel.placeId ?? hotel.name}
-                    onPress={() => {
-                      if (links[0]) openBookingLink(links[0].url);
-                    }}
-                    style={[styles.hotelCard, { backgroundColor: theme.background, borderColor: theme.border }]}
-                  >
-                    {photoUrl ? (
-                      <ExpoImage source={{ uri: photoUrl }} style={styles.hotelCardPhoto} contentFit="cover" />
-                    ) : (
-                      <View style={[styles.hotelCardPhoto, { backgroundColor: theme.border, alignItems: 'center', justifyContent: 'center' }]}>
-                        <SymbolView name="building.2.fill" size={24} tintColor={theme.textSecondary} />
-                      </View>
-                    )}
-                    <View style={styles.hotelCardInfo}>
-                      <ThemedText numberOfLines={1} style={[styles.hotelCardName, { color: theme.text }]}>{hotel.name}</ThemedText>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        {hotel.rating != null && (
-                          <>
-                            <SymbolView name="star.fill" size={11} tintColor="#F59E0B" />
-                            <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>{hotel.rating.toFixed(1)}</ThemedText>
-                          </>
-                        )}
-                        {hotel.priceLevel != null && (
-                          <ThemedText style={{ fontSize: 12, color: theme.textSecondary, marginLeft: 4 }}>
-                            {'$'.repeat(hotel.priceLevel)}
-                          </ThemedText>
-                        )}
-                      </View>
-                      <View style={[styles.hotelBookBtn, { backgroundColor: theme.primary }]}>
-                        <ThemedText style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Book</ThemedText>
-                      </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-              <Pressable
-                onPress={() => router.push('/(tabs)/explore')}
-                style={[styles.hotelCard, { backgroundColor: theme.background, borderColor: theme.border, alignItems: 'center', justifyContent: 'center' }]}
-              >
-                <SymbolView name="magnifyingglass" size={20} tintColor={theme.primary} />
-                <ThemedText style={{ color: theme.primary, fontSize: 12, fontWeight: '600', marginTop: 6 }}>Browse more</ThemedText>
-              </Pressable>
-            </ScrollView>
-          </Animated.View>
-        )}
 
         {viewMode === 'itinerary' ? (
           <View style={styles.itinerary}>
-            {/* Live Day View — shown when on an active trip viewing today */}
-            {showLiveView && (
-              <Animated.View entering={FadeIn.duration(300)} style={styles.daySection}>
-                <LiveDayView
-                  trip={currentTrip}
-                  timezone={undefined}
-                  weather={todayWeather}
-                  renderActivity={(activity, idx, total) => (
-                    <ActivityCard
-                      activity={activity}
-                      photoUrl={activity.placeId ? activityPhotos.get(activity.placeId) : undefined}
-                      bookLabel={getBookLabel(activity)}
-                      onMenu={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                        setContextMenuActivity(activity);
-                      }}
-                      onTap={() => handleActivityTap(activity)}
-                      onBook={() => handleBookActivity(activity)}
-                    />
-                  )}
-                  onRunningLate={() => {
-                    const delays = [
-                      { label: '15 min', minutes: 15 },
-                      { label: '30 min', minutes: 30 },
-                      { label: '1 hour', minutes: 60 },
-                    ];
-                    Alert.alert(
-                      "Running late?",
-                      "Push your upcoming activities forward. How much time do you need?",
-                      [
-                        ...delays.map((d) => ({
-                          text: d.label,
-                          onPress: () => {
-                            const { timeStr } = getDestinationNow();
-                            const updated = reflowFromTime(currentTrip.activities, todayDayNumber, timeStr, d.minutes);
-                            setTripActivities(currentTrip.id, updated, `Pushed schedule ${d.label} later`);
-                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            showToast(`Schedule pushed ${d.label} later`);
-                          },
-                        })),
-                        { text: 'Cancel', style: 'cancel' as const },
-                      ],
-                    );
+            {/* Overview mode — day cards carousel */}
+            {filterDay === null && (
+              <Animated.View entering={FadeInDown.duration(300)} style={styles.dayCardsCarousel}>
+                {/* Days section header */}
+                <View style={styles.dayHeader}>
+                  <View style={styles.dayHeaderLeft}>
+                    <ThemedText style={styles.dayLabel}>Days</ThemedText>
+                    <ThemedText style={[styles.dayHeaderMeta, { color: theme.textSecondary }]}>
+                      · {totalDays} {totalDays === 1 ? 'day' : 'days'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  snapToInterval={dayCardWidth + 12}
+                  contentContainerStyle={{ gap: 12 }}
+                  onScroll={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / (dayCardWidth + 12));
+                    setActiveDayCardIdx(idx);
                   }}
-                  onSkipActivity={(activity) => {
-                    Alert.alert(
-                      'Skip activity?',
-                      `Skip "${activity.title}" and adjust the rest of your day?`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Skip',
-                          onPress: () => {
-                            setTripActivities(
-                              currentTrip.id,
-                              currentTrip.activities.filter((a) => a.id !== activity.id),
-                              `Skipped "${activity.title}"`,
-                            );
-                            showToast(`Skipped "${activity.title}"`);
-                          },
-                        },
-                      ],
-                    );
-                  }}
-                  onDayComplete={(dayNumber) => {
-                    // Auto-show feedback when all activities for today are done
-                    setFeedbackDay(dayNumber);
-                  }}
-                />
-
-                {/* Add activity link */}
-                <Pressable
-                  onPress={() => setAddingToDay(todayDayNumber)}
-                  style={styles.addLink}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add activity to today"
+                  scrollEventThrottle={16}
                 >
-                  <ThemedText style={[styles.addLinkText, { color: theme.primary }]}>+ Add activity</ThemedText>
-                </Pressable>
+                  {allDays.map((day) => {
+                    const dayActivities = (dayMap.get(day) ?? []).sort(compareByTime);
+                    const photoUrls = getDayPhotoUrls(day);
+                    return (
+                      <Pressable
+                        key={day}
+                        onPress={() => setFilterDay(day)}
+                        style={({ pressed }) => [
+                          styles.dayCard,
+                          { width: dayCardWidth, opacity: pressed ? 0.93 : 1 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${formatDayLabel(day, currentTrip.startDate, currentTrip.datesKnown)}, ${dayActivities.length} activities`}
+                      >
+                        {/* Image collage */}
+                        <View style={styles.dayCardImages}>
+                          {photoUrls.length === 0 ? (
+                            <LinearGradient
+                              colors={[theme.primary + '30', theme.primary + '10']}
+                              style={[StyleSheet.absoluteFill, styles.dayCardEmptyImage]}
+                            >
+                              <SymbolView name="map.fill" size={32} tintColor={theme.textSecondary} />
+                            </LinearGradient>
+                          ) : photoUrls.length === 1 ? (
+                            <ExpoImage source={{ uri: photoUrls[0] }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" />
+                          ) : photoUrls.length === 2 ? (
+                            <View style={styles.dayCardCoverRow}>
+                              <ExpoImage source={{ uri: photoUrls[0] }} style={{ flex: 1 }} contentFit="cover" cachePolicy="memory-disk" />
+                              <ExpoImage source={{ uri: photoUrls[1] }} style={{ flex: 1 }} contentFit="cover" cachePolicy="memory-disk" />
+                            </View>
+                          ) : (
+                            <View style={styles.dayCardCoverPinterest}>
+                              <ExpoImage source={{ uri: photoUrls[0] }} style={{ flex: 2 }} contentFit="cover" cachePolicy="memory-disk" />
+                              <View style={styles.dayCardCoverStack}>
+                                <ExpoImage source={{ uri: photoUrls[1] }} style={{ flex: 1 }} contentFit="cover" cachePolicy="memory-disk" />
+                                <ExpoImage source={{ uri: photoUrls[2] }} style={{ flex: 1 }} contentFit="cover" cachePolicy="memory-disk" />
+                              </View>
+                            </View>
+                          )}
+                          {/* Gradient overlay for text legibility */}
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.55)']}
+                            locations={[0.35, 1]}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        </View>
+                        {/* Text overlay */}
+                        <View style={styles.dayCardOverlay}>
+                          <ThemedText style={styles.dayCardLabel}>
+                            {formatDayLabel(day, currentTrip.startDate, currentTrip.datesKnown)}
+                          </ThemedText>
+                          <ThemedText style={styles.dayCardCount}>
+                            {dayActivities.length === 0 ? 'Tap to plan this day' : `${dayActivities.length} ${dayActivities.length === 1 ? 'activity' : 'activities'}`}
+                          </ThemedText>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+                {allDays.length > 1 && (
+                  <View style={styles.dayCardDots}>
+                    {allDays.map((_, i) => (
+                      <View
+                        key={i}
+                        style={[
+                          styles.dayCardDot,
+                          { backgroundColor: i === activeDayCardIdx ? theme.primary : theme.border },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                )}
               </Animated.View>
             )}
 
-            {/* Standard planning view */}
-            {!showLiveView && visibleDays.map((day) => {
+            {/* Day detail mode */}
+            {filterDay !== null && visibleDays.map((day) => {
               const dayActivities = (dayMap.get(day) ?? []).sort(compareByTime);
 
               return (
@@ -2405,84 +3020,127 @@ export default function TripWorkspace() {
                     });
                   }}
                 >
-                  <Pressable
-                    onPress={() => setQuickActionDay(quickActionDay === day ? null : day)}
-                    style={[styles.dayHeader, { borderBottomColor: theme.border }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Day ${day} actions`}
-                  >
-                    <ThemedText style={styles.dayLabel}>{formatDayLabel(day, currentTrip.startDate)}</ThemedText>
-                    <View style={styles.dayHeaderActions}>
-                      {/* Show feedback link for past days with activities */}
-                      {(() => {
-                        if (dayActivities.length === 0) return null;
-                        const dayDate = new Date(currentTrip.startDate + 'T00:00:00');
-                        dayDate.setDate(dayDate.getDate() + day - 1);
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
-                        if (dayDate >= today) return null;
-                        return (
-                          <Pressable
-                            onPress={(e) => { e.stopPropagation(); setFeedbackDay(day); }}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Give feedback for Day ${day}`}
-                          >
-                            <ThemedText style={[styles.dayAction, { color: theme.live }]}>How was it?</ThemedText>
-                          </Pressable>
-                        );
-                      })()}
+                  {/* Day detail header — back + title + add */}
+                  <View style={styles.dayDetailHeader}>
+                    <Pressable
+                      onPress={() => setFilterDay(null)}
+                      style={styles.dayDetailBackBtn}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Back to all days"
+                    >
+                      <SymbolView name="chevron.left" size={16} tintColor={theme.text} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setQuickActionDay(quickActionDay === day ? null : day)}
+                      style={styles.dayDetailCenter}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Day ${day} actions`}
+                    >
+                      <ThemedText style={styles.dayLabel}>{formatDayLabel(day, currentTrip.startDate, currentTrip.datesKnown)}</ThemedText>
                       <SymbolView
                         name={quickActionDay === day ? 'chevron.up' : 'chevron.down'}
-                        size={12}
+                        size={10}
                         tintColor={theme.textSecondary}
                       />
-                    </View>
-                  </Pressable>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setAddingToDay(day)}
+                      hitSlop={8}
+                      style={styles.dayDetailAddBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add activity to Day ${day}`}
+                    >
+                      <SymbolView name="plus" size={16} tintColor={theme.text} />
+                    </Pressable>
+                  </View>
 
-                  {/* Quick action chips — expand on day header tap */}
-                  {quickActionDay === day && (
-                    <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-                      <View style={styles.quickActionRow}>
-                        <Pressable
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            handleDayAction(day);
-                            setQuickActionDay(null);
-                          }}
-                          style={({ pressed }) => [
-                            styles.quickActionChip,
-                            { transform: [{ scale: pressed ? 0.97 : 1 }] },
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityLabel="Adjust with AI"
-                        >
-                          <ThemedText style={[styles.quickActionText, { color: theme.primary }]}>Adjust</ThemedText>
-                        </Pressable>
-                        {QUICK_ACTIONS.map((action) => (
-                          <Pressable
-                            key={action.command}
-                            onPress={() => {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              setSelectedDay(day);
-                              handleCommand(action.command, day);
-                              setQuickActionDay(null);
-                            }}
-                            style={({ pressed }) => [
-                              styles.quickActionChip,
-                              { transform: [{ scale: pressed ? 0.97 : 1 }] },
-                            ]}
-                            accessibilityRole="button"
-                            accessibilityLabel={action.label}
-                          >
-                            <ThemedText style={[styles.quickActionText, { color: theme.primary }]}>{action.label}</ThemedText>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </Animated.View>
-                  )}
+                  {/* Day info panel — expand on day header tap */}
+                  {quickActionDay === day && (() => {
+                    const sorted = dayActivities;
+                    const firstTime = sorted.length > 0 ? sorted[0].time : null;
+                    const lastActivity = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+                    const lastTime = lastActivity ? lastActivity.time : null;
+                    // Compute end time of last activity
+                    const lastEndTime = lastActivity && lastTime
+                      ? (() => {
+                          const [h, m] = lastTime.split(':').map(Number);
+                          const endMin = h * 60 + m + 60;
+                          return `${Math.floor(endMin / 60).toString().padStart(2, '0')}:${(endMin % 60).toString().padStart(2, '0')}`;
+                        })()
+                      : null;
+
+                    // Count by type
+                    const typeCounts = new Map<string, number>();
+                    for (const a of sorted) {
+                      const label = formatCategoryLabel(a.category, a.type);
+                      if (label) typeCounts.set(label, (typeCounts.get(label) ?? 0) + 1);
+                    }
+                    const typeLabels = Array.from(typeCounts.entries())
+                      .map(([label, count]) => `${count} ${label}${count > 1 ? 's' : ''}`)
+                      .join(' · ');
+
+                    // Weather for this day
+                    const dayWeather = (() => {
+                      if (!weatherForecast) return null;
+                      const start = new Date(currentTrip.startDate + 'T00:00:00');
+                      const target = new Date(start);
+                      target.setDate(target.getDate() + day - 1);
+                      const targetStr = target.toISOString().split('T')[0];
+                      return weatherForecast.days.find((d) => d.date === targetStr) ?? null;
+                    })();
+                    const wx = dayWeather ? weatherForCode(dayWeather.weatherCode) : null;
+
+                    return (
+                      <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+                        <View style={[styles.dayInfoPanel, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                          {/* Time span */}
+                          {firstTime && lastEndTime && (
+                            <View style={styles.dayInfoRow}>
+                              <SymbolView name="clock" size={14} tintColor={theme.textSecondary} />
+                              <ThemedText style={[styles.dayInfoText, { color: theme.text }]}>
+                                {formatTimeDisplay(firstTime)} → {formatTimeDisplay(lastEndTime)}
+                              </ThemedText>
+                            </View>
+                          )}
+
+                          {/* Activity breakdown */}
+                          {typeLabels.length > 0 && (
+                            <View style={styles.dayInfoRow}>
+                              <SymbolView name="list.bullet" size={14} tintColor={theme.textSecondary} />
+                              <ThemedText style={[styles.dayInfoText, { color: theme.text }]} numberOfLines={1}>
+                                {typeLabels}
+                              </ThemedText>
+                            </View>
+                          )}
+
+                          {/* Weather */}
+                          {wx && dayWeather && (
+                            <View style={styles.dayInfoRow}>
+                              <SymbolView name={wx.icon} size={14} tintColor={theme.textSecondary} />
+                              <ThemedText style={[styles.dayInfoText, { color: theme.text }]}>
+                                {wx.label} · {Math.round(dayWeather.temperatureMax)}° / {Math.round(dayWeather.temperatureMin)}°
+                                {dayWeather.precipitationProbability > 0 ? ` · ${dayWeather.precipitationProbability}% rain` : ''}
+                              </ThemedText>
+                            </View>
+                          )}
+
+                          {/* Empty state */}
+                          {sorted.length === 0 && (
+                            <View style={styles.dayInfoRow}>
+                              <SymbolView name="plus" size={12} tintColor={theme.textSecondary} />
+                              <ThemedText style={[styles.dayInfoText, { color: theme.textSecondary }]}>
+                                Tap to plan this day
+                              </ThemedText>
+                            </View>
+                          )}
+                        </View>
+                      </Animated.View>
+                    );
+                  })()}
 
                   {dayActivities.length === 0 ? (
-                    <View style={styles.emptyDay}>
+                    <View>
                       {dragState && dragState.targetDay === day && (
                         <Animated.View entering={FadeIn.duration(150)} style={styles.insertionLine}>
                           <View style={[styles.insertionTimeBadge, { backgroundColor: theme.live }]}>
@@ -2492,14 +3150,14 @@ export default function TripWorkspace() {
                           <View style={[styles.insertionBar, { backgroundColor: theme.live }]} />
                         </Animated.View>
                       )}
-                      <ThemedText style={[styles.emptyDayText, { color: theme.textSecondary }]}>No activities</ThemedText>
                       <Pressable
                         onPress={() => setAddingToDay(day)}
-                        style={styles.addLink}
+                        style={[styles.emptyDayTap, { borderColor: theme.border }]}
                         accessibilityRole="button"
                         accessibilityLabel={`Add activity to Day ${day}`}
                       >
-                        <ThemedText style={[styles.addLinkText, { color: theme.primary }]}>+ Add</ThemedText>
+                        <SymbolView name="plus" size={14} tintColor={theme.textSecondary} />
+                        <ThemedText style={[styles.emptyDayText, { color: theme.textSecondary }]}>Tap to add an activity</ThemedText>
                       </Pressable>
                     </View>
                   ) : (
@@ -2630,7 +3288,14 @@ export default function TripWorkspace() {
                             >
                           <SwipeableActivityRow
                             activity={activity}
-                            onReplace={(a) => handleReplace(a.id)}
+                            onReplace={(a) => {
+                              const msg = `Suggest a replacement for "${a.title}" (${a.category || a.type}, Day ${a.day})`;
+                              setEditChatInput(msg);
+                              setViewMode('ai');
+                              setTimeout(() => {
+                                sendEditChatMessage(msg);
+                              }, 600);
+                            }}
                             onRemove={handleContextRemove}
                             onBook={handleBookActivity}
                             onSwipeOpen={(ref) => {
@@ -2648,35 +3313,80 @@ export default function TripWorkspace() {
                                 });
                               }}
                             >
-                              <View style={styles.timelineItem}>
-                                {/* Left column: time */}
-                                <View style={styles.timeCol}>
-                                  <ThemedText style={[styles.timeText, { color: theme.textSecondary }]}>
+                              {/* Visual activity card — full-bleed style */}
+                              <Pressable
+                                onPress={() => handleActivityTap(activity)}
+                                style={({ pressed }) => [
+                                  styles.visualActivityCard,
+                                  pressed && { opacity: 0.85 },
+                                  highlightedActivityId === activity.id && { borderWidth: 2, borderColor: theme.primary },
+                                ]}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${activity.title}, ${formatTimeDisplay(activity.time)}`}
+                              >
+                                {(() => {
+                                  const photoUrl = activityPhotos.get(activity.placeId ?? activity.id);
+                                  return photoUrl ? (
+                                    <ExpoImage
+                                      source={{ uri: photoUrl }}
+                                      style={StyleSheet.absoluteFill}
+                                      contentFit="cover"
+                                      cachePolicy="memory-disk"
+                                    />
+                                  ) : (
+                                    <LinearGradient
+                                      colors={[theme.primary + '30', theme.primary + '10']}
+                                      style={[StyleSheet.absoluteFill, styles.visualActivityPhotoPlaceholder]}
+                                    >
+                                      <SymbolView name="mappin.circle.fill" size={32} tintColor={theme.textSecondary} />
+                                    </LinearGradient>
+                                  );
+                                })()}
+
+                                {/* Gradient overlay for text legibility */}
+                                <LinearGradient
+                                  colors={['transparent', 'rgba(0,0,0,0.6)']}
+                                  locations={[0.3, 1]}
+                                  style={StyleSheet.absoluteFill}
+                                />
+
+                                {/* Top row — booking badge + menu button */}
+                                <View style={styles.activityCardTopRow}>
+                                  {activity.bookingStatus ? (
+                                    <View style={[styles.activityStatusBadge, { backgroundColor: (activity.bookingStatus === 'booked' ? '#10B981' : '#F59E0B') + '30' }]}>
+                                      <View style={[styles.activityStatusDot, { backgroundColor: activity.bookingStatus === 'booked' ? '#10B981' : '#F59E0B' }]} />
+                                      <ThemedText style={[styles.activityStatusLabel, { color: activity.bookingStatus === 'booked' ? '#10B981' : '#F59E0B' }]}>
+                                        {activity.bookingStatus === 'booked' ? 'Booked' : 'Pending'}
+                                      </ThemedText>
+                                    </View>
+                                  ) : <View />}
+                                  <Pressable
+                                    onPress={() => {
+                                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                      setContextMenuActivity(activity);
+                                    }}
+                                    hitSlop={8}
+                                    style={styles.activityMenuBtn}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Options for ${activity.title}`}
+                                  >
+                                    <SymbolView name="ellipsis" size={16} tintColor="#fff" />
+                                  </Pressable>
+                                </View>
+
+                                {/* Text overlay — bottom */}
+                                <View style={styles.visualActivityOverlay}>
+                                  <ThemedText style={styles.visualActivityTime}>
                                     {formatTimeDisplay(activity.time)}
                                   </ThemedText>
+                                  <ThemedText style={styles.visualActivityTitle} numberOfLines={1}>
+                                    {activity.title}
+                                  </ThemedText>
+                                  <ThemedText style={styles.visualActivityMeta}>
+                                    {formatCategoryLabel(activity.category, activity.type)}
+                                  </ThemedText>
                                 </View>
-
-                                {/* Center column: dot + connector */}
-                                <View style={styles.dotCol}>
-                                  <View style={[styles.timelineDot, { backgroundColor: theme.primary }]} />
-                                  {idx < dayActivities.length - 1 && (
-                                    <View style={[styles.timelineConnector, { backgroundColor: theme.border }]} />
-                                  )}
-                                </View>
-
-                                {/* Right column: activity card */}
-                                <ActivityCard
-                                  activity={activity}
-                                  photoUrl={activity.placeId ? activityPhotos.get(activity.placeId) : undefined}
-                                  bookLabel={getBookLabel(activity)}
-                                  onMenu={() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                    setContextMenuActivity(activity);
-                                  }}
-                                  onTap={() => handleActivityTap(activity)}
-                                  onBook={() => handleBookActivity(activity)}
-                                />
-                              </View>
+                              </Pressable>
 
                               {/* Post-drop time picker — tap to set exact time */}
                               {droppedActivityId === activity.id && (
@@ -2718,7 +3428,16 @@ export default function TripWorkspace() {
 
                               {/* Inline edit form */}
                               {editingActivity?.id === activity.id && (
-                                <Animated.View entering={FadeIn.duration(200)} style={[styles.addForm, { backgroundColor: theme.backgroundElement }]}>
+                                <Animated.View entering={FadeIn.duration(200)} style={[styles.addForm, { backgroundColor: theme.backgroundElement }]}
+                                  ref={(ref) => {
+                                    if (!ref) return;
+                                    setTimeout(() => {
+                                      (ref as any).measureInWindow?.((_x: number, winY: number, _w: number, _h: number) => {
+                                        const scrollTo = (scrollOffsetRef.current ?? 0) + winY - 160;
+                                        scrollRef.current?.scrollTo({ y: Math.max(0, scrollTo), animated: true });
+                                      });
+                                    }, 100);
+                                  }}>
                                   <ThemedText style={styles.editFormTitle}>Edit Activity</ThemedText>
                                   <TextInput
                                     style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
@@ -2732,9 +3451,6 @@ export default function TripWorkspace() {
                                     <TimePickerButton
                                       value={editTime}
                                       onChange={setEditTime}
-                                      showDuration
-                                      duration={editDuration}
-                                      onDurationChange={setEditDuration}
                                     />
                                     <View style={styles.typeRow}>
                                       {(['activity', 'food', 'hotel', 'flight'] as const).map((t) => (
@@ -2789,229 +3505,214 @@ export default function TripWorkspace() {
                         );
                       })}
 
-                      {/* End-of-day marker */}
-                      <View style={styles.timelineEndRow}>
-                        <View style={styles.timeCol} />
-                        <View style={styles.dotCol}>
-                          <View style={[styles.timelineEndDot, { borderColor: theme.border }]} />
+                      {/* End spacer */}
+                      <View style={{ height: 4 }} />
+                    </View>
+                  )}
+
+                </Animated.View>
+              );
+            })}
+
+            {/* Stays section — below days */}
+            {totalDays >= 1 && filterDay === null && staysData.hasAnyStay && (
+              <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
+            )}
+            {totalDays >= 1 && filterDay === null && (
+              <StaysStrip
+                trip={currentTrip}
+                staysData={staysData}
+                totalDays={totalDays}
+                hotelSuggestions={hotelSuggestions}
+                hotelPhotoUrls={hotelPhotoUrls}
+                activityPhotos={activityPhotos}
+                onAddStay={() => setShowStaySearchModal(true)}
+                onViewStay={(activity, reservation) => {
+                  router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any);
+                }}
+                onBookSuggestion={(hotel) => {
+                  let url = `/place-detail?name=${encodeURIComponent(hotel.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(hotel.category ?? 'stay/hotel')}&fromStaySearch=1`;
+                  if (hotel.placeId) url += `&placeId=${encodeURIComponent(hotel.placeId)}`;
+                  if (hotel.address) url += `&address=${encodeURIComponent(hotel.address)}`;
+                  if (hotel.lat != null) url += `&lat=${hotel.lat}`;
+                  if (hotel.lng != null) url += `&lng=${hotel.lng}`;
+                  if (hotel.rating != null) url += `&rating=${hotel.rating}`;
+                  if (hotel.reviewCount != null) url += `&reviewCount=${hotel.reviewCount}`;
+                  if (hotel.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(hotel.photos[0].reference)}`;
+                  router.push(url as any);
+                }}
+                onBrowseMore={() => setShowStaySearchModal(true)}
+              />
+            )}
+          </View>
+        ) : viewMode === 'ai' ? (
+          <View style={styles.editChatContainer}>
+            <View style={styles.editChatList}>
+              {/* Welcome message */}
+              <View style={[styles.editChatBubble, styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                <ThemedText style={styles.editChatAssistantLabel}>Tripseek</ThemedText>
+                <ThemedText style={styles.editChatBubbleText}>{"\uD83D\uDC4B Hey! I\u2019m your trip assistant. I can:"}</ThemedText>
+                <View style={styles.editChatWelcomeList}>
+                  {[
+                    ['\uD83D\uDDFA\uFE0F', 'Add, remove, or swap activities'],
+                    ['\uD83D\uDCA1', 'Recommend places and personalized picks'],
+                    ['\uD83D\uDCB0', 'Help budget your trip'],
+                    ['\uD83D\uDD50', 'Fix conflicts and spot issues in your itinerary'],
+                    ['\uD83D\uDCCB', 'Manage reservations'],
+                    ['\u271A', 'And so much more'],
+                  ].map(([emoji, label], i) => (
+                    <View key={i} style={styles.editChatWelcomeRow}>
+                      <ThemedText style={styles.editChatWelcomeEmoji}>{emoji}</ThemedText>
+                      <ThemedText style={styles.editChatWelcomeLabel}>{label}</ThemedText>
+                    </View>
+                  ))}
+                </View>
+                <ThemedText style={styles.editChatBubbleText}>{`Just tell me what you\u2019d like \u2014 or tap a suggestion below to get started!`}</ThemedText>
+              </View>
+
+              {/* Messages */}
+              {editChatMessages.map((msg) => {
+                const isCompactMsg = msg.role === 'assistant' && msg.actionResults && msg.actionResults.length > 0 && msg.text.length < 60;
+                return (
+                <Animated.View key={msg.id} entering={FadeInDown.duration(200)} style={{ width: '100%' }}>
+                  {msg.role === 'assistant' && msg.context && (
+                    <View style={styles.editChatContextTag}>
+                      <SymbolView name="sparkles" size={11} tintColor={theme.textSecondary} />
+                      <ThemedText style={[styles.editChatContextText, { color: theme.textSecondary }]}>
+                        {msg.context}
+                      </ThemedText>
+                    </View>
+                  )}
+                  <View style={[
+                    styles.editChatBubble,
+                    msg.role === 'user'
+                      ? [styles.editChatBubbleUser, { backgroundColor: theme.primary }]
+                      : [styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
+                    isCompactMsg && styles.editChatBubbleCompact,
+                  ]}>
+                    {msg.role === 'assistant' && (
+                      <ThemedText style={styles.editChatAssistantLabel}>Tripseek</ThemedText>
+                    )}
+                    {msg.role === 'user' ? (
+                      <ThemedText style={[styles.editChatBubbleText, { color: '#fff' }]}>{msg.text}</ThemedText>
+                    ) : (
+                      <ChatMarkdown text={msg.text} />
+                    )}
+                  </View>
+                  {msg.timestamp && (
+                    <ThemedText style={[styles.editChatTime, { color: theme.textSecondary }, msg.role === 'user' && styles.editChatTimeUser]}>
+                      {new Date(msg.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </ThemedText>
+                  )}
+
+                  {/* Place cards */}
+                  {msg.places && msg.places.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={chatPlaceStyles.cardsContainer}
+                      style={chatPlaceStyles.cardsScroll}
+                    >
+                      {msg.places.slice(0, 5).map((place, i) => (
+                        <ChatPlaceCard
+                          key={place.placeId || `p${i}`}
+                          place={place}
+                          isPrimary={i === 0}
+                          onAddToTrip={() => {
+                            let url = `/place-detail?name=${encodeURIComponent(place.name)}`;
+                            if (place.placeId) url += `&placeId=${encodeURIComponent(place.placeId)}`;
+                            if (place.address) url += `&address=${encodeURIComponent(place.address)}`;
+                            if (place.rating != null) url += `&rating=${place.rating}`;
+                            if (place.ratingCount != null) url += `&reviewCount=${place.ratingCount}`;
+                            if (place.lat != null) url += `&lat=${place.lat}`;
+                            if (place.lng != null) url += `&lng=${place.lng}`;
+                            router.push(url as any);
+                          }}
+                          onSaveToBoard={() => {
+                            let url = `/place-detail?name=${encodeURIComponent(place.name)}`;
+                            if (place.placeId) url += `&placeId=${encodeURIComponent(place.placeId)}`;
+                            if (place.address) url += `&address=${encodeURIComponent(place.address)}`;
+                            if (place.rating != null) url += `&rating=${place.rating}`;
+                            if (place.lat != null) url += `&lat=${place.lat}`;
+                            if (place.lng != null) url += `&lng=${place.lng}`;
+                            router.push(url as any);
+                          }}
+                        />
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {/* Action results */}
+                  {msg.actionResults && msg.actionResults.length > 0 && (
+                    <View style={styles.editChatActionsContainer}>
+                      {msg.actionResults.map((ar, arIdx) => (
+                        <View key={arIdx} style={[styles.editChatActionResult, { backgroundColor: theme.backgroundElement }]}>
+                          <SymbolView name="checkmark.circle.fill" size={16} tintColor="#10B981" />
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={styles.editChatActionLabel}>{ar.label}</ThemedText>
+                            {ar.detail && <ThemedText style={[styles.editChatActionDetail, { color: theme.textSecondary }]}>{ar.detail}</ThemedText>}
+                          </View>
                         </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Confirmation card for destructive actions */}
+                  {msg.pendingActions && msg.pendingActions.length > 0 && (
+                    <View style={[styles.editChatConfirmCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                      <View style={styles.editChatConfirmHeader}>
+                        <SymbolView name="exclamationmark.triangle.fill" size={16} tintColor="#F59E0B" />
+                        <ThemedText style={styles.editChatConfirmTitle}>Confirm changes</ThemedText>
+                      </View>
+                      {msg.pendingActions.map((pa, paIdx) => (
+                        <ThemedText key={paIdx} style={[styles.editChatConfirmAction, { color: theme.textSecondary }]}>
+                          {pa.type === 'swap_days' ? `Swap Day ${(pa as any).day1} \u2194 Day ${(pa as any).day2}` : pa.type.replace(/_/g, ' ')}
+                        </ThemedText>
+                      ))}
+                      <View style={styles.editChatConfirmBtns}>
+                        <Pressable
+                          onPress={() => handleEditDismiss(msg.id)}
+                          style={[styles.editChatConfirmBtn, { borderColor: theme.border }]}
+                        >
+                          <ThemedText style={{ fontSize: 14, fontWeight: '600' as const, color: theme.textSecondary }}>Cancel</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleEditConfirm(msg.id)}
+                          style={[styles.editChatConfirmBtn, { backgroundColor: theme.primary }]}
+                        >
+                          <ThemedText style={{ fontSize: 14, fontWeight: '600' as const, color: theme.primaryText }}>Confirm</ThemedText>
+                        </Pressable>
                       </View>
                     </View>
                   )}
 
-                  {/* Add activity link */}
-                  <Pressable
-                    onPress={() => setAddingToDay(day)}
-                    style={styles.addLink}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add activity to Day ${day}`}
-                  >
-                    <ThemedText style={[styles.addLinkText, { color: theme.primary }]}>+ Add activity</ThemedText>
-                  </Pressable>
+                  {/* Failed retry */}
+                  {msg.failed && (
+                    <Pressable
+                      onPress={() => {
+                        const userMsg = editChatMessages[editChatMessages.indexOf(msg) - 1];
+                        if (userMsg?.role === 'user') {
+                          setEditChatMessages((p) => p.filter((m) => m.id !== msg.id));
+                          sendEditChatMessage(userMsg.text);
+                        }
+                      }}
+                      style={styles.editChatRetryBtn}
+                    >
+                      <SymbolView name="arrow.clockwise" size={12} tintColor={theme.danger} />
+                      <ThemedText style={{ fontSize: 12, color: theme.danger }}>Try again</ThemedText>
+                    </Pressable>
+                  )}
                 </Animated.View>
-              );
-            })}
-          </View>
-        ) : viewMode === 'ai' ? (
-          <View style={styles.aiView}>
-            {/* Trip Analysis — deep AI review */}
-            <Pressable
-              onPress={() => {
-                if (tripAnalysis || analysisLoading) return;
-                if (!analyzeGate.allowed) {
-                  setUpgradeFeature('analyze_trip');
-                  setShowUpgradePrompt(true);
-                  return;
-                }
-                setAnalysisLoading(true);
-                analyzeTripAI({ trip: currentTrip, profile })
-                  .then((result) => {
-                    setTripAnalysis(result);
-                    // Auto-expand all categories
-                    setAnalysisExpanded(new Set(result.categories.map((c) => c.id)));
-                  })
-                  .catch(() => showToast('Analysis failed — try again'))
-                  .finally(() => setAnalysisLoading(false));
-              }}
-              style={[styles.analysisCard, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '30' }]}
-            >
-              <View style={styles.analysisCardHeader}>
-                <SymbolView name="wand.and.stars" size={24} tintColor={theme.primary} />
-                <View style={styles.analysisCardTextCol}>
-                  <ThemedText style={styles.analysisCardTitle}>Analyze my trip</ThemedText>
-                  <ThemedText style={[styles.analysisCardDesc, { color: theme.textSecondary }]}>
-                    Deep AI review of pacing, balance, logistics & more
-                  </ThemedText>
-                </View>
-                {analysisLoading && (
-                  <Animated.View entering={FadeIn.duration(200)}>
-                    <ThemedText style={[styles.analysisLoadingText, { color: theme.primary }]}>Analyzing...</ThemedText>
-                  </Animated.View>
-                )}
-                {!analysisLoading && !tripAnalysis && (
-                  <SymbolView name="chevron.right" size={14} tintColor={theme.primary} />
-                )}
-              </View>
-            </Pressable>
+              );})}
 
-            {/* Analysis results */}
-            {tripAnalysis && (
-              <Animated.View entering={FadeInDown.springify()} style={styles.analysisResults}>
-                {/* Overall score */}
-                <View style={[styles.analysisOverall, { backgroundColor: theme.backgroundElement }]}>
-                  <View style={styles.analysisScoreRow}>
-                    <ThemedText style={styles.analysisScoreNum}>{tripAnalysis.overallScore}</ThemedText>
-                    <ThemedText style={[styles.analysisScoreLabel, { color: theme.textSecondary }]}>/5</ThemedText>
-                  </View>
-                  <ThemedText style={[styles.analysisOverallText, { color: theme.textSecondary }]}>
-                    {tripAnalysis.overallSummary}
-                  </ThemedText>
-                  <Pressable
-                    onPress={() => {
-                      setTripAnalysis(null);
-                      setAnalysisExpanded(new Set());
-                    }}
-                    hitSlop={8}
-                    style={styles.analysisRefreshBtn}
-                  >
-                    <SymbolView name="arrow.clockwise" size={14} tintColor={theme.primary} />
-                    <ThemedText style={[styles.analysisRefreshText, { color: theme.primary }]}>Re-analyze</ThemedText>
-                  </Pressable>
-                </View>
-
-                {/* Category breakdowns */}
-                {tripAnalysis.categories.map((cat) => {
-                  const isExpanded = analysisExpanded.has(cat.id);
-                  const scoreColor = cat.score >= 4 ? '#10B981' : cat.score >= 3 ? '#F59E0B' : '#EF4444';
-                  return (
-                    <View key={cat.id} style={[styles.analysisCatCard, { backgroundColor: theme.backgroundElement }]}>
-                      <Pressable
-                        onPress={() => {
-                          const next = new Set(analysisExpanded);
-                          if (isExpanded) next.delete(cat.id);
-                          else next.add(cat.id);
-                          setAnalysisExpanded(next);
-                        }}
-                        style={styles.analysisCatHeader}
-                      >
-                        <ThemedText style={styles.analysisCatEmoji}>{cat.emoji}</ThemedText>
-                        <ThemedText style={[styles.analysisCatLabel, { flex: 1 }]}>{cat.label}</ThemedText>
-                        <View style={[styles.analysisCatScoreBadge, { backgroundColor: scoreColor + '18' }]}>
-                          <ThemedText style={[styles.analysisCatScoreText, { color: scoreColor }]}>{cat.score}/5</ThemedText>
-                        </View>
-                        <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={12} tintColor={theme.textSecondary} />
-                      </Pressable>
-
-                      {isExpanded && (
-                        <Animated.View entering={FadeIn.duration(150)} style={styles.analysisCatBody}>
-                          <ThemedText style={[styles.analysisCatSummary, { color: theme.textSecondary }]}>{cat.summary}</ThemedText>
-                          {cat.suggestions.length > 0 && (
-                            <View style={styles.analysisSuggestions}>
-                              {cat.suggestions.map((sug, i) => (
-                                <View key={i} style={styles.analysisSugRow}>
-                                  <ThemedText style={styles.analysisSugText}>{sug.text}</ThemedText>
-                                  {sug.actionCommand && (
-                                    <Pressable
-                                      onPress={() => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        handleCommand(sug.actionCommand as TravonalCommand, sug.actionDay);
-                                        setViewMode('itinerary');
-                                      }}
-                                      style={[styles.analysisSugBtn, { backgroundColor: theme.primary }]}
-                                    >
-                                      <ThemedText style={[styles.analysisSugBtnText, { color: theme.primaryText }]}>Fix</ThemedText>
-                                    </Pressable>
-                                  )}
-                                </View>
-                              ))}
-                            </View>
-                          )}
-                        </Animated.View>
-                      )}
-                    </View>
-                  );
-                })}
-              </Animated.View>
-            )}
-
-            {/* Divider */}
-            <View style={[styles.aiViewDivider, { backgroundColor: theme.border }]} />
-
-            {/* Free text input */}
-            <ThemedText style={[styles.aiViewSectionLabel, { color: theme.textSecondary }]}>Tell AI what to change</ThemedText>
-            <View style={[styles.aiViewInputRow, { borderColor: theme.border }]}>
-              <TextInput
-                style={[styles.aiViewInput, { color: theme.text }]}
-                value={aiViewQuery}
-                onChangeText={(t) => { setAiViewQuery(t); setAiViewError(''); }}
-                placeholder="e.g. Make day 2 more relaxed, add a rooftop bar..."
-                placeholderTextColor={theme.textSecondary}
-                onSubmitEditing={() => {
-                  if (!aiViewQuery.trim()) return;
-                  const { command, extractedDay, searchTerms, startAfter } = parseTextToCommand(aiViewQuery);
-                  if (command === null) {
-                    handleAIEdit(aiViewQuery.trim());
-                    setAiViewQuery('');
-                    setViewMode('itinerary');
-                    return;
-                  }
-                  setAiViewQuery('');
-                  handleCommand(command, extractedDay, undefined, searchTerms, startAfter);
-                  setViewMode('itinerary');
-                }}
-                returnKeyType="go"
-                multiline={false}
-              />
-              {aiViewQuery.trim().length > 0 && (
-                <Pressable
-                  onPress={() => {
-                    const { command, extractedDay, searchTerms, startAfter } = parseTextToCommand(aiViewQuery);
-                    if (command === null) {
-                      handleAIEdit(aiViewQuery.trim());
-                      setAiViewQuery('');
-                      setViewMode('itinerary');
-                      return;
-                    }
-                    setAiViewQuery('');
-                    handleCommand(command, extractedDay, undefined, searchTerms, startAfter);
-                    setViewMode('itinerary');
-                  }}
-                  style={[styles.aiViewSendBtn, { backgroundColor: theme.primary }]}
-                >
-                  <SymbolView name="arrow.up" size={16} tintColor={theme.primaryText} />
-                </Pressable>
+              {/* Typing indicator */}
+              {editChatTyping && (
+                <Animated.View entering={FadeIn.duration(200)} style={[styles.editChatTyping, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                  <ThemedText style={[styles.editChatTypingText, { color: theme.textSecondary }]}>{editChatTypingMessage}</ThemedText>
+                </Animated.View>
               )}
             </View>
 
-            {aiViewError.length > 0 && (
-              <ThemedText style={{ color: theme.danger, fontSize: 13, marginTop: 4 }}>{aiViewError}</ThemedText>
-            )}
-
-            {/* Quick action commands */}
-            <ThemedText style={[styles.aiViewSectionLabel, { color: theme.textSecondary, marginTop: 24 }]}>Quick actions</ThemedText>
-            <View style={styles.aiViewCommands}>
-              {AI_COMMANDS.map((cmd) => (
-                <Pressable
-                  key={cmd.id}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    handleCommand(cmd.id);
-                    setViewMode('itinerary');
-                  }}
-                  style={({ pressed }) => [
-                    styles.aiViewCommandRow,
-                    { backgroundColor: pressed ? theme.primaryMuted : theme.backgroundElement },
-                  ]}
-                >
-                  <SymbolView name={cmd.icon as any} size={22} tintColor={theme.primary} />
-                  <View style={styles.aiViewCommandText}>
-                    <ThemedText style={styles.aiViewCommandLabel}>{cmd.label}</ThemedText>
-                    <ThemedText style={[styles.aiViewCommandDesc, { color: theme.textSecondary }]}>{cmd.description}</ThemedText>
-                  </View>
-                  <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-                </Pressable>
-              ))}
-            </View>
           </View>
         ) : viewMode === 'prep' ? (
           <View style={styles.itinerary}>
@@ -3027,23 +3728,146 @@ export default function TripWorkspace() {
               ];
               return (
                 <>
-                  <ThemedText style={styles.prepProgress}>
-                    {doneCount} of {prepItems.length} complete
-                  </ThemedText>
-                  <View style={[styles.prepProgressBar, { backgroundColor: theme.backgroundElement }]}>
-                    <View style={[styles.prepProgressFill, { width: `${prepItems.length > 0 ? (doneCount / prepItems.length) * 100 : 0}%`, backgroundColor: theme.primary }]} />
+                  {/* Header row with + Add */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
+                      Prep
+                    </ThemedText>
+                    {!showAddPrep && prepItems.length > 0 && (
+                      <Pressable
+                        onPress={() => setShowAddPrep(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Add prep item"
+                      >
+                        <ThemedText style={{ color: theme.primary, fontSize: 14, fontWeight: '500' }}>+ Add</ThemedText>
+                      </Pressable>
+                    )}
                   </View>
+
+                  {/* Add prep form */}
+                  {showAddPrep && (
+                    <Animated.View entering={FadeIn.duration(200)} style={[styles.addExpenseForm, { backgroundColor: theme.backgroundElement }]}>
+                      <TextInput
+                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        value={newPrepItem}
+                        onChangeText={setNewPrepItem}
+                        placeholder="What do you need to prepare?"
+                        placeholderTextColor={theme.textSecondary}
+                        returnKeyType="done"
+                        autoFocus
+                        onSubmitEditing={addPrepItem}
+                        accessibilityLabel="Prep item text"
+                      />
+                      <View style={styles.expenseCategoryRow}>
+                        {PREP_CATEGORIES.map((cat) => (
+                          <Pressable
+                            key={cat.key}
+                            onPress={() => setNewPrepCategory(cat.key)}
+                            style={[styles.typeChip, { backgroundColor: newPrepCategory === cat.key ? theme.primary : 'transparent', borderWidth: 1, borderColor: newPrepCategory === cat.key ? theme.primary : theme.border }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Select ${cat.label} category`}
+                          >
+                            <ThemedText style={[styles.typeText, newPrepCategory === cat.key && { color: theme.primaryText }]}>{cat.label}</ThemedText>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <View style={styles.editBtnRow}>
+                        <Pressable
+                          onPress={() => { Keyboard.dismiss(); setShowAddPrep(false); setNewPrepItem(''); setNewPrepCategory('other'); }}
+                          style={styles.editCancelBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel add prep item"
+                        >
+                          <ThemedText style={styles.editCancelText}>Cancel</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          onPress={addPrepItem}
+                          style={[styles.addSaveBtn, styles.editSaveBtn, { backgroundColor: theme.primary, opacity: newPrepItem.trim() ? 1 : 0.4 }]}
+                          disabled={!newPrepItem.trim()}
+                          accessibilityRole="button"
+                          accessibilityLabel="Add prep item"
+                        >
+                          <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Add</ThemedText>
+                        </Pressable>
+                      </View>
+                    </Animated.View>
+                  )}
+
+                  {/* Empty state */}
+                  {prepItems.length === 0 && !showAddPrep && (
+                    <Animated.View entering={FadeIn.duration(200)} style={styles.prepEmptyCard}>
+                      <SymbolView name={"checklist" as any} size={36} tintColor={theme.textSecondary} />
+                      <ThemedText style={{ fontSize: 17, fontWeight: '700', marginTop: 12 }}>Trip Prep Checklist</ThemedText>
+                      <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginTop: 4, lineHeight: 20 }}>
+                        Track documents, bookings, packing, and everything you need before your trip.
+                      </ThemedText>
+                      <Pressable
+                        onPress={() => setShowAddPrep(true)}
+                        style={[styles.addSaveBtn, { backgroundColor: theme.primary, paddingHorizontal: 24, marginTop: 16 }]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Add a task"
+                      >
+                        <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Add a Task</ThemedText>
+                      </Pressable>
+                    </Animated.View>
+                  )}
+
+                  {/* Progress bar + Clear completed */}
+                  {prepItems.length > 0 && (
+                    <>
+                      <ThemedText style={styles.prepProgress}>
+                        {doneCount} of {prepItems.length} complete
+                      </ThemedText>
+                      <View style={[styles.prepProgressBar, { backgroundColor: theme.backgroundElement }]}>
+                        <View style={[styles.prepProgressFill, { width: `${(doneCount / prepItems.length) * 100}%`, backgroundColor: theme.primary }]} />
+                      </View>
+                      {doneCount > 0 && (
+                        <Pressable onPress={clearCompletedPrepItems} style={{ alignSelf: 'flex-end', marginBottom: 8, marginTop: -8 }}>
+                          <ThemedText style={{ fontSize: 13, color: theme.primary, fontWeight: '500' }}>Clear completed</ThemedText>
+                        </Pressable>
+                      )}
+                    </>
+                  )}
+
+                  {/* Collapsible category sections */}
                   {PREP_CATEGORIES.map((cat) => {
                     const catItems = prepItems.filter((i) => (i.category ?? 'other') === cat.key);
                     if (catItems.length === 0) return null;
+                    const catDone = catItems.filter((i) => i.done).length;
+                    const allDone = catDone === catItems.length;
+                    const isCollapsed = allDone
+                      ? !collapsedPrepCats.has(`${cat.key}-expanded`)
+                      : collapsedPrepCats.has(cat.key!);
                     return (
                       <View key={cat.key}>
-                        <ThemedText style={[styles.prepCategoryHeader, { color: theme.textSecondary }]}>{cat.label}</ThemedText>
-                        {catItems.map((item) => (
+                        <Pressable
+                          onPress={() => {
+                            setCollapsedPrepCats((prev) => {
+                              const next = new Set(prev);
+                              if (allDone) {
+                                if (next.has(`${cat.key}-expanded`)) next.delete(`${cat.key}-expanded`);
+                                else next.add(`${cat.key}-expanded`);
+                              } else {
+                                if (next.has(cat.key!)) next.delete(cat.key!);
+                                else next.add(cat.key!);
+                              }
+                              return next;
+                            });
+                          }}
+                          style={styles.prepCategoryHeaderRow}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${isCollapsed ? 'Expand' : 'Collapse'} ${cat.label}`}
+                        >
+                          <ThemedText style={[styles.prepCategoryHeader, { color: theme.textSecondary, marginTop: 0, marginBottom: 0 }]}>
+                            {cat.label} {catDone}/{catItems.length}
+                          </ThemedText>
+                          <SymbolView name={isCollapsed ? ("chevron.right" as any) : ("chevron.down" as any)} size={12} tintColor={theme.textSecondary} />
+                        </Pressable>
+                        {!isCollapsed && catItems.map((item) => (
                           <View key={item.id}>
                             {editingPrepId === item.id ? (
                               <View style={[styles.prepItem, { backgroundColor: theme.backgroundElement }]}>
-                                <SymbolView name={item.done ? 'checkmark.circle.fill' : 'circle'} size={18} tintColor={item.done ? '#22C55E' : undefined} />
+                                <SymbolView name="checkmark.circle.fill" size={18} tintColor={item.done ? '#22C55E' : undefined} />
                                 <TextInput
                                   style={[styles.prepEditInput, { color: theme.text }]}
                                   value={editPrepText}
@@ -3068,106 +3892,47 @@ export default function TripWorkspace() {
                                 />
                               </View>
                             ) : (
-                              <Pressable
-                                onPress={() => togglePrepItem(item.id)}
-                                onLongPress={() => {
-                                  setEditingPrepId(item.id);
-                                  setEditPrepText(item.text);
-                                }}
-                                style={[styles.prepItem, { backgroundColor: theme.backgroundElement }]}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Toggle prep item: ${item.text}`}
-                              >
-                                <SymbolView name={item.done ? 'checkmark.circle.fill' : 'circle'} size={18} tintColor={item.done ? '#22C55E' : undefined} />
-                                <ThemedText style={[styles.prepItemText, item.done && styles.prepItemDone]}>{item.text}</ThemedText>
-                                {item.custom && (
-                                  <Pressable onPress={() => removePrepItem(item.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove prep item">
-                                    <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
-                                  </Pressable>
-                                )}
-                              </Pressable>
+                              <View style={[styles.prepItem, { backgroundColor: theme.backgroundElement }]}>
+                                <Pressable
+                                  onPress={() => togglePrepItem(item.id)}
+                                  style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Toggle prep item: ${item.text}`}
+                                >
+                                  <SymbolView name={item.done ? 'checkmark.circle.fill' : 'circle'} size={18} tintColor={item.done ? '#22C55E' : undefined} />
+                                  <ThemedText style={[styles.prepItemText, item.done && styles.prepItemDone]}>{item.text}</ThemedText>
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => { setEditingPrepId(item.id); setEditPrepText(item.text); }}
+                                  hitSlop={8}
+                                  style={styles.expenseDeleteBtn}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Edit prep item"
+                                >
+                                  <SymbolView name="pencil" size={14} tintColor={theme.primary} />
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => {
+                                    Keyboard.dismiss();
+                                    Alert.alert('Delete prep item?', `Remove "${item.text}"?`, [
+                                      { text: 'Cancel', style: 'cancel' },
+                                      { text: 'Delete', style: 'destructive', onPress: () => removePrepItem(item.id) },
+                                    ]);
+                                  }}
+                                  hitSlop={8}
+                                  style={styles.expenseDeleteBtn}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Delete prep item"
+                                >
+                                  <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
+                                </Pressable>
+                              </View>
                             )}
                           </View>
                         ))}
                       </View>
                     );
                   })}
-                  {/* Items without category */}
-                  {prepItems.filter((i) => !i.category).length > 0 && (
-                    <>
-                      {prepItems.filter((i) => !i.category).map((item) => (
-                        <Pressable
-                          key={item.id}
-                          onPress={() => togglePrepItem(item.id)}
-                          onLongPress={() => {
-                            setEditingPrepId(item.id);
-                            setEditPrepText(item.text);
-                          }}
-                          style={[styles.prepItem, { backgroundColor: theme.backgroundElement }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Toggle prep item: ${item.text}`}
-                        >
-                          <SymbolView name={item.done ? 'checkmark.circle.fill' : 'circle'} size={18} tintColor={item.done ? '#22C55E' : undefined} />
-                          <ThemedText style={[styles.prepItemText, item.done && styles.prepItemDone]}>{item.text}</ThemedText>
-                          {item.custom && (
-                            <Pressable onPress={() => removePrepItem(item.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove prep item">
-                              <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
-                            </Pressable>
-                          )}
-                        </Pressable>
-                      ))}
-                    </>
-                  )}
-                  <View style={[styles.prepAddRow, { borderColor: theme.border }]}>
-                    <TextInput
-                      style={[styles.prepAddInput, { color: theme.text }]}
-                      value={newPrepItem}
-                      onChangeText={setNewPrepItem}
-                      placeholder="Add a prep item..."
-                      placeholderTextColor={theme.textSecondary}
-                      onSubmitEditing={addPrepItem}
-                      returnKeyType="done"
-                      accessibilityLabel="Add prep item"
-                    />
-                    <Pressable
-                      onPress={addPrepItem}
-                      style={[styles.prepAddBtn, { backgroundColor: theme.primary, opacity: newPrepItem.trim() ? 1 : 0.4 }]}
-                      disabled={!newPrepItem.trim()}
-                      accessibilityRole="button"
-                      accessibilityLabel="Add prep item"
-                    >
-                      <ThemedText style={[styles.prepAddBtnText, { color: theme.primaryText }]}>Add</ThemedText>
-                    </Pressable>
-                  </View>
-
-                  {/* Offline readiness section */}
-                  <View style={styles.offlineSection}>
-                    <ThemedText style={[styles.prepCategoryHeader, { color: theme.textSecondary }]}>Offline Readiness</ThemedText>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="checkmark.circle.fill" size={16} tintColor="#22C55E" />
-                      <ThemedText style={styles.offlineText}>Itinerary saved locally</ThemedText>
-                    </View>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="checkmark.circle.fill" size={16} tintColor="#22C55E" />
-                      <ThemedText style={styles.offlineText}>Bookings saved locally</ThemedText>
-                    </View>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="checkmark.circle.fill" size={16} tintColor="#22C55E" />
-                      <ThemedText style={styles.offlineText}>Prep list saved locally</ThemedText>
-                    </View>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="exclamationmark.triangle.fill" size={16} tintColor="#D97706" />
-                      <ThemedText style={styles.offlineText}>Maps require internet (download offline maps)</ThemedText>
-                    </View>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="exclamationmark.triangle.fill" size={16} tintColor="#D97706" />
-                      <ThemedText style={styles.offlineText}>Booking websites require internet</ThemedText>
-                    </View>
-                    <View style={styles.offlineRow}>
-                      <SymbolView name="exclamationmark.triangle.fill" size={16} tintColor="#D97706" />
-                      <ThemedText style={styles.offlineText}>Live prices and availability require internet</ThemedText>
-                    </View>
-                  </View>
                 </>
               );
             })()}
@@ -3175,35 +3940,47 @@ export default function TripWorkspace() {
         ) : viewMode === 'budget' ? (
           <View style={styles.itinerary}>
             {(() => {
-              // Midpoint estimates for totalling (honest approximation)
               const ACTIVITY_COST_MID: Record<string, number> = { free: 0, budget: 15, moderate: 40, premium: 100 };
               const estimatedActivityCost = currentTrip.activities.reduce(
-                (sum, a) => sum + (ACTIVITY_COST_MID[a.cost ?? 'free'] ?? 0), 0
+                (sum, a) => sum + (ACTIVITY_COST_MID[a.cost ?? 'free'] ?? 0), 0,
               );
               const expenses = currentTrip.expenses ?? [];
               const manualExpensesTotal = expenses.reduce((sum, e) => sum + e.amount, 0);
               const budgetCurrency = currentTrip.budgetCurrency ?? 'USD';
               const currencySymbol = getCurrSymbol(budgetCurrency);
-              // Only sum reservations in the same currency as the trip budget
               const activeReservations = (currentTrip.reservations ?? []).filter((r) => !r.cancelled && r.price != null && r.price > 0);
               const sameCurrencyRes = activeReservations.filter((r) => !r.currency || r.currency === budgetCurrency);
               const otherCurrencyRes = activeReservations.filter((r) => r.currency && r.currency !== budgetCurrency);
               const reservationCost = sameCurrencyRes.reduce((sum, r) => sum + (r.price ?? 0), 0);
-              // Confirmed = reservations + manual expenses (real money committed)
               const confirmedSpent = reservationCost + manualExpensesTotal;
-              // Projected = confirmed + activity estimates (honest projection, not actual spending)
-              const projectedTotal = confirmedSpent + estimatedActivityCost;
               const budgetTotal = currentTrip.budgetTotal ?? 0;
               const remainingConfirmed = budgetTotal - confirmedSpent;
-              const remainingProjected = budgetTotal - projectedTotal;
               const EXPENSE_CATEGORIES = ['Food', 'Transport', 'Activity', 'Accommodation', 'Other'];
+
+              // Category spending aggregation
+              const RES_TYPE_TO_CATEGORY: Record<string, string> = {
+                hotel: 'Accommodation', flight: 'Transport', train: 'Transport',
+                restaurant: 'Food', activity: 'Activity', other: 'Other',
+              };
+              const categorySpending: Record<string, number> = { Food: 0, Transport: 0, Activity: 0, Accommodation: 0, Other: 0 };
+              for (const r of sameCurrencyRes) categorySpending[RES_TYPE_TO_CATEGORY[r.type] ?? 'Other'] += r.price ?? 0;
+              for (const e of expenses) categorySpending[e.category] = (categorySpending[e.category] ?? 0) + e.amount;
+
+              // Budget progress
+              const totalSpent = confirmedSpent;
+              const spentPercent = budgetTotal > 0 ? (totalSpent / budgetTotal) * 100 : 0;
+
+              // Daily budget metrics
+              const dailyBudgetTarget = budgetTotal > 0 && totalDays > 0 ? budgetTotal / totalDays : 0;
+              const dailyAverage = totalSpent > 0 && totalDays > 0 ? totalSpent / totalDays : 0;
+
               return (
                 <>
                   {/* Currency selector */}
                   <View style={styles.budgetCurrencyRow}>
                     <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Currency</ThemedText>
-                    <View style={styles.typeRow}>
-                      {['USD', 'EUR', 'GBP', 'JPY'].map((cur) => (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 4 }}>
+                      {Object.keys(CURRENCY_SYMBOLS).map((cur) => (
                         <Pressable
                           key={cur}
                           onPress={() => updateTrip(currentTrip.id, { budgetCurrency: cur })}
@@ -3219,22 +3996,82 @@ export default function TripWorkspace() {
                           </ThemedText>
                         </Pressable>
                       ))}
-                    </View>
+                    </ScrollView>
                   </View>
 
-                  {/* Total budget */}
-                  <Pressable
-                    onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(budgetTotal ? String(budgetTotal) : ''); }}
-                    style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Set total budget"
-                  >
-                    <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Total budget</ThemedText>
-                    <ThemedText style={styles.budgetAmount}>
-                      {budgetTotal > 0 ? `${currencySymbol}${budgetTotal.toLocaleString()}` : 'Tap to set'}
-                    </ThemedText>
-                  </Pressable>
+                  {/* Hero budget card — empty state */}
+                  {budgetTotal === 0 && totalSpent === 0 ? (
+                    <Pressable
+                      onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(''); }}
+                      style={[styles.budgetCard, { backgroundColor: theme.backgroundElement, padding: 24, alignItems: 'center' as const, gap: 12 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Set total budget"
+                    >
+                      <SymbolView name={"banknote" as any} size={32} tintColor={theme.textSecondary} />
+                      <ThemedText style={[styles.budgetAmount, { fontSize: 18 }]}>Set a Trip Budget</ThemedText>
+                      <ThemedText style={{ color: theme.textSecondary, textAlign: 'center', fontSize: 13, lineHeight: 20 }}>
+                        Track spending across bookings and expenses.{'\n'}
+                        {totalDays > 0 ? `For a ${totalDays}-day trip, a starting point might be ${currencySymbol}${(totalDays * 100).toLocaleString()} (${currencySymbol}100/day).` : 'Tap to get started.'}
+                      </ThemedText>
+                      <View style={[styles.budgetSaveBtn, { backgroundColor: theme.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: Radius.sm, marginTop: 4 }]}>
+                        <ThemedText style={[styles.budgetSaveBtnText, { color: theme.primaryText }]}>Set Budget</ThemedText>
+                      </View>
+                    </Pressable>
+                  ) : (
+                    /* Hero budget card — with data */
+                    <Pressable
+                      onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(budgetTotal ? String(budgetTotal) : ''); }}
+                      style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit total budget"
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Total budget</ThemedText>
+                        {budgetTotal > 0 && (
+                          <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>
+                            {spentPercent.toFixed(0)}% spent
+                          </ThemedText>
+                        )}
+                      </View>
+                      <ThemedText style={styles.budgetAmount}>
+                        {budgetTotal > 0 ? `${currencySymbol}${budgetTotal.toLocaleString()}` : `${currencySymbol}${totalSpent.toLocaleString()} spent`}
+                      </ThemedText>
 
+                      {/* Progress bar */}
+                      {budgetTotal > 0 && (
+                        <View style={[styles.budgetProgressTrack, { backgroundColor: theme.border }]}>
+                          <View style={[
+                            styles.budgetProgressFill,
+                            {
+                              width: `${Math.min(spentPercent, 100)}%`,
+                              backgroundColor: spentPercent > 100 ? '#DC2626' : spentPercent > 80 ? '#F59E0B' : '#16A34A',
+                            },
+                          ]} />
+                        </View>
+                      )}
+
+                      {/* Spent / Remaining */}
+                      {budgetTotal > 0 && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                          <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
+                            {currencySymbol}{totalSpent.toLocaleString()} spent
+                          </ThemedText>
+                          <ThemedText style={{ fontSize: 12, fontWeight: '600', color: remainingConfirmed >= 0 ? '#16A34A' : '#DC2626' }}>
+                            {remainingConfirmed >= 0 ? `${currencySymbol}${remainingConfirmed.toLocaleString()} remaining` : `-${currencySymbol}${Math.abs(remainingConfirmed).toLocaleString()} over`}
+                          </ThemedText>
+                        </View>
+                      )}
+
+                      {/* Daily average */}
+                      {totalDays > 0 && totalSpent > 0 && (
+                        <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary, marginTop: 2 }]}>
+                          Averaging {currencySymbol}{Math.round(dailyAverage).toLocaleString()}/day{dailyBudgetTarget > 0 ? ` \u00B7 ${currencySymbol}${Math.round(dailyBudgetTarget).toLocaleString()}/day target` : ''}
+                        </ThemedText>
+                      )}
+                    </Pressable>
+                  )}
+
+                  {/* Budget edit row */}
                   {editBudgetTotal && (
                     <Animated.View entering={FadeIn.duration(200)} style={[styles.budgetEditRow, { borderColor: theme.border }]}>
                       <TextInput
@@ -3249,6 +4086,7 @@ export default function TripWorkspace() {
                       />
                       <Pressable
                         onPress={() => {
+                          Keyboard.dismiss();
                           const val = parseInt(budgetTotalInput, 10);
                           if (val > 0) updateTripBudget(currentTrip.id, val);
                           setEditBudgetTotal(false);
@@ -3262,38 +4100,60 @@ export default function TripWorkspace() {
                     </Animated.View>
                   )}
 
-                  {/* Confirmed costs */}
-                  {(reservationCost > 0 || manualExpensesTotal > 0) && (
+                  {/* Category spending breakdown */}
+                  {totalSpent > 0 && (
+                    <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}>
+                      <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary, marginBottom: 8 }]}>Spending by category</ThemedText>
+                      {EXPENSE_CATEGORIES.map((cat) => {
+                        const catAmount = categorySpending[cat] ?? 0;
+                        const barPercent = totalSpent > 0 ? (catAmount / totalSpent) * 100 : 0;
+                        return (
+                          <View key={cat} style={{ marginBottom: 8 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                              <ThemedText style={{ fontSize: 13, fontWeight: '500' }}>{cat}</ThemedText>
+                              <ThemedText style={{ fontSize: 13, fontWeight: '600' }}>{currencySymbol}{catAmount.toLocaleString()}</ThemedText>
+                            </View>
+                            <View style={[styles.budgetProgressTrack, { backgroundColor: theme.border, height: 6, marginTop: 0 }]}>
+                              <View style={[styles.budgetProgressFill, { width: `${barPercent}%`, backgroundColor: theme.primary, height: 6 }]} />
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {/* Bookings — itemized */}
+                  {sameCurrencyRes.length > 0 && (
                     <>
                       <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
-                        Confirmed
+                        Bookings
                       </ThemedText>
-                      {reservationCost > 0 && (
-                        <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}>
-                          <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Bookings ({budgetCurrency})</ThemedText>
-                          <ThemedText style={styles.budgetAmount}>{currencySymbol}{reservationCost.toLocaleString()}</ThemedText>
+                      {sameCurrencyRes.map((r) => (
+                        <View key={r.id} style={[styles.budgetBookingRow, { borderBottomColor: theme.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={styles.expenseLabel}>{r.title}</ThemedText>
+                            <ThemedText style={[styles.expenseMeta, { color: theme.textSecondary }]}>
+                              {RES_TYPE_TO_CATEGORY[r.type] ?? 'Other'}{r.day != null ? ` \u00B7 Day ${r.day}` : ''}
+                            </ThemedText>
+                          </View>
+                          <ThemedText style={styles.expenseAmount}>{currencySymbol}{(r.price ?? 0).toLocaleString()}</ThemedText>
                         </View>
-                      )}
-                      {manualExpensesTotal > 0 && (
-                        <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}>
-                          <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Manual expenses</ThemedText>
-                          <ThemedText style={styles.budgetAmount}>{currencySymbol}{manualExpensesTotal.toLocaleString()}</ThemedText>
-                        </View>
-                      )}
-                      <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement, borderLeftWidth: 3, borderLeftColor: '#16A34A' }]}>
-                        <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Confirmed subtotal</ThemedText>
-                        <ThemedText style={styles.budgetAmount}>{currencySymbol}{(reservationCost + manualExpensesTotal).toLocaleString()}</ThemedText>
-                      </View>
+                      ))}
                     </>
                   )}
 
+                  {/* Other currency bookings */}
                   {otherCurrencyRes.length > 0 && (
-                    <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement }]}>
-                      <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Bookings (other currencies)</ThemedText>
+                    <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement, marginTop: sameCurrencyRes.length > 0 ? 8 : 0 }]}>
+                      <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Other currencies</ThemedText>
                       {otherCurrencyRes.map((r) => (
-                        <ThemedText key={r.id} style={[styles.budgetEstNote, { color: theme.text, marginTop: 4 }]}>
-                          {r.title}: {getCurrSymbol(r.currency!)}{(r.price ?? 0).toLocaleString()} {r.currency}
-                        </ThemedText>
+                        <View key={r.id} style={[styles.budgetBookingRow, { borderBottomColor: theme.border }]}>
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={styles.expenseLabel}>{r.title}</ThemedText>
+                            <ThemedText style={[styles.expenseMeta, { color: theme.textSecondary }]}>{RES_TYPE_TO_CATEGORY[r.type] ?? 'Other'} \u00B7 {r.currency}</ThemedText>
+                          </View>
+                          <ThemedText style={styles.expenseAmount}>{getCurrSymbol(r.currency!)}{(r.price ?? 0).toLocaleString()}</ThemedText>
+                        </View>
                       ))}
                       <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary, marginTop: 6 }]}>
                         Not included in totals (different currency)
@@ -3301,53 +4161,115 @@ export default function TripWorkspace() {
                     </View>
                   )}
 
-                  {/* Estimated activity costs */}
-                  <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
-                    Activity estimates
-                  </ThemedText>
-                  <View style={[styles.budgetCard, { backgroundColor: theme.backgroundElement, borderLeftWidth: 3, borderLeftColor: theme.textSecondary }]}>
-                    <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Estimated activity costs</ThemedText>
-                    <ThemedText style={[styles.budgetAmount, { fontStyle: 'italic', color: theme.textSecondary }]}>
-                      ~{currencySymbol}{estimatedActivityCost.toLocaleString()}
+                  {/* Activity estimates — demoted to a single line */}
+                  {estimatedActivityCost > 0 && (
+                    <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary, marginTop: 8, marginBottom: 4 }]}>
+                      Activity estimates: ~{currencySymbol}{estimatedActivityCost.toLocaleString()} (based on cost tiers, not actual spending)
                     </ThemedText>
-                    <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>
-                      Rough estimate based on cost tiers — not actual spending
-                    </ThemedText>
-                  </View>
-
-                  {/* Budget vs confirmed */}
-                  {budgetTotal > 0 && (
-                    <>
-                      <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
-                        Budget status
-                      </ThemedText>
-                      <View style={[styles.budgetCard, { backgroundColor: remainingConfirmed >= 0 ? theme.backgroundElement : 'rgba(220,38,38,0.08)' }]}>
-                        <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Remaining (confirmed costs)</ThemedText>
-                        <ThemedText style={[styles.budgetAmount, { color: remainingConfirmed >= 0 ? '#16A34A' : '#DC2626' }]}>
-                          {remainingConfirmed >= 0 ? `${currencySymbol}${remainingConfirmed.toLocaleString()}` : `-${currencySymbol}${Math.abs(remainingConfirmed).toLocaleString()}`}
-                        </ThemedText>
-                        <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>
-                          {currencySymbol}{budgetTotal.toLocaleString()} budget − {currencySymbol}{confirmedSpent.toLocaleString()} confirmed
-                        </ThemedText>
-                      </View>
-                      {estimatedActivityCost > 0 && (
-                        <View style={[styles.budgetCard, { backgroundColor: remainingProjected >= 0 ? theme.backgroundElement : 'rgba(220,38,38,0.08)', opacity: 0.85 }]}>
-                          <ThemedText style={[styles.budgetLabel, { color: theme.textSecondary }]}>Projected remaining (incl. estimates)</ThemedText>
-                          <ThemedText style={[styles.budgetAmount, { fontStyle: 'italic', color: remainingProjected >= 0 ? theme.textSecondary : '#DC2626' }]}>
-                            ~{remainingProjected >= 0 ? `${currencySymbol}${remainingProjected.toLocaleString()}` : `-${currencySymbol}${Math.abs(remainingProjected).toLocaleString()}`}
-                          </ThemedText>
-                          <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>
-                            Includes ~{currencySymbol}{estimatedActivityCost.toLocaleString()} estimated activity costs
-                          </ThemedText>
-                        </View>
-                      )}
-                    </>
                   )}
 
-                  {/* Manual Expenses section */}
-                  <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
-                    Manual expenses
-                  </ThemedText>
+                  {/* Expenses */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
+                      Expenses
+                    </ThemedText>
+                    {!showAddExpense && (
+                      <Pressable
+                        onPress={() => setShowAddExpense(true)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Add expense"
+                      >
+                        <ThemedText style={{ color: theme.primary, fontSize: 14, fontWeight: '500' }}>+ Add</ThemedText>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  {/* Add expense form */}
+                  {showAddExpense && (
+                    <Animated.View entering={FadeIn.duration(200)} style={[styles.addExpenseForm, { backgroundColor: theme.backgroundElement }]}>
+                      <TextInput
+                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        value={newExpenseLabel}
+                        onChangeText={setNewExpenseLabel}
+                        placeholder="Expense label (e.g. Hotel night 1)"
+                        placeholderTextColor={theme.textSecondary}
+                        returnKeyType="next"
+                        autoFocus
+                        accessibilityLabel="Expense label"
+                      />
+                      <TextInput
+                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        value={newExpenseAmount}
+                        onChangeText={setNewExpenseAmount}
+                        placeholder="Amount"
+                        placeholderTextColor={theme.textSecondary}
+                        keyboardType="decimal-pad"
+                        returnKeyType="done"
+                        accessibilityLabel="Expense amount"
+                      />
+                      <View style={styles.expenseCategoryRow}>
+                        {EXPENSE_CATEGORIES.map((cat) => (
+                          <Pressable
+                            key={cat}
+                            onPress={() => setNewExpenseCategory(cat)}
+                            style={[styles.typeChip, { backgroundColor: newExpenseCategory === cat ? theme.primary : 'transparent', borderWidth: 1, borderColor: newExpenseCategory === cat ? theme.primary : theme.border }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Select ${cat} category`}
+                          >
+                            <ThemedText style={[styles.typeText, newExpenseCategory === cat && { color: theme.primaryText }]}>{cat}</ThemedText>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <ThemedText style={[styles.modalLabel, { marginTop: 4 }]}>Day (optional)</ThemedText>
+                      <TextInput
+                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                        value={newExpenseDay}
+                        onChangeText={setNewExpenseDay}
+                        placeholder="General"
+                        placeholderTextColor={theme.textSecondary}
+                        keyboardType="number-pad"
+                        accessibilityLabel="Expense day"
+                      />
+                      <View style={styles.editBtnRow}>
+                        <Pressable
+                          onPress={() => { Keyboard.dismiss(); setShowAddExpense(false); setNewExpenseLabel(''); setNewExpenseAmount(''); setNewExpenseCategory('Other'); setNewExpenseDay(''); }}
+                          style={styles.editCancelBtn}
+                          accessibilityRole="button"
+                          accessibilityLabel="Cancel expense"
+                        >
+                          <ThemedText style={styles.editCancelText}>Cancel</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            Keyboard.dismiss();
+                            const label = newExpenseLabel.trim();
+                            const amount = parseFloat(newExpenseAmount);
+                            if (!label || isNaN(amount) || amount <= 0) return;
+                            const dayNum = newExpenseDay ? parseInt(newExpenseDay, 10) : undefined;
+                            const newExpense = {
+                              id: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
+                              label,
+                              amount,
+                              category: newExpenseCategory,
+                              day: dayNum && !isNaN(dayNum) ? dayNum : undefined,
+                            };
+                            updateTripExpenses(currentTrip.id, [...expenses, newExpense]);
+                            setShowAddExpense(false);
+                            setNewExpenseLabel('');
+                            setNewExpenseAmount('');
+                            setNewExpenseCategory('Other');
+                            setNewExpenseDay('');
+                          }}
+                          style={[styles.addSaveBtn, styles.editSaveBtn, { backgroundColor: theme.primary, opacity: newExpenseLabel.trim() && newExpenseAmount.trim() ? 1 : 0.4 }]}
+                          disabled={!newExpenseLabel.trim() || !newExpenseAmount.trim()}
+                          accessibilityRole="button"
+                          accessibilityLabel="Save expense"
+                        >
+                          <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Save</ThemedText>
+                        </Pressable>
+                      </View>
+                    </Animated.View>
+                  )}
 
                   {expenses.map((expense) => (
                     <View key={expense.id}>
@@ -3361,6 +4283,7 @@ export default function TripWorkspace() {
                         <ThemedText style={styles.expenseAmount}>{currencySymbol}{expense.amount.toLocaleString()}</ThemedText>
                         <Pressable
                           onPress={() => {
+                            Keyboard.dismiss();
                             setEditingExpenseId(expense.id);
                             setEditExpenseLabel(expense.label);
                             setEditExpenseAmount(String(expense.amount));
@@ -3376,18 +4299,11 @@ export default function TripWorkspace() {
                         </Pressable>
                         <Pressable
                           onPress={() => {
-                            Alert.alert(
-                              'Delete expense?',
-                              `Remove "${expense.label}"?`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                {
-                                  text: 'Delete',
-                                  style: 'destructive',
-                                  onPress: () => updateTripExpenses(currentTrip.id, expenses.filter((e) => e.id !== expense.id)),
-                                },
-                              ],
-                            );
+                            Keyboard.dismiss();
+                            Alert.alert('Delete expense?', `Remove "${expense.label}"?`, [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Delete', style: 'destructive', onPress: () => updateTripExpenses(currentTrip.id, expenses.filter((e) => e.id !== expense.id)) },
+                            ]);
                           }}
                           hitSlop={8}
                           style={styles.expenseDeleteBtn}
@@ -3440,11 +4356,12 @@ export default function TripWorkspace() {
                             accessibilityLabel="Expense day"
                           />
                           <View style={styles.editBtnRow}>
-                            <Pressable onPress={() => setEditingExpenseId(null)} style={styles.editCancelBtn} accessibilityRole="button" accessibilityLabel="Cancel edit">
+                            <Pressable onPress={() => { Keyboard.dismiss(); setEditingExpenseId(null); }} style={styles.editCancelBtn} accessibilityRole="button" accessibilityLabel="Cancel edit">
                               <ThemedText style={styles.editCancelText}>Cancel</ThemedText>
                             </Pressable>
                             <Pressable
                               onPress={() => {
+                                Keyboard.dismiss();
                                 const label = editExpenseLabel.trim();
                                 const amount = parseFloat(editExpenseAmount);
                                 if (!label || isNaN(amount) || amount <= 0) return;
@@ -3452,7 +4369,7 @@ export default function TripWorkspace() {
                                 const updated = expenses.map((e) =>
                                   e.id === expense.id
                                     ? { ...e, label, amount, category: editExpenseCategory, day: dayNum && !isNaN(dayNum) ? dayNum : undefined }
-                                    : e
+                                    : e,
                                 );
                                 updateTripExpenses(currentTrip.id, updated);
                                 setEditingExpenseId(null);
@@ -3470,135 +4387,123 @@ export default function TripWorkspace() {
                     </View>
                   ))}
 
-                  {expenses.length === 0 && (
+                  {expenses.length === 0 && !showAddExpense && (
                     <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>
-                      No manual expenses yet. Add things like accommodation, transport, or dining costs.
+                      No expenses yet. Track meals, transport, tickets, and other costs.
                     </ThemedText>
                   )}
 
-                  {/* Add expense form */}
-                  {showAddExpense ? (
-                    <Animated.View entering={FadeIn.duration(200)} style={[styles.addExpenseForm, { backgroundColor: theme.backgroundElement }]}>
-                      <TextInput
-                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                        value={newExpenseLabel}
-                        onChangeText={setNewExpenseLabel}
-                        placeholder="Expense label (e.g. Hotel night 1)"
-                        placeholderTextColor={theme.textSecondary}
-                        returnKeyType="next"
-                        accessibilityLabel="Expense label"
-                      />
-                      <TextInput
-                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                        value={newExpenseAmount}
-                        onChangeText={setNewExpenseAmount}
-                        placeholder="Amount"
-                        placeholderTextColor={theme.textSecondary}
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                        accessibilityLabel="Expense amount"
-                      />
-                      <View style={styles.expenseCategoryRow}>
-                        {EXPENSE_CATEGORIES.map((cat) => (
-                          <Pressable
-                            key={cat}
-                            onPress={() => setNewExpenseCategory(cat)}
-                            style={[styles.typeChip, { backgroundColor: newExpenseCategory === cat ? theme.primary : 'transparent', borderWidth: 1, borderColor: newExpenseCategory === cat ? theme.primary : theme.border }]}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Select ${cat} category`}
-                          >
-                            <ThemedText style={[styles.typeText, newExpenseCategory === cat && { color: theme.primaryText }]}>{cat}</ThemedText>
-                          </Pressable>
-                        ))}
-                      </View>
-                      <ThemedText style={[styles.modalLabel, { marginTop: 4 }]}>Day (optional)</ThemedText>
-                      <TextInput
-                        style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                        value={newExpenseDay}
-                        onChangeText={setNewExpenseDay}
-                        placeholder="General"
-                        placeholderTextColor={theme.textSecondary}
-                        keyboardType="number-pad"
-                        accessibilityLabel="Expense day"
-                      />
-                      <View style={styles.editBtnRow}>
-                        <Pressable
-                          onPress={() => { setShowAddExpense(false); setNewExpenseLabel(''); setNewExpenseAmount(''); setNewExpenseCategory('Other'); setNewExpenseDay(''); }}
-                          style={styles.editCancelBtn}
-                          accessibilityRole="button"
-                          accessibilityLabel="Cancel expense"
-                        >
-                          <ThemedText style={styles.editCancelText}>Cancel</ThemedText>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => {
-                            const label = newExpenseLabel.trim();
-                            const amount = parseFloat(newExpenseAmount);
-                            if (!label || isNaN(amount) || amount <= 0) return;
-                            const dayNum = newExpenseDay ? parseInt(newExpenseDay, 10) : undefined;
-                            const newExpense = {
-                              id: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
-                              label,
-                              amount,
-                              category: newExpenseCategory,
-                              day: dayNum && !isNaN(dayNum) ? dayNum : undefined,
-                            };
-                            updateTripExpenses(currentTrip.id, [...expenses, newExpense]);
-                            setShowAddExpense(false);
-                            setNewExpenseLabel('');
-                            setNewExpenseAmount('');
-                            setNewExpenseCategory('Other');
-                            setNewExpenseDay('');
-                          }}
-                          style={[styles.addSaveBtn, styles.editSaveBtn, { backgroundColor: theme.primary, opacity: newExpenseLabel.trim() && newExpenseAmount.trim() ? 1 : 0.4 }]}
-                          disabled={!newExpenseLabel.trim() || !newExpenseAmount.trim()}
-                          accessibilityRole="button"
-                          accessibilityLabel="Save expense"
-                        >
-                          <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Save</ThemedText>
-                        </Pressable>
-                      </View>
-                    </Animated.View>
-                  ) : (
-                    <Pressable
-                      onPress={() => setShowAddExpense(true)}
-                      style={[styles.addLink, { marginBottom: 16 }]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Add expense"
-                    >
-                      <ThemedText style={[styles.addLinkText, { color: theme.primary }]}>+ Add Expense</ThemedText>
-                    </Pressable>
-                  )}
-
-                  {/* Per-day breakdown */}
+                  {/* Per-day summary */}
                   <ThemedText type="sectionTitle" style={[styles.budgetSectionTitle, { color: theme.textSecondary }]}>
-                    Per-day breakdown (estimates)
+                    Per-day summary
                   </ThemedText>
-                  {allDays.map((d) => {
-                    const dayActs = (dayMap.get(d) ?? []);
-                    const dayActCost = dayActs.reduce((s, a) => s + (ACTIVITY_COST_MID[a.cost ?? 'moderate'] ?? 35), 0);
-                    const dayExpenses = expenses.filter((e) => e.day === d).reduce((s, e) => s + e.amount, 0);
-                    const dayResCost = (currentTrip.reservations ?? [])
-                      .filter((r) => !r.cancelled && r.day === d && (!r.currency || r.currency === budgetCurrency))
-                      .reduce((s, r) => s + (r.price ?? 0), 0);
-                    const dayCost = dayActCost + dayExpenses + dayResCost;
-                    return (
-                      <View key={d} style={[styles.budgetDayRow, { borderBottomColor: theme.border }]}>
-                        <ThemedText style={styles.budgetDayLabel}>Day {d}</ThemedText>
-                        <ThemedText style={styles.budgetDayAmount}>{currencySymbol}{dayCost}</ThemedText>
-                        <ThemedText style={[styles.budgetDayCount, { color: theme.textSecondary }]}>
-                          {dayActs.length} {dayActs.length === 1 ? 'activity' : 'activities'}
+                  {(() => {
+                    let hasAnyDaySpending = false;
+                    const rows = allDays.map((d) => {
+                      const dayExp = expenses.filter((e) => e.day === d);
+                      const dayExpTotal = dayExp.reduce((s, e) => s + e.amount, 0);
+                      const dayRes = (currentTrip.reservations ?? [])
+                        .filter((r) => !r.cancelled && r.day === d && (!r.currency || r.currency === budgetCurrency) && r.price != null && r.price > 0);
+                      const dayResTotal = dayRes.reduce((s, r) => s + (r.price ?? 0), 0);
+                      const dayCost = dayExpTotal + dayResTotal;
+                      const dayItemCount = dayExp.length + dayRes.length;
+                      if (dayCost === 0 && dayItemCount === 0) return null;
+                      hasAnyDaySpending = true;
+                      return (
+                        <View key={d} style={[styles.budgetDayRow, { borderBottomColor: theme.border }]}>
+                          <ThemedText style={styles.budgetDayLabel}>Day {d}</ThemedText>
+                          <ThemedText style={styles.budgetDayAmount}>{currencySymbol}{dayCost.toLocaleString()}</ThemedText>
+                          <ThemedText style={[styles.budgetDayCount, { color: theme.textSecondary }]}>
+                            {dayItemCount} {dayItemCount === 1 ? 'item' : 'items'}
+                          </ThemedText>
+                        </View>
+                      );
+                    });
+                    if (!hasAnyDaySpending) {
+                      return (
+                        <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>
+                          Assign expenses and bookings to days to see a per-day breakdown.
                         </ThemedText>
-                      </View>
-                    );
-                  })}
+                      );
+                    }
+                    return rows;
+                  })()}
                 </>
               );
             })()}
           </View>
         ) : viewMode === 'reservations' ? (
           <View style={styles.itinerary}>
-            {/* Progress summary */}
+            {/* Section 1: Email forwarding hero */}
+            <View style={[styles.bookingEmailHero, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '30' }]}>
+              <View style={styles.bookingEmailHeroContent}>
+                <SymbolView name="envelope.badge.fill" size={28} tintColor={theme.primary} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <ThemedText style={styles.bookingEmailHeroTitle}>Forward your confirmations</ThemedText>
+                  <ThemedText style={[styles.bookingEmailHeroSub, { color: theme.textSecondary }]}>
+                    Forward confirmation emails to add bookings automatically
+                  </ThemedText>
+                </View>
+              </View>
+              {bookingEmail ? (
+                <Pressable
+                  onPress={handleCopyBookingEmail}
+                  style={[styles.bookingEmailBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy forwarding email address"
+                >
+                  <ThemedText style={[styles.bookingEmailText, { color: theme.primary }]} numberOfLines={1}>{bookingEmail}</ThemedText>
+                  <SymbolView name={emailCopied ? 'checkmark' : ("square.on.square" as any)} size={14} tintColor={emailCopied ? '#10B981' : theme.textSecondary} />
+                </Pressable>
+              ) : (
+                <ThemedText style={[styles.bookingEmailLoading, { color: theme.textSecondary }]}>Loading email...</ThemedText>
+              )}
+            </View>
+
+            {/* Section 2: Pending bookings from email */}
+            {pendingBookings.length > 0 && (
+              <View style={styles.bookingPendingSection}>
+                <View style={styles.bookingSectionHeader}>
+                  <SymbolView name={"envelope.open.fill" as any} size={18} tintColor={theme.primary} />
+                  <ThemedText style={styles.bookingSectionTitle}>New from Email</ThemedText>
+                  <View style={[styles.bookingPendingBadge, { backgroundColor: theme.primary + '20' }]}>
+                    <ThemedText style={[styles.bookingPendingBadgeText, { color: theme.primary }]}>{pendingBookings.length}</ThemedText>
+                  </View>
+                </View>
+                {pendingBookings.map((booking) => {
+                  const data = booking.booking_data;
+                  const resTypeKey = data.reservationType ?? 'other';
+                  return (
+                    <Animated.View key={booking.id} entering={FadeInDown.duration(200)}>
+                      <Pressable
+                        onPress={() => handleImportPendingBooking(booking)}
+                        style={[styles.bookingPendingCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Import ${data.name} booking`}
+                      >
+                        <View style={styles.bookingPendingRow}>
+                          <View style={[styles.bookingPendingIcon, { backgroundColor: theme.primaryMuted }]}>
+                            <SymbolView name={(TYPE_SYMBOLS[resTypeKey] ?? 'doc.text.fill') as any} size={22} tintColor={theme.primary} />
+                          </View>
+                          <View style={{ flex: 1, gap: 3 }}>
+                            <ThemedText style={styles.bookingPendingName} numberOfLines={1}>{data.name || 'Unknown booking'}</ThemedText>
+                            <ThemedText style={[styles.bookingPendingMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                              {[data.bookingDate ? formatBookingDate(data.bookingDate) : null, data.confirmationNumber].filter(Boolean).join(' \u00B7 ') || (booking.source_email_subject ?? 'Tap to review')}
+                            </ThemedText>
+                          </View>
+                          <Pressable onPress={(e) => { e.stopPropagation?.(); handleDismissPendingBooking(booking); }} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Dismiss">
+                            <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
+                          </Pressable>
+                          <SymbolView name="chevron.right" size={14} tintColor={theme.primary} />
+                        </View>
+                      </Pressable>
+                    </Animated.View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Section 3: Progress summary */}
             {(() => {
               const readiness = getTripReadiness(currentTrip.activities);
               if (readiness.total === 0) return null;
@@ -3624,19 +4529,7 @@ export default function TripWorkspace() {
               );
             })()}
 
-            {/* View all bookings link */}
-            <Pressable
-              onPress={() => router.push('/bookings' as any)}
-              style={[styles.viewAllBookingsBtn, { backgroundColor: theme.backgroundElement }]}
-              accessibilityRole="button"
-              accessibilityLabel="View all bookings"
-            >
-              <SymbolView name="doc.text.fill" size={16} tintColor={theme.primary} />
-              <ThemedText style={[styles.viewAllBookingsText, { color: theme.primary }]}>View all bookings</ThemedText>
-              <SymbolView name="chevron.right" size={12} tintColor={theme.primary} />
-            </Pressable>
-
-            {/* Grouped sections by type */}
+            {/* Section 4: Grouped sections by type — booked (expandable) + unbooked */}
             {(() => {
               const typeSymbol: Record<string, string> = {
                 hotel: 'bed.double.fill',
@@ -3654,7 +4547,6 @@ export default function TripWorkspace() {
                 train: 'Transport',
                 other: 'Other',
               };
-              // Map reservation types to activity types for grouping
               const resToActivityType: Record<ReservationType, string> = {
                 hotel: 'hotel',
                 flight: 'flight',
@@ -3664,10 +4556,7 @@ export default function TripWorkspace() {
                 other: 'other',
               };
 
-              // Get bookable activities
               const bookableActivities = currentTrip.activities.filter(isBookableActivity);
-
-              // Build sections: group activities and reservations by type
               const sectionOrder = ['hotel', 'flight', 'food', 'activity', 'train', 'other'];
               const reservations = currentTrip.reservations ?? [];
 
@@ -3677,7 +4566,9 @@ export default function TripWorkspace() {
                 const totalItems = sectionActivities.length + sectionReservations.length;
                 if (totalItems === 0) return null;
 
-                const bookedCount = sectionActivities.filter((a) => a.bookingStatus === 'booked').length + sectionReservations.filter((r) => !r.cancelled).length;
+                const bookedActivities = sectionActivities.filter((a) => a.bookingStatus === 'booked').sort((a, b) => a.day - b.day);
+                const unbookedActivities = sectionActivities.filter((a) => a.bookingStatus !== 'booked').sort((a, b) => a.day - b.day);
+                const bookedCount = bookedActivities.length + sectionReservations.filter((r) => !r.cancelled).length;
 
                 return (
                   <View key={sectionType} style={styles.bookingSection}>
@@ -3690,202 +4581,354 @@ export default function TripWorkspace() {
                       </ThemedText>
                     </View>
 
-                    {/* Activity items in this section */}
-                    {sectionActivities
-                      .sort((a, b) => a.day - b.day)
-                      .map((activity) => {
-                        const linkedRes = activity.reservationId
-                          ? reservations.find((r) => r.id === activity.reservationId)
-                          : undefined;
-                        const isBooked = activity.bookingStatus === 'booked';
-                        const isPending = activity.bookingStatus === 'pending';
-                        return (
-                          <View key={activity.id} style={[styles.bookingItemCard, { backgroundColor: theme.backgroundElement }]}>
-                            <View style={styles.bookingItemRow}>
-                              <View style={[styles.bookingStatusDot, { backgroundColor: isBooked ? '#10B981' : isPending ? '#F59E0B' : theme.border }]} />
-                              <View style={styles.bookingItemInfo}>
-                                <ThemedText style={styles.bookingItemTitle}>{activity.title}</ThemedText>
-                                <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
-                                  Day {activity.day} · {formatTimeDisplay(activity.time)}
-                                  {linkedRes?.confirmationNumber ? ` · ${linkedRes.confirmationNumber}` : ''}
-                                </ThemedText>
-                                {linkedRes?.price != null && (
-                                  <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
-                                    {getCurrSymbol(linkedRes.currency ?? 'USD')}{linkedRes.price.toLocaleString()}
-                                  </ThemedText>
-                                )}
-                                {linkedRes?.notes ? (
-                                  <ThemedText style={[styles.bookingItemNotes, { color: theme.textSecondary }]}>{linkedRes.notes}</ThemedText>
-                                ) : null}
-                              </View>
-
-                              {/* Right side action */}
-                              {isBooked && linkedRes ? (
-                                <View style={styles.bookingItemActions}>
-                                  <Pressable
-                                    onPress={() => {
-                                      setEditingReservation(linkedRes);
-                                      setResType(linkedRes.type);
-                                      setResTitle(linkedRes.title);
-                                      setResDay(linkedRes.day != null ? String(linkedRes.day) : '');
-                                      setResTime(linkedRes.time ?? '');
-                                      setResConfirmation(linkedRes.confirmationNumber ?? '');
-                                      setResBookingUrl(linkedRes.bookingUrl ?? '');
-                                      setResPrice(linkedRes.price != null ? String(linkedRes.price) : '');
-                                      setResNotes(linkedRes.notes ?? '');
-                                      setResAddress(linkedRes.address ?? '');
-                                      setResCurrency(linkedRes.currency ?? 'USD');
-                                      setResDate(linkedRes.date ?? '');
-                                      setResEntryMode('manual');
-                                      setResLinkUrl('');
-                                      setResLinkError('');
-                                      setResCheckoutDate('');
-                                      setShowAddReservationModal(true);
-                                    }}
-                                    hitSlop={8}
-                                    style={styles.reservationActionBtn}
-                                    accessibilityRole="button"
-                                    accessibilityLabel="Edit booking details"
-                                  >
-                                    <SymbolView name="pencil" size={14} tintColor={theme.textSecondary} />
-                                  </Pressable>
-                                  {linkedRes.bookingUrl ? (
-                                    <Pressable
-                                      onPress={() => { if (linkedRes.bookingUrl) Linking.openURL(linkedRes.bookingUrl); }}
-                                      hitSlop={8}
-                                      style={styles.reservationActionBtn}
-                                      accessibilityRole="button"
-                                      accessibilityLabel="Open booking link"
-                                    >
-                                      <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
-                                    </Pressable>
-                                  ) : null}
-                                </View>
-                              ) : isBooked ? (
-                                <View style={styles.bookingItemActions}>
-                                  <SymbolView name={"checkmark.circle.fill" as any} size={18} tintColor="#10B981" />
-                                </View>
+                    {/* Booked activities — expandable cards */}
+                    {bookedActivities.map((activity) => {
+                      const linkedRes = activity.reservationId ? reservations.find((r) => r.id === activity.reservationId) : undefined;
+                      const isExpanded = expandedBookingId === activity.id;
+                      const photoUrl = linkedRes ? bookingPhotoMap.get(linkedRes.id) : undefined;
+                      return (
+                        <Pressable
+                          key={activity.id}
+                          onPress={() => setExpandedBookingId(isExpanded ? null : activity.id)}
+                          style={[styles.bookedCardContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${activity.title} booking${isExpanded ? ', tap to collapse' : ', tap to expand'}`}
+                        >
+                          {/* Compact row */}
+                          <View style={styles.bookedCardCompact}>
+                            <View style={[styles.bookedCardPhoto, { backgroundColor: theme.backgroundSelected }]}>
+                              {photoUrl ? (
+                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardPhotoImg} contentFit="cover" />
                               ) : (
-                                <View style={styles.bookingItemPlatforms}>
-                                  {getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers)
-                                    .filter((l) => l.platform !== 'google_maps')
-                                    .slice(0, 2)
-                                    .map((link) => (
-                                      <Pressable
-                                        key={link.platform}
-                                        onPress={() => openBookingLink(link.url)}
-                                        style={({ pressed }) => [
-                                          styles.bookingItemBookBtn,
-                                          { borderColor: theme.primary + '40' },
-                                          pressed && { opacity: 0.7 },
-                                        ]}
-                                        accessibilityRole="button"
-                                        accessibilityLabel={link.label}
-                                      >
-                                        <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>
-                                          {platformDisplayName(link.platform)}
-                                        </ThemedText>
-                                      </Pressable>
-                                    ))}
-                                  {getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers)
-                                    .filter((l) => l.platform !== 'google_maps').length === 0 && (
-                                    <Pressable
-                                      onPress={() => handleBookActivity(activity)}
-                                      style={({ pressed }) => [
-                                        styles.bookingItemBookBtn,
-                                        { borderColor: theme.primary + '40' },
-                                        pressed && { opacity: 0.7 },
-                                      ]}
-                                      accessibilityRole="button"
-                                      accessibilityLabel={`Book ${activity.title}`}
-                                    >
-                                      <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>
-                                        {getBookLabel(activity)}
-                                      </ThemedText>
-                                    </Pressable>
-                                  )}
-                                </View>
+                                <SymbolView name={(typeSymbol[sectionType] ?? 'doc.text.fill') as any} size={22} tintColor={theme.textSecondary} />
                               )}
                             </View>
+                            <View style={styles.bookedCardInfo}>
+                              <ThemedText style={styles.bookedCardTitle} numberOfLines={1}>{activity.title}</ThemedText>
+                              <ThemedText style={[styles.bookedCardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                                {[
+                                  linkedRes?.date ? formatBookingDate(linkedRes.date) : `Day ${activity.day}`,
+                                  linkedRes?.confirmationNumber,
+                                ].filter(Boolean).join(' \u00B7 ')}
+                              </ThemedText>
+                            </View>
+                            {linkedRes?.confirmationNumber ? (
+                              <View style={[styles.bookedCardConfirmedBadge, { backgroundColor: '#10B981' + '20' }]}>
+                                <SymbolView name="checkmark" size={12} tintColor="#10B981" />
+                              </View>
+                            ) : null}
+                            <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={theme.textSecondary} />
                           </View>
-                        );
-                      })}
+
+                          {/* Expanded section */}
+                          {isExpanded && (
+                            <Animated.View entering={FadeIn.duration(200)} style={styles.bookedCardExpanded}>
+                              {photoUrl && (
+                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardExpandedPhoto} contentFit="cover" />
+                              )}
+
+                              {/* Type badge */}
+                              <View style={[styles.bookedCardTypeBadge, { backgroundColor: theme.primaryMuted }]}>
+                                <SymbolView name={(typeSymbol[sectionType] ?? 'doc.text.fill') as any} size={14} tintColor={theme.primary} />
+                                <ThemedText style={[styles.bookedCardTypeText, { color: theme.primary }]}>{typeLabel[sectionType] ?? 'Booking'}</ThemedText>
+                              </View>
+
+                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
+
+                              {/* Detail rows */}
+                              {linkedRes?.confirmationNumber ? (
+                                <Pressable
+                                  onPress={() => handleCopyConfirmationNumber(linkedRes.confirmationNumber!)}
+                                  style={styles.bookedCardDetailRow}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Copy confirmation number"
+                                >
+                                  <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Confirmation</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary }]}>{linkedRes.confirmationNumber}</ThemedText>
+                                  <SymbolView name="doc.on.doc" size={14} tintColor={theme.textSecondary} />
+                                </Pressable>
+                              ) : null}
+
+                              {linkedRes?.date ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="calendar" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Date</ThemedText>
+                                  <ThemedText style={styles.bookedCardDetailValue}>
+                                    {formatBookingDate(linkedRes.date)}{linkedRes.checkOutDate ? ` \u2013 ${formatBookingDate(linkedRes.checkOutDate)}` : ''}
+                                  </ThemedText>
+                                </View>
+                              ) : null}
+
+                              {linkedRes?.time ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="clock" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Time</ThemedText>
+                                  <ThemedText style={styles.bookedCardDetailValue}>{formatTimeDisplay(linkedRes.time)}</ThemedText>
+                                </View>
+                              ) : null}
+
+                              {linkedRes?.price != null ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Price</ThemedText>
+                                  <ThemedText style={styles.bookedCardDetailValue}>{getCurrSymbol(linkedRes.currency ?? 'USD')}{linkedRes.price.toLocaleString()}</ThemedText>
+                                </View>
+                              ) : null}
+
+                              {linkedRes?.address ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Address</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={2}>{linkedRes.address}</ThemedText>
+                                </View>
+                              ) : null}
+
+                              {linkedRes?.bookingUrl ? (
+                                <Pressable
+                                  onPress={() => { if (linkedRes.bookingUrl) Linking.openURL(linkedRes.bookingUrl); }}
+                                  style={styles.bookedCardDetailRow}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Open booking link"
+                                >
+                                  <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Link</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
+                                    {linkedRes.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...
+                                  </ThemedText>
+                                  <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
+                                </Pressable>
+                              ) : null}
+
+                              {linkedRes?.notes && !linkedRes.notes.startsWith('Check-out:') ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="note.text" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Notes</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={3}>
+                                    {linkedRes.notes.split('\nCheck-out:')[0]}
+                                  </ThemedText>
+                                </View>
+                              ) : null}
+
+                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
+
+                              {/* Action buttons */}
+                              <View style={styles.bookedCardActions}>
+                                {activity.type === 'hotel' && (
+                                  <Pressable
+                                    onPress={() => router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any)}
+                                    style={[styles.bookedCardActionBtn, { backgroundColor: theme.primaryMuted }]}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="View stay details"
+                                  >
+                                    <SymbolView name="building.2.fill" size={16} tintColor={theme.primary} />
+                                    <ThemedText style={[styles.bookedCardActionText, { color: theme.primary }]}>View Stay</ThemedText>
+                                  </Pressable>
+                                )}
+                                <Pressable
+                                  onPress={() => {
+                                    if (linkedRes) {
+                                      setBookingEditRes({ res: linkedRes, tripId: currentTrip.id });
+                                    }
+                                    setShowBookingModal(true);
+                                  }}
+                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Edit booking"
+                                >
+                                  <SymbolView name="pencil" size={16} tintColor={theme.text} />
+                                  <ThemedText style={styles.bookedCardActionText}>Edit</ThemedText>
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => {
+                                    if (linkedRes) {
+                                      Alert.alert('Remove booking?', `Remove "${linkedRes.title}"?`, [
+                                        { text: 'Cancel', style: 'cancel' },
+                                        { text: 'Remove', style: 'destructive', onPress: () => { removeReservation(currentTrip.id, linkedRes.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } },
+                                      ]);
+                                    }
+                                  }}
+                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Delete booking"
+                                >
+                                  <SymbolView name="trash" size={16} tintColor={theme.danger} />
+                                  <ThemedText style={[styles.bookedCardActionText, { color: theme.danger }]}>Delete</ThemedText>
+                                </Pressable>
+                              </View>
+                            </Animated.View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
 
                     {/* Standalone reservations (not linked to an activity) */}
-                    {sectionReservations.map((res) => (
-                      <View key={res.id} style={[styles.bookingItemCard, { backgroundColor: theme.backgroundElement }]}>
-                        <View style={styles.bookingItemRow}>
-                          <View style={[styles.bookingStatusDot, { backgroundColor: res.cancelled ? theme.border : '#10B981' }]} />
-                          <View style={styles.bookingItemInfo}>
-                            <ThemedText style={[styles.bookingItemTitle, res.cancelled && { textDecorationLine: 'line-through', opacity: 0.5 }]}>
-                              {res.title}{res.cancelled ? ' (cancelled)' : ''}
-                            </ThemedText>
-                            <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
-                              {res.day != null ? `Day ${res.day}` : ''}{res.time ? ` · ${formatTimeDisplay(res.time)}` : ''}
-                              {res.confirmationNumber ? ` · ${res.confirmationNumber}` : ''}
-                            </ThemedText>
-                            {res.price != null && (
-                              <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
-                                {getCurrSymbol(res.currency ?? 'USD')}{res.price.toLocaleString()}
+                    {sectionReservations.map((res) => {
+                      const isExpanded = expandedBookingId === `res-${res.id}`;
+                      const photoUrl = bookingPhotoMap.get(res.id);
+                      return (
+                        <Pressable
+                          key={res.id}
+                          onPress={() => setExpandedBookingId(isExpanded ? null : `res-${res.id}`)}
+                          style={[styles.bookedCardContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${res.title} booking`}
+                        >
+                          <View style={styles.bookedCardCompact}>
+                            <View style={[styles.bookedCardPhoto, { backgroundColor: theme.backgroundSelected }]}>
+                              {photoUrl ? (
+                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardPhotoImg} contentFit="cover" />
+                              ) : (
+                                <SymbolView name={(TYPE_SYMBOLS[res.type] ?? 'doc.text.fill') as any} size={22} tintColor={theme.textSecondary} />
+                              )}
+                            </View>
+                            <View style={styles.bookedCardInfo}>
+                              <ThemedText style={[styles.bookedCardTitle, res.cancelled && { textDecorationLine: 'line-through', opacity: 0.5 }]} numberOfLines={1}>
+                                {res.title}{res.cancelled ? ' (cancelled)' : ''}
                               </ThemedText>
-                            )}
-                            {res.notes ? (
-                              <ThemedText style={[styles.bookingItemNotes, { color: theme.textSecondary }]}>{res.notes}</ThemedText>
+                              <ThemedText style={[styles.bookedCardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
+                                {[res.date ? formatBookingDate(res.date) : null, res.confirmationNumber].filter(Boolean).join(' \u00B7 ') || (TYPE_LABELS[res.type] ?? 'Booking')}
+                              </ThemedText>
+                            </View>
+                            {res.confirmationNumber ? (
+                              <View style={[styles.bookedCardConfirmedBadge, { backgroundColor: '#10B981' + '20' }]}>
+                                <SymbolView name="checkmark" size={12} tintColor="#10B981" />
+                              </View>
                             ) : null}
+                            <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={theme.textSecondary} />
                           </View>
-                          <View style={styles.bookingItemActions}>
-                            <Pressable
-                              onPress={() => {
-                                setEditingReservation(res);
-                                setResType(res.type);
-                                setResTitle(res.title);
-                                setResDay(res.day != null ? String(res.day) : '');
-                                setResTime(res.time ?? '');
-                                setResConfirmation(res.confirmationNumber ?? '');
-                                setResBookingUrl(res.bookingUrl ?? '');
-                                setResPrice(res.price != null ? String(res.price) : '');
-                                setResNotes(res.notes ?? '');
-                                setResAddress(res.address ?? '');
-                                setResCurrency(res.currency ?? 'USD');
-                                setResDate(res.date ?? '');
-                                setResEntryMode('manual');
-                                setResLinkUrl('');
-                                setResLinkError('');
-                                setResCheckoutDate('');
-                                setShowAddReservationModal(true);
-                              }}
-                              hitSlop={8}
-                              style={styles.reservationActionBtn}
-                              accessibilityRole="button"
-                              accessibilityLabel="Edit booking"
-                            >
-                              <SymbolView name="pencil" size={14} tintColor={theme.textSecondary} />
-                            </Pressable>
-                            <Pressable
-                              onPress={() => {
-                                Alert.alert('Remove booking?', `Remove "${res.title}"?`, [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  { text: 'Remove', style: 'destructive', onPress: () => { removeReservation(currentTrip.id, res.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } },
-                                ]);
-                              }}
-                              hitSlop={8}
-                              style={styles.reservationActionBtn}
-                              accessibilityRole="button"
-                              accessibilityLabel="Remove booking"
-                            >
-                              <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
-                            </Pressable>
-                            {res.bookingUrl ? (
+
+                          {isExpanded && (
+                            <Animated.View entering={FadeIn.duration(200)} style={styles.bookedCardExpanded}>
+                              {photoUrl && <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardExpandedPhoto} contentFit="cover" />}
+
+                              <View style={[styles.bookedCardTypeBadge, { backgroundColor: theme.primaryMuted }]}>
+                                <SymbolView name={(TYPE_SYMBOLS[res.type] ?? 'doc.text.fill') as any} size={14} tintColor={theme.primary} />
+                                <ThemedText style={[styles.bookedCardTypeText, { color: theme.primary }]}>{TYPE_LABELS[res.type] ?? 'Booking'}</ThemedText>
+                              </View>
+
+                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
+
+                              {res.confirmationNumber ? (
+                                <Pressable onPress={() => handleCopyConfirmationNumber(res.confirmationNumber!)} style={styles.bookedCardDetailRow} accessibilityRole="button" accessibilityLabel="Copy confirmation number">
+                                  <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Confirmation</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary }]}>{res.confirmationNumber}</ThemedText>
+                                  <SymbolView name="doc.on.doc" size={14} tintColor={theme.textSecondary} />
+                                </Pressable>
+                              ) : null}
+                              {res.date ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="calendar" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Date</ThemedText>
+                                  <ThemedText style={styles.bookedCardDetailValue}>{formatBookingDate(res.date)}{res.checkOutDate ? ` \u2013 ${formatBookingDate(res.checkOutDate)}` : ''}</ThemedText>
+                                </View>
+                              ) : null}
+                              {res.price != null ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Price</ThemedText>
+                                  <ThemedText style={styles.bookedCardDetailValue}>{getCurrSymbol(res.currency ?? 'USD')}{res.price.toLocaleString()}</ThemedText>
+                                </View>
+                              ) : null}
+                              {res.address ? (
+                                <View style={styles.bookedCardDetailRow}>
+                                  <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Address</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={2}>{res.address}</ThemedText>
+                                </View>
+                              ) : null}
+                              {res.bookingUrl ? (
+                                <Pressable onPress={() => { if (res.bookingUrl) Linking.openURL(res.bookingUrl); }} style={styles.bookedCardDetailRow} accessibilityRole="button" accessibilityLabel="Open booking link">
+                                  <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
+                                  <ThemedText style={styles.bookedCardDetailLabel}>Link</ThemedText>
+                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>{res.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...</ThemedText>
+                                  <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
+                                </Pressable>
+                              ) : null}
+
+                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
+
+                              <View style={styles.bookedCardActions}>
+                                <Pressable
+                                  onPress={() => { setBookingEditRes({ res, tripId: currentTrip.id }); setShowBookingModal(true); }}
+                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Edit booking"
+                                >
+                                  <SymbolView name="pencil" size={16} tintColor={theme.text} />
+                                  <ThemedText style={styles.bookedCardActionText}>Edit</ThemedText>
+                                </Pressable>
+                                <Pressable
+                                  onPress={() => {
+                                    Alert.alert('Remove booking?', `Remove "${res.title}"?`, [
+                                      { text: 'Cancel', style: 'cancel' },
+                                      { text: 'Remove', style: 'destructive', onPress: () => { removeReservation(currentTrip.id, res.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } },
+                                    ]);
+                                  }}
+                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel="Delete booking"
+                                >
+                                  <SymbolView name="trash" size={16} tintColor={theme.danger} />
+                                  <ThemedText style={[styles.bookedCardActionText, { color: theme.danger }]}>Delete</ThemedText>
+                                </Pressable>
+                              </View>
+                            </Animated.View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+
+                    {/* Unbooked activities — nudge to forward confirmation */}
+                    {unbookedActivities.map((activity) => (
+                      <View key={activity.id} style={[styles.bookingItemCard, { backgroundColor: theme.backgroundElement }]}>
+                        <View style={styles.bookingItemRow}>
+                          <View style={[styles.bookingStatusDot, { backgroundColor: activity.bookingStatus === 'pending' ? '#F59E0B' : theme.border }]} />
+                          <View style={styles.bookingItemInfo}>
+                            <ThemedText style={styles.bookingItemTitle}>{activity.title}</ThemedText>
+                            <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
+                              Day {activity.day} · {formatTimeDisplay(activity.time)}
+                            </ThemedText>
+                            <ThemedText style={[styles.bookingUnbookedNudge, { color: theme.textSecondary }]}>
+                              Forward your confirmation email to add
+                            </ThemedText>
+                          </View>
+                          <View style={styles.bookingItemPlatforms}>
+                            {activity.type === 'hotel' && (
                               <Pressable
-                                onPress={() => { if (res.bookingUrl) Linking.openURL(res.bookingUrl); }}
-                                hitSlop={8}
-                                style={styles.reservationActionBtn}
+                                onPress={() => router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any)}
+                                style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
                                 accessibilityRole="button"
-                                accessibilityLabel="Open booking link"
+                                accessibilityLabel="Add booking info"
                               >
-                                <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
+                                <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>Add Booking Info</ThemedText>
                               </Pressable>
-                            ) : null}
+                            )}
+                            {getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers)
+                              .filter((l) => l.platform !== 'google_maps')
+                              .slice(0, activity.type === 'hotel' ? 1 : 2)
+                              .map((link) => (
+                                <Pressable
+                                  key={link.platform}
+                                  onPress={() => openBookingLink(link.url)}
+                                  style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={link.label}
+                                >
+                                  <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>{platformDisplayName(link.platform)}</ThemedText>
+                                </Pressable>
+                              ))}
+                            {activity.type !== 'hotel' && getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers).filter((l) => l.platform !== 'google_maps').length === 0 && (
+                              <Pressable
+                                onPress={() => handleBookActivity(activity)}
+                                style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Book ${activity.title}`}
+                              >
+                                <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>{getBookLabel(activity)}</ThemedText>
+                              </Pressable>
+                            )}
                           </View>
                         </View>
                       </View>
@@ -3898,187 +4941,83 @@ export default function TripWorkspace() {
             {/* Empty state */}
             {getTripReadiness(currentTrip.activities).total === 0 && (currentTrip.reservations ?? []).length === 0 && (
               <View style={styles.reservationsEmpty}>
-                <ThemedText style={[styles.reservationsEmptyText, { color: theme.textSecondary }]}>
-                  No bookable activities yet. Add hotels, flights, restaurants, and activities to your itinerary to start booking.
+                <SymbolView name="envelope.badge.fill" size={40} tintColor={theme.textSecondary} />
+                <ThemedText style={[styles.reservationsEmptyText, { color: theme.textSecondary, marginTop: 12 }]}>
+                  No bookable activities yet. Add hotels, flights, or restaurants to your itinerary, then forward your confirmation emails to start tracking.
                 </ThemedText>
               </View>
             )}
 
+            {/* View all bookings link */}
             <Pressable
-              onPress={() => {
-                setEditingReservation(null);
-                setResType('restaurant');
-                setResTitle('');
-                setResDay('');
-                setResTime('');
-                setResConfirmation('');
-                setResBookingUrl('');
-                setResPrice('');
-                setResNotes('');
-                setResAddress('');
-                setResCurrency('USD');
-                setResDate('');
-                setResEntryMode('choose');
-                setResLinkUrl('');
-                setResLinkError('');
-                setResCheckoutDate('');
-                setShowAddReservationModal(true);
-              }}
-              style={[styles.addResBtn, { backgroundColor: theme.primary }]}
+              onPress={() => router.push('/bookings' as any)}
+              style={[styles.viewAllBookingsBtn, { backgroundColor: theme.backgroundElement }]}
               accessibilityRole="button"
-              accessibilityLabel="Add booking manually"
+              accessibilityLabel="View all bookings"
             >
-              <ThemedText style={[styles.addResBtnText, { color: theme.primaryText }]}>+ Add Booking</ThemedText>
+              <SymbolView name="doc.text.fill" size={16} tintColor={theme.primary} />
+              <ThemedText style={[styles.viewAllBookingsText, { color: theme.primary }]}>View all bookings</ThemedText>
+              <SymbolView name="chevron.right" size={12} tintColor={theme.primary} />
+            </Pressable>
+
+            {/* Manual entry fallback — de-emphasized */}
+            <Pressable
+              onPress={() => { setBookingEditRes(null); setPendingImportData(null); setShowBookingModal(true); }}
+              style={styles.manualEntryLink}
+              accessibilityRole="button"
+              accessibilityLabel="Enter a booking manually"
+            >
+              <ThemedText style={[styles.manualEntryText, { color: theme.textSecondary }]}>
+                Or enter a booking manually
+              </ThemedText>
             </Pressable>
           </View>
-        ) : viewMode === 'members' ? (
+        ) : viewMode === 'alerts' ? (
           <View style={styles.itinerary}>
-            {/* Current members */}
-            <ThemedText type="sectionTitle" style={{ color: theme.textSecondary, marginBottom: 8 }}>Members</ThemedText>
-            {(currentTrip.members ?? []).length === 0 ? (
-              <ThemedText style={[{ fontSize: 14, color: theme.textSecondary, marginBottom: 12 }]}>
-                No members yet. You are the owner of this trip.
-              </ThemedText>
-            ) : (
-              (currentTrip.members ?? []).map((member: TripMember) => (
-                <View key={member.id} style={[styles.memberRow, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                  <View style={styles.memberRowLeft}>
-                    <ThemedText style={styles.memberName}>{member.name}</ThemedText>
-                    <View style={[styles.memberRoleBadge, { backgroundColor: member.role === 'owner' ? theme.primaryMuted : theme.backgroundElement, borderColor: member.role === 'owner' ? theme.primary : theme.border }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        {member.role === 'owner' && <SymbolView name="star.fill" size={12} tintColor={theme.primary} />}
-                        <ThemedText style={[styles.memberRoleText, { color: member.role === 'owner' ? theme.primary : theme.textSecondary }]}>
-                          {member.role === 'owner' ? 'Owner' : member.role === 'member' ? 'Member' : 'Viewer'}
-                        </ThemedText>
-                      </View>
-                    </View>
-                    {member.joinedAt && (
-                      <ThemedText style={[{ fontSize: 11, color: theme.textSecondary }]}>
-                        Joined {new Date(member.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </ThemedText>
-                    )}
-                  </View>
-                  {member.role !== 'owner' && (
-                    <Pressable
-                      onPress={() => {
-                        Alert.alert('Remove member?', `Remove ${member.name} from this trip?`, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Remove', style: 'destructive', onPress: () => removeMember(currentTrip.id, member.id) },
-                        ]);
-                      }}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${member.name}`}
-                    >
-                      <SymbolView name="xmark" size={18} tintColor={theme.textSecondary} />
-                    </Pressable>
-                  )}
-                </View>
-              ))
-            )}
-
-            {/* Pending invitations */}
-            {((currentTrip.invitations ?? []).filter((i: Invitation) => i.status === 'pending')).length > 0 && (
-              <>
-                <ThemedText type="sectionTitle" style={{ color: theme.textSecondary, marginTop: 20, marginBottom: 8 }}>Pending Invitations</ThemedText>
-                {(currentTrip.invitations ?? []).filter((i: Invitation) => i.status === 'pending').map((inv: Invitation) => (
-                  <View key={inv.id} style={[styles.memberRow, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    <View style={styles.memberRowLeft}>
-                      <ThemedText style={styles.memberName}>{inv.name}</ThemedText>
-                      <ThemedText style={[{ fontSize: 13, color: theme.textSecondary }]}>{inv.contact}</ThemedText>
-                      {inv.inviteCode && (
-                        <View style={[styles.inviteCodeBox, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}>
-                          <ThemedText style={[{ fontSize: 12, color: theme.textSecondary }]}>Invite code:</ThemedText>
-                          <ThemedText style={[{ fontSize: 15, fontWeight: '700', color: theme.primary, letterSpacing: 1 }]}>{inv.inviteCode}</ThemedText>
-                          <ThemedText style={[{ fontSize: 11, color: theme.textSecondary }]}>{"Share this code with your travel companion. They'll need it to join this trip."}</ThemedText>
-                        </View>
-                      )}
-                    </View>
-                    <View style={[styles.memberRoleBadge, { borderColor: theme.border }]}>
-                      <ThemedText style={[styles.memberRoleText, { color: theme.textSecondary }]}>{inv.role ?? 'member'}</ThemedText>
-                    </View>
-                  </View>
-                ))}
-              </>
-            )}
-
-            {/* Invite someone */}
-            <ThemedText type="sectionTitle" style={{ color: theme.textSecondary, marginTop: 20, marginBottom: 8 }}>Invite a Travel Companion</ThemedText>
-            <View style={[styles.inviteForm, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-              <ThemedText style={styles.modalLabel}>Name</ThemedText>
-              <TextInput
-                style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                value={inviteName}
-                onChangeText={setInviteName}
-                placeholder="Their name"
-                placeholderTextColor={theme.textSecondary}
-                accessibilityLabel="Invite name"
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 }}>
+              <ThemedText style={{ fontSize: 14, color: theme.textSecondary }}>Trip alerts</ThemedText>
+              <Switch
+                value={tripPulseEnabled}
+                onValueChange={setTripPulseEnabled}
+                trackColor={{ false: theme.border, true: theme.primary }}
               />
-              <ThemedText style={styles.modalLabel}>Email or phone</ThemedText>
-              <TextInput
-                style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                value={inviteContact}
-                onChangeText={setInviteContact}
-                placeholder="email@example.com or +1 555..."
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                accessibilityLabel="Invite contact"
-              />
-              <ThemedText style={styles.modalLabel}>Role</ThemedText>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
-                {(['member', 'viewer'] as const).map((r) => (
-                  <Pressable
-                    key={r}
-                    onPress={() => setInviteRole(r)}
-                    style={[
-                      styles.typeChip,
-                      { backgroundColor: inviteRole === r ? theme.primary : 'transparent', borderWidth: 1, borderColor: inviteRole === r ? theme.primary : theme.border },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Role: ${r}`}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <SymbolView name={r === 'member' ? 'pencil' : 'eye'} size={14} tintColor={inviteRole === r ? theme.primaryText : theme.text} />
-                      <ThemedText style={[styles.typeText, inviteRole === r && { color: theme.primaryText }]}>
-                        {r === 'member' ? 'Member' : 'Viewer'}
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-              <Pressable
-                onPress={() => {
-                  if (!inviteName.trim() || !inviteContact.trim()) return;
-                  addInvitation(currentTrip.id, { name: inviteName.trim(), contact: inviteContact.trim(), role: inviteRole, status: 'pending' });
-                  // Find the just-added invitation to get its invite code
-                  const freshTrip = getTrip(currentTrip.id);
-                  const pendingInvs = (freshTrip?.invitations ?? []).filter((i: Invitation) => i.status === 'pending');
-                  const newest = pendingInvs[pendingInvs.length - 1];
-                  setLastInviteCode(newest?.inviteCode ?? '');
-                  setInviteName('');
-                  setInviteContact('');
-                  setInviteRole('member');
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  showToast('Invitation created!');
-                }}
-                style={[styles.addSaveBtn, { backgroundColor: theme.primary, opacity: inviteName.trim() && inviteContact.trim() ? 1 : 0.4, marginTop: 8 }]}
-                disabled={!inviteName.trim() || !inviteContact.trim()}
-                accessibilityRole="button"
-                accessibilityLabel="Generate invite code"
-              >
-                <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Generate Invite Code</ThemedText>
-              </Pressable>
-              {lastInviteCode ? (
-                <Animated.View entering={FadeIn.duration(300)} style={[styles.inviteCodeBox, { backgroundColor: theme.primaryMuted, borderColor: theme.primary, marginTop: 12 }]}>
-                  <ThemedText style={[{ fontSize: 12, color: theme.textSecondary }]}>Invitation created! Invite code:</ThemedText>
-                  <ThemedText style={[{ fontSize: 18, fontWeight: '700', color: theme.primary, letterSpacing: 1.5 }]}>{lastInviteCode}</ThemedText>
-                  <ThemedText style={[{ fontSize: 12, color: theme.textSecondary }]}>
-                    {"Share this code with your travel companion. They'll need it to join this trip."}
-                  </ThemedText>
-                </Animated.View>
-              ) : null}
             </View>
+            {!tripPulseEnabled ? (
+              <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
+                <SymbolView name="bell.slash" size={40} tintColor={theme.textSecondary} />
+                <ThemedText style={{ fontSize: 15, color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 32 }}>
+                  Alerts are turned off. Turn them on to get notified about schedule conflicts, weather, and other issues.
+                </ThemedText>
+              </View>
+            ) : activePulseAlerts.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 60, gap: 16 }}>
+                <SymbolView name="checkmark.seal.fill" size={48} tintColor={theme.primary} />
+                <ThemedText style={{ fontSize: 18, fontWeight: '600' }}>All clear</ThemedText>
+                <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 32 }}>
+                  We're monitoring your trip for:
+                </ThemedText>
+                <View style={{ gap: 10, paddingHorizontal: 32 }}>
+                  {([
+                    { type: 'conflict' as const, label: 'Schedule conflicts' },
+                    { type: 'closure' as const, label: 'Venue closures' },
+                    { type: 'weather' as const, label: 'Weather disruptions' },
+                    { type: 'flight_conflict' as const, label: 'Flight timing issues' },
+                    { type: 'duplicate' as const, label: 'Duplicate activities' },
+                  ]).map((item) => (
+                    <View key={item.type} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <SymbolView name={TYPE_ICONS[item.type]} size={15} tintColor={theme.textSecondary} />
+                      <ThemedText style={{ fontSize: 14, color: theme.textSecondary }}>{item.label}</ThemedText>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <PulseAlertList
+                alerts={activePulseAlerts}
+                onAction={handlePulseAction}
+                onDismiss={handlePulseDismiss}
+              />
+            )}
           </View>
         ) : (
           <TripMap
@@ -4088,20 +5027,189 @@ export default function TripWorkspace() {
           />
         )}
       </ScrollView>
+      </>
       )}
 
-      {/* Floating chat bar — always visible at bottom on itinerary */}
-      {viewMode === 'itinerary' && !aiEditLoading && (
-        <Pressable
-          onPress={() => router.push(`/(tabs)/chat?tripId=${id}` as any)}
-          style={[styles.floatingChatPill, { bottom: insets.bottom + 12, backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-          accessibilityRole="button"
-          accessibilityLabel="Chat with AI about your trip"
-        >
-          <SymbolView name="bubble.left.fill" size={16} tintColor={theme.primary} />
-          <ThemedText style={[styles.floatingAIPlaceholder, { color: theme.textSecondary }]}>Chat with AI...</ThemedText>
-        </Pressable>
+      {/* Edit with AI — fixed input bar at bottom */}
+      {viewMode === 'ai' && (
+        <KeyboardAvoidingView style={styles.editChatBottomBar} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
+          <View>
+            {/* Suggestion chips — hide while AI is responding */}
+            {!editChatTyping && (() => {
+              const defaultChips = ['Add activity', 'Remove activity', 'Replace activity', 'Move activity', 'Swap days', 'Suggest places'];
+              const chips = editChatSuggestions.length > 0
+                ? editChatSuggestions
+                : defaultChips;
+              if (chips.length === 0) return null;
+              return (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChatSugRow} keyboardShouldPersistTaps="handled">
+                  {chips.map((sug, sugIdx) => (
+                    <Pressable key={sugIdx} onPress={() => sendEditChatMessage(sug)} style={({ pressed }) => [styles.editChatSugChip, { borderColor: theme.border, backgroundColor: '#fff', opacity: pressed ? 0.7 : 1 }]}>
+                      <ThemedText style={[styles.editChatSugText, { color: theme.primary }]}>{sug}</ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              );
+            })()}
+            {/* Input bar */}
+            <View style={[styles.editChatInputBar, { borderTopColor: theme.border, backgroundColor: '#fff', paddingBottom: 12, ...Shadow.sm }]}>
+              <Pressable
+                onPress={() => setShowEditThreadList(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Chat history"
+                style={styles.editChatBarBtn}
+              >
+                <SymbolView name="line.3.horizontal" size={20} tintColor={theme.primary} />
+              </Pressable>
+              <Pressable
+                onPress={handleEditNewConversation}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="New conversation"
+                style={styles.editChatBarBtn}
+              >
+                <SymbolView name="square.and.pencil" size={20} tintColor={theme.primary} />
+              </Pressable>
+              <TextInput style={[styles.editChatTextInput, { color: theme.text, backgroundColor: theme.backgroundElement }]} value={editChatInput} onChangeText={setEditChatInput} placeholder="Ask AI to edit your trip..." placeholderTextColor={theme.textSecondary} onSubmitEditing={() => { if (editChatInput.trim() && !editChatTyping) sendEditChatMessage(editChatInput); }} returnKeyType="send" multiline />
+              <Pressable onPress={() => { if (editChatInput.trim() && !editChatTyping) sendEditChatMessage(editChatInput); }} disabled={!editChatInput.trim() || editChatTyping} style={[styles.editChatSendBtn, { backgroundColor: editChatInput.trim() && !editChatTyping ? theme.primary : theme.border }]}>
+                <SymbolView name="arrow.up" size={16} tintColor={editChatInput.trim() && !editChatTyping ? theme.primaryText : theme.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       )}
+
+      {/* Edit chat history modal */}
+      <Modal visible={showEditThreadList} transparent animationType="fade" onRequestClose={() => setShowEditThreadList(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Pressable style={styles.editThreadBackdrop} onPress={() => setShowEditThreadList(false)} accessibilityRole="button" accessibilityLabel="Dismiss">
+          <Pressable
+            style={[styles.editThreadSheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}
+            onPress={(e) => e.stopPropagation()}
+            accessibilityRole="button"
+            accessibilityLabel="Edit chat history"
+          >
+            <View style={[styles.editThreadHandle, { backgroundColor: theme.border }]} />
+            <ThemedText type="subtitle" style={styles.editThreadSheetTitle}>Edit history</ThemedText>
+
+            <Pressable
+              onPress={handleEditNewConversation}
+              style={({ pressed }) => [styles.editThreadNewBtn, { backgroundColor: theme.primaryMuted, opacity: pressed ? 0.85 : 1 }]}
+              accessibilityRole="button"
+            >
+              <SymbolView name="plus" size={16} tintColor={theme.primary} />
+              <ThemedText style={[styles.editThreadNewBtnText, { color: theme.primary }]}>New edit</ThemedText>
+            </Pressable>
+
+            <ScrollView style={styles.editThreadList} showsVerticalScrollIndicator={false}>
+              {editThreads.length === 0 && (
+                <ThemedText style={[styles.editThreadEmpty, { color: theme.textSecondary }]}>No previous edits</ThemedText>
+              )}
+              {[...editThreads].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((thread) => {
+                const isExpanded = editThreadOptionsId === thread.id;
+                const isRenaming = editRenameThreadId === thread.id;
+                return (
+                <View
+                  key={thread.id}
+                  style={[
+                    styles.editThreadCard,
+                    { backgroundColor: editActiveThreadId === thread.id ? theme.primaryMuted : theme.backgroundElement, borderColor: theme.border },
+                  ]}
+                >
+                  <View style={styles.editThreadRow}>
+                    <Pressable
+                      onPress={() => loadEditThread(thread)}
+                      style={({ pressed }) => [styles.editThreadRowContent, { opacity: pressed ? 0.7 : 1 }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={thread.title}
+                    >
+                      <SymbolView name={thread.pinned ? 'pin.fill' : 'bubble.left'} size={16} tintColor={thread.pinned ? theme.primary : theme.textSecondary} />
+                      <View style={styles.editThreadRowText}>
+                        <ThemedText style={styles.editThreadTitle} numberOfLines={1}>{thread.title}</ThemedText>
+                        <ThemedText style={[styles.editThreadDate, { color: theme.textSecondary }]}>
+                          {new Date(thread.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setEditThreadOptionsId(isExpanded ? null : thread.id)}
+                      style={styles.editThreadDotsBtn}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Options"
+                    >
+                      <SymbolView name="ellipsis" size={18} tintColor={theme.textSecondary} />
+                    </Pressable>
+                  </View>
+
+                  {isExpanded && (
+                    <Animated.View entering={FadeIn.duration(150)}>
+                      <View style={[styles.editThreadOptionDivider, { backgroundColor: theme.border }]} />
+                      <Pressable
+                        onPress={() => startRenameEditThread(thread.id)}
+                        style={({ pressed }) => [styles.editThreadOptionBtn, pressed && { opacity: 0.7 }]}
+                        accessibilityRole="button"
+                      >
+                        <SymbolView name="pencil" size={15} tintColor={theme.text} />
+                        <ThemedText style={styles.editThreadOptionText}>Rename</ThemedText>
+                      </Pressable>
+                      <View style={[styles.editThreadOptionDivider, { backgroundColor: theme.border }]} />
+                      <Pressable
+                        onPress={() => togglePinEditThread(thread.id)}
+                        style={({ pressed }) => [styles.editThreadOptionBtn, pressed && { opacity: 0.7 }]}
+                        accessibilityRole="button"
+                      >
+                        <SymbolView name={thread.pinned ? 'pin.slash' : 'pin'} size={15} tintColor={theme.text} />
+                        <ThemedText style={styles.editThreadOptionText}>{thread.pinned ? 'Unpin' : 'Pin'}</ThemedText>
+                      </Pressable>
+                      <View style={[styles.editThreadOptionDivider, { backgroundColor: theme.border }]} />
+                      <Pressable
+                        onPress={() => {
+                          Alert.alert('Delete edit?', `"\u200B${thread.title}"`, [
+                            { text: 'Cancel', style: 'cancel', onPress: () => setEditThreadOptionsId(null) },
+                            { text: 'Delete', style: 'destructive', onPress: () => deleteEditThread(thread.id) },
+                          ]);
+                        }}
+                        style={({ pressed }) => [styles.editThreadOptionBtn, pressed && { opacity: 0.7 }]}
+                        accessibilityRole="button"
+                      >
+                        <SymbolView name="trash" size={15} tintColor="#E53935" />
+                        <ThemedText style={[styles.editThreadOptionText, { color: '#E53935' }]}>Delete</ThemedText>
+                      </Pressable>
+                    </Animated.View>
+                  )}
+
+                  {isRenaming && (
+                    <Animated.View entering={FadeIn.duration(150)}>
+                      <View style={[styles.editThreadOptionDivider, { backgroundColor: theme.border }]} />
+                      <View style={styles.editThreadRenameRow}>
+                        <TextInput
+                          value={editRenameText}
+                          onChangeText={setEditRenameText}
+                          style={[styles.editThreadRenameInput, { color: theme.text }]}
+                          autoFocus
+                          returnKeyType="done"
+                          onSubmitEditing={confirmEditRename}
+                          selectTextOnFocus
+                        />
+                        <Pressable onPress={confirmEditRename} disabled={!editRenameText.trim()} accessibilityRole="button">
+                          <SymbolView name="checkmark.circle.fill" size={26} tintColor={editRenameText.trim() ? theme.primary : theme.border} />
+                        </Pressable>
+                        <Pressable onPress={() => { setEditRenameThreadId(null); setEditRenameText(''); }} accessibilityRole="button">
+                          <SymbolView name="xmark.circle.fill" size={26} tintColor={theme.textSecondary} />
+                        </Pressable>
+                      </View>
+                    </Animated.View>
+                  )}
+                </View>
+              );})}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
 
       {aiEditLoading && (
         <Animated.View entering={FadeIn.duration(200)} style={[styles.aiEditOverlay, { backgroundColor: theme.background }]}>
@@ -4118,20 +5226,21 @@ export default function TripWorkspace() {
         onClose={() => setContextMenuActivity(null)}
         onBook={handleBookActivity}
         bookLabel={contextMenuActivity ? getBookLabel(contextMenuActivity) : undefined}
-        onReplace={(a) => handleReplace(a.id)}
+        onReplace={(a) => {
+          const msg = `Suggest a replacement for "${a.title}" (${a.category || a.type}, Day ${a.day})`;
+          setEditChatInput(msg);
+          setViewMode('ai');
+          setTimeout(() => {
+            sendEditChatMessage(msg);
+          }, 600);
+        }}
         onMove={(a) => handleOpenMoveActivity(a)}
         onEdit={(a) => handleStartEdit(a)}
-        onCustomize={(a) => {
-          setCustomizeTarget(a);
-          setSelectedDay(a.day);
-          setAskVisible(true);
-        }}
-        onLock={handleContextLock}
         onRemove={handleContextRemove}
         onReaction={handleActivityReaction}
       />
 
-      <AskTravonal
+      <AskToveli
         visible={askVisible}
         onClose={() => { setAskVisible(false); setCustomizeTarget(null); }}
         onFreeTextEdit={handleAIEdit}
@@ -4282,20 +5391,17 @@ export default function TripWorkspace() {
               onSubmitEditing={handleManualReplace}
               accessibilityLabel="Replacement activity name"
             />
-            <ThemedText style={styles.modalLabel}>Time & Duration</ThemedText>
+            <ThemedText style={styles.modalLabel}>Time</ThemedText>
             <TimePickerButton
               value={manualReplaceTime}
               onChange={setManualReplaceTime}
-              showDuration
-              duration={manualReplaceDuration}
-              onDurationChange={setManualReplaceDuration}
             />
             {manualReplaceName.trim() ? (
               <View style={[styles.replacePreview, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
                 <ThemedText style={{ fontSize: 12, fontWeight: '700', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Preview</ThemedText>
                 <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>{manualReplaceName.trim()}</ThemedText>
                 <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
-                  Day {manualReplaceTarget?.day} at {formatTimeDisplay(manualReplaceTime)} · {manualReplaceDuration} min
+                  Day {manualReplaceTarget?.day} at {formatTimeDisplay(manualReplaceTime)}
                 </ThemedText>
               </View>
             ) : null}
@@ -4388,8 +5494,8 @@ export default function TripWorkspace() {
         </Pressable>
       </Modal>
 
-      {/* Trip Edit Modal */}
-      <Modal visible={showTripEdit} transparent animationType="fade" onRequestClose={() => {
+      {/* Trip Edit Modal — full-screen form sheet */}
+      <Modal visible={showTripEdit} animationType="slide" presentationStyle="formSheet" onRequestClose={() => {
         const hasChanges = editTripTitle !== (currentTrip.title ?? currentTrip.destination)
           || editDest !== currentTrip.destination
           || editStartDate !== currentTrip.startDate
@@ -4404,193 +5510,10 @@ export default function TripWorkspace() {
           setShowTripEdit(false);
         }
       }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Pressable style={styles.modalBackdrop} onPress={() => {
-          Keyboard.dismiss();
-          const hasChanges = editTripTitle !== (currentTrip.title ?? currentTrip.destination)
-            || editDest !== currentTrip.destination
-            || editStartDate !== currentTrip.startDate
-            || editEndDate !== currentTrip.endDate
-            || editNotes !== (currentTrip.notes || '');
-          if (hasChanges) {
-            Alert.alert('Discard changes?', 'You have unsaved changes.', [
-              { text: 'Keep editing', style: 'cancel' },
-              { text: 'Discard', style: 'destructive', onPress: () => setShowTripEdit(false) },
-            ]);
-          } else {
-            setShowTripEdit(false);
-          }
-        }} accessibilityRole="button" accessibilityLabel="Close">
-          <Pressable style={[styles.modalSheet, { backgroundColor: theme.background }]} onPress={() => Keyboard.dismiss()} accessibilityRole="button" accessibilityLabel="Edit trip dialog">
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
-            <ThemedText type="subtitle" style={styles.modalTitle}>Edit trip</ThemedText>
-
-            <ThemedText style={styles.modalLabel}>Trip name</ThemedText>
-            <TextInput
-              style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editTripTitle}
-              onChangeText={setEditTripTitle}
-              placeholder="Trip name"
-              placeholderTextColor={theme.textSecondary}
-              autoCapitalize="words"
-              returnKeyType="next"
-              accessibilityLabel="Trip name"
-            />
-
-            <ThemedText style={styles.modalLabel}>Destination</ThemedText>
-            <TextInput
-              style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editDest}
-              onChangeText={setEditDest}
-              placeholder="Destination"
-              placeholderTextColor={theme.textSecondary}
-              returnKeyType="done"
-              blurOnSubmit
-              accessibilityLabel="Destination"
-            />
-
-            <View style={styles.modalDateRow}>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.modalLabel}>Start date</ThemedText>
-                <Pressable
-                  onPress={() => setShowEditStartPicker(true)}
-                  style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Set start date"
-                >
-                  <ThemedText style={[styles.modalDateBtnText, { color: editStartDate ? theme.text : theme.textSecondary }]}>
-                    {editStartDate ? formatDisplayDate(editStartDate) : 'Tap to set'}
-                  </ThemedText>
-                </Pressable>
-              </View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.modalLabel}>End date</ThemedText>
-                <Pressable
-                  onPress={() => setShowEditEndPicker(true)}
-                  style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Set end date"
-                >
-                  <ThemedText style={[styles.modalDateBtnText, { color: editEndDate ? theme.text : theme.textSecondary }]}>
-                    {editEndDate ? formatDisplayDate(editEndDate) : 'Tap to set'}
-                  </ThemedText>
-                </Pressable>
-              </View>
-            </View>
-
-            <ThemedText style={styles.modalLabel}>Travelers</ThemedText>
-            <TextInput
-              style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editTravelers}
-              onChangeText={(text) => {
-                const num = text.replace(/[^0-9]/g, '');
-                const val = parseInt(num, 10);
-                if (num === '' || (val >= 1 && val <= 20)) setEditTravelers(num);
-              }}
-              placeholder="Number of travelers"
-              placeholderTextColor={theme.textSecondary}
-              keyboardType="number-pad"
-              accessibilityLabel="Number of travelers"
-            />
-
-            <ThemedText style={styles.modalLabel}>Departing from</ThemedText>
-            <TextInput
-              style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editDepartureFrom}
-              onChangeText={setEditDepartureFrom}
-              placeholder="e.g. New York"
-              placeholderTextColor={theme.textSecondary}
-              accessibilityLabel="Departing from"
-            />
-
-            <ThemedText style={styles.modalLabel}>Budget</ThemedText>
-            <View style={styles.editChipRow}>
-              {(['budget', 'moderate', 'premium'] as const).map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setEditBudget(v)}
-                  style={[styles.editChip, { backgroundColor: editBudget === v ? theme.primary : theme.backgroundElement, borderColor: editBudget === v ? theme.primary : theme.border }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Select ${v} budget`}
-                >
-                  <ThemedText style={[styles.editChipText, editBudget === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-
-            <ThemedText style={styles.modalLabel}>Pace</ThemedText>
-            <View style={styles.editChipRow}>
-              {(['relaxed', 'moderate', 'active'] as const).map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setEditPace(v)}
-                  style={[styles.editChip, { backgroundColor: editPace === v ? theme.primary : theme.backgroundElement, borderColor: editPace === v ? theme.primary : theme.border }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Select ${v} pace`}
-                >
-                  <ThemedText style={[styles.editChipText, editPace === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-
-            <ThemedText style={styles.modalLabel}>Traveling with</ThemedText>
-            <View style={styles.editChipRow}>
-              {(['solo', 'partner', 'family', 'friends', 'group'] as const).map((v) => (
-                <Pressable
-                  key={v}
-                  onPress={() => setEditTravelWith(v)}
-                  style={[styles.editChip, { backgroundColor: editTravelWith === v ? theme.primary : theme.backgroundElement, borderColor: editTravelWith === v ? theme.primary : theme.border }]}
-                >
-                  <ThemedText style={[styles.editChipText, editTravelWith === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-
-            <ThemedText style={styles.modalLabel}>Restrictions / accessibility</ThemedText>
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editRestrictions}
-              onChangeText={setEditRestrictions}
-              placeholder="e.g. Wheelchair access needed, no stairs..."
-              placeholderTextColor={theme.textSecondary}
-              multiline
-              textAlignVertical="top"
-              returnKeyType="done"
-              blurOnSubmit
-              accessibilityLabel="Trip restrictions and accessibility needs"
-            />
-
-            <ThemedText style={styles.modalLabel}>Special instructions</ThemedText>
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editTripInstructions}
-              onChangeText={setEditTripInstructions}
-              placeholder="e.g. Prefer walking routes, avoid tourist traps..."
-              placeholderTextColor={theme.textSecondary}
-              multiline
-              textAlignVertical="top"
-              returnKeyType="done"
-              blurOnSubmit
-              accessibilityLabel="Trip special instructions"
-            />
-
-            <ThemedText style={styles.modalLabel}>Notes</ThemedText>
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-              value={editNotes}
-              onChangeText={setEditNotes}
-              placeholder="Trip notes..."
-              placeholderTextColor={theme.textSecondary}
-              multiline
-              textAlignVertical="top"
-              returnKeyType="done"
-              blurOnSubmit
-              accessibilityLabel="Trip notes"
-            />
-            </ScrollView>
-
-            {/* Buttons outside ScrollView so keyboard never covers them */}
-            <View style={styles.modalBtnRow}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={[styles.addModal, { backgroundColor: theme.background }]}>
+            {/* Header */}
+            <View style={[styles.addModalHeader, { borderBottomColor: theme.border }]}>
               <Pressable onPress={() => {
                 Keyboard.dismiss();
                 const hasChanges = editTripTitle !== (currentTrip.title ?? currentTrip.destination)
@@ -4606,15 +5529,197 @@ export default function TripWorkspace() {
                 } else {
                   setShowTripEdit(false);
                 }
-              }} style={[styles.modalBtnSecondary, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel trip edit">
-                <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>Cancel</ThemedText>
+              }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Cancel">
+                <ThemedText style={{ fontSize: 15, color: theme.textSecondary }}>Cancel</ThemedText>
               </Pressable>
-              <Pressable onPress={() => { Keyboard.dismiss(); handleSaveTripEdit(); }} style={[styles.modalBtnPrimary, { backgroundColor: theme.primary }]} accessibilityRole="button" accessibilityLabel="Save trip details">
-                <ThemedText style={{ color: theme.primaryText, fontSize: 15, fontWeight: '600' }}>Save</ThemedText>
+              <ThemedText style={styles.addModalTitle}>Edit Trip</ThemedText>
+              <Pressable onPress={() => { Keyboard.dismiss(); handleSaveTripEdit(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Save trip details">
+                <ThemedText style={{ fontSize: 15, fontWeight: '700', color: theme.primary }}>Save</ThemedText>
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+
+              {/* ─── Trip Info ─── */}
+              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Trip Info</ThemedText>
+
+              <ThemedText style={styles.modalLabel}>Trip name</ThemedText>
+              <TextInput
+                style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                value={editTripTitle}
+                onChangeText={setEditTripTitle}
+                placeholder="Trip name"
+                placeholderTextColor={theme.textSecondary}
+                autoCapitalize="words"
+                returnKeyType="next"
+                accessibilityLabel="Trip name"
+              />
+
+              <ThemedText style={styles.modalLabel}>Destination</ThemedText>
+              <TextInput
+                style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                value={editDest}
+                onChangeText={setEditDest}
+                placeholder="Destination"
+                placeholderTextColor={theme.textSecondary}
+                returnKeyType="done"
+                blurOnSubmit
+                accessibilityLabel="Destination"
+              />
+
+              <View style={styles.modalDateRow}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.modalLabel}>Start date</ThemedText>
+                  <Pressable
+                    onPress={() => setShowEditStartPicker(true)}
+                    style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Set start date"
+                  >
+                    <ThemedText style={[styles.modalDateBtnText, { color: editStartDate ? theme.text : theme.textSecondary }]}>
+                      {editStartDate ? formatDisplayDate(editStartDate) : 'Tap to set'}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.modalLabel}>End date</ThemedText>
+                  <Pressable
+                    onPress={() => setShowEditEndPicker(true)}
+                    style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Set end date"
+                  >
+                    <ThemedText style={[styles.modalDateBtnText, { color: editEndDate ? theme.text : theme.textSecondary }]}>
+                      {editEndDate ? formatDisplayDate(editEndDate) : 'Tap to set'}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* ─── Travel Details ─── */}
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
+              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Travel Details</ThemedText>
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.modalLabel}>Travelers</ThemedText>
+                  <TextInput
+                    style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                    value={editTravelers}
+                    onChangeText={(text) => {
+                      const num = text.replace(/[^0-9]/g, '');
+                      const val = parseInt(num, 10);
+                      if (num === '' || (val >= 1 && val <= 20)) setEditTravelers(num);
+                    }}
+                    placeholder="#"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="number-pad"
+                    accessibilityLabel="Number of travelers"
+                  />
+                </View>
+                <View style={{ flex: 2 }}>
+                  <ThemedText style={styles.modalLabel}>Departing from</ThemedText>
+                  <TextInput
+                    style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                    value={editDepartureFrom}
+                    onChangeText={setEditDepartureFrom}
+                    placeholder="e.g. New York"
+                    placeholderTextColor={theme.textSecondary}
+                    accessibilityLabel="Departing from"
+                  />
+                </View>
+              </View>
+
+              <ThemedText style={styles.modalLabel}>Budget</ThemedText>
+              <View style={styles.editChipRow}>
+                {(['$', '$$', '$$$', '$$$$'] as const).map((v) => (
+                  <Pressable
+                    key={v}
+                    onPress={() => setEditBudget(v)}
+                    style={[styles.editChip, { backgroundColor: editBudget === v ? theme.primary : theme.backgroundElement, borderColor: editBudget === v ? theme.primary : theme.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Select ${v} budget`}
+                  >
+                    <ThemedText style={[styles.editChipText, editBudget === v && { color: theme.primaryText }]}>{v}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+
+              <ThemedText style={styles.modalLabel}>Pace</ThemedText>
+              <View style={styles.editChipRow}>
+                {(['relaxed', 'moderate', 'active'] as const).map((v) => (
+                  <Pressable
+                    key={v}
+                    onPress={() => setEditPace(v)}
+                    style={[styles.editChip, { backgroundColor: editPace === v ? theme.primary : theme.backgroundElement, borderColor: editPace === v ? theme.primary : theme.border }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Select ${v} pace`}
+                  >
+                    <ThemedText style={[styles.editChipText, editPace === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+
+              <ThemedText style={styles.modalLabel}>Traveling with</ThemedText>
+              <View style={styles.editChipRow}>
+                {(['solo', 'partner', 'family', 'friends', 'group'] as const).map((v) => (
+                  <Pressable
+                    key={v}
+                    onPress={() => setEditTravelWith(v)}
+                    style={[styles.editChip, { backgroundColor: editTravelWith === v ? theme.primary : theme.backgroundElement, borderColor: editTravelWith === v ? theme.primary : theme.border }]}
+                  >
+                    <ThemedText style={[styles.editChipText, editTravelWith === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* ─── Notes & Instructions ─── */}
+              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
+              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Notes & Instructions</ThemedText>
+
+              <ThemedText style={styles.modalLabel}>Restrictions / accessibility</ThemedText>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                value={editRestrictions}
+                onChangeText={setEditRestrictions}
+                placeholder="e.g. Wheelchair access needed, no stairs..."
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                textAlignVertical="top"
+                returnKeyType="done"
+                blurOnSubmit
+                accessibilityLabel="Trip restrictions and accessibility needs"
+              />
+
+              <ThemedText style={styles.modalLabel}>Special instructions</ThemedText>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                value={editTripInstructions}
+                onChangeText={setEditTripInstructions}
+                placeholder="e.g. Prefer walking routes, avoid tourist traps..."
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                textAlignVertical="top"
+                returnKeyType="done"
+                blurOnSubmit
+                accessibilityLabel="Trip special instructions"
+              />
+
+              <ThemedText style={styles.modalLabel}>Notes</ThemedText>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                value={editNotes}
+                onChangeText={setEditNotes}
+                placeholder="Trip notes..."
+                placeholderTextColor={theme.textSecondary}
+                multiline
+                textAlignVertical="top"
+                returnKeyType="done"
+                blurOnSubmit
+                accessibilityLabel="Trip notes"
+              />
+            </ScrollView>
+          </View>
         </KeyboardAvoidingView>
         <DatePickerModal
           visible={showEditStartPicker}
@@ -4636,170 +5741,419 @@ export default function TripWorkspace() {
         />
       </Modal>
 
-      {/* Move Activity Modal */}
-      <Modal visible={!!movingActivity} transparent animationType="fade" onRequestClose={() => setMovingActivity(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setMovingActivity(null)} accessibilityRole="button" accessibilityLabel="Close">
-          <Pressable style={[styles.modalSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()}>
-            <ThemedText type="subtitle" style={styles.modalTitle}>Move activity</ThemedText>
-            {movingActivity && (
-              <ThemedText style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-                {movingActivity.title}
-              </ThemedText>
-            )}
-            <ThemedText style={styles.modalLabel}>Day</ThemedText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moveDayRow}>
-              {allDays.map((d) => (
-                <Pressable
-                  key={d}
-                  onPress={() => setMoveDay(d)}
-                  style={[styles.moveDayChip, { backgroundColor: moveDay === d ? theme.primary : theme.backgroundElement }]}
-                >
-                  <ThemedText style={[styles.moveDayText, moveDay === d && { color: theme.primaryText }]}>Day {d}</ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <ThemedText style={styles.modalLabel}>Time</ThemedText>
-            <TimePickerButton
-              value={moveTime}
-              onChange={setMoveTime}
-            />
-            <View style={styles.modalBtnRow}>
-              <Pressable onPress={() => setMovingActivity(null)} style={[styles.modalBtnSecondary, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel move">
-                <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>Cancel</ThemedText>
-              </Pressable>
-              <Pressable onPress={handleConfirmMove} style={[styles.modalBtnPrimary, { backgroundColor: theme.primary }]} accessibilityRole="button" accessibilityLabel="Confirm move activity">
-                <ThemedText style={{ color: theme.primaryText, fontSize: 15, fontWeight: '600' }}>Move</ThemedText>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* Move Activity Modal — bottom sheet with inline time picker (same as add-activity) */}
+      {!!movingActivity && (
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+        >
+          <Pressable
+            onPress={() => setMovingActivity(null)}
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+          >
+            <Pressable onPress={(e) => e.stopPropagation()} style={{ marginHorizontal: 16, marginBottom: insets.bottom + 16 }}>
+              <Animated.View
+                entering={SlideInDown.duration(250)}
+                style={{
+                  backgroundColor: theme.background, borderRadius: 20,
+                  ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
+                }}
+              >
+                <View style={{ padding: 20, paddingBottom: 24 }}>
+                  <ThemedText style={{ fontSize: 19, fontWeight: '700', textAlign: 'center' }}>Move activity</ThemedText>
+                  <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginTop: 4, marginBottom: 12 }}>{movingActivity.title}</ThemedText>
 
-      {/* Add Activity Modal (Task 1) */}
+                  {/* Day picker */}
+                  <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 }}>DAY</ThemedText>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5 }}>
+                    {allDays.map((d) => (
+                      <Pressable key={d} onPress={() => setMoveDay(d)}
+                        style={{ minWidth: 38, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8,
+                          backgroundColor: moveDay === d ? theme.primary : theme.backgroundElement }}>
+                        <ThemedText style={{ fontSize: 13, fontWeight: '600', color: moveDay === d ? theme.primaryText : theme.text }}>{formatDayLabel(d, currentTrip.startDate, currentTrip.datesKnown)}</ThemedText>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  {/* Inline time picker — same as add-activity */}
+                  {(() => {
+                    const parsed = parseTime(moveTime);
+                    const snappedMin = Math.round(parsed.minute / 5) * 5;
+                    const chipStyle = (active: boolean) => ({
+                      minWidth: 38, height: 36, borderRadius: 18,
+                      alignItems: 'center' as const, justifyContent: 'center' as const,
+                      paddingHorizontal: 8,
+                      backgroundColor: active ? theme.primary : theme.backgroundElement,
+                    });
+                    const chipText = (active: boolean) => ({
+                      fontSize: 13, fontWeight: '600' as const,
+                      color: active ? theme.primaryText : theme.text,
+                    });
+                    return (
+                      <>
+                        <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 16, marginBottom: 6, letterSpacing: 0.5 }}>HOUR</ThemedText>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5 }}>
+                          {HOURS_12.map((h) => (
+                            <Pressable key={h} onPress={() => setMoveTime(formatTime(h, snappedMin, parsed.period))} style={chipStyle(parsed.hour12 === h)}>
+                              <ThemedText style={chipText(parsed.hour12 === h)}>{h}</ThemedText>
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+
+                        <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 12, marginBottom: 6, letterSpacing: 0.5 }}>MINUTE</ThemedText>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5 }}>
+                          {MINUTES_5.map((m) => (
+                            <Pressable key={m} onPress={() => setMoveTime(formatTime(parsed.hour12, m, parsed.period))} style={chipStyle(snappedMin === m)}>
+                              <ThemedText style={chipText(snappedMin === m)}>{String(m).padStart(2, '0')}</ThemedText>
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, justifyContent: 'center' }}>
+                          {(['AM', 'PM'] as const).map((p) => (
+                            <Pressable key={p} onPress={() => setMoveTime(formatTime(parsed.hour12, snappedMin, p))}
+                              style={{ paddingHorizontal: 22, paddingVertical: 10, borderRadius: 10,
+                                backgroundColor: parsed.period === p ? theme.primary : theme.backgroundElement }}>
+                              <ThemedText style={{ fontSize: 14, fontWeight: '700', color: parsed.period === p ? theme.primaryText : theme.text }}>{p}</ThemedText>
+                            </Pressable>
+                          ))}
+                        </View>
+
+                        <ThemedText style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', marginTop: 14, color: theme.text }}>
+                          {formatTimeDisplay(moveTime)}
+                        </ThemedText>
+                      </>
+                    );
+                  })()}
+
+                  {/* Action buttons */}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                    <Pressable onPress={() => setMovingActivity(null)}
+                      style={({ pressed }) => [{ flex: 1, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: theme.border, alignItems: 'center', opacity: pressed ? 0.7 : 1 }]}>
+                      <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>Cancel</ThemedText>
+                    </Pressable>
+                    <Pressable onPress={handleConfirmMove}
+                      style={({ pressed }) => [{ flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, alignItems: 'center', opacity: pressed ? 0.85 : 1 }]}>
+                      <ThemedText style={{ fontSize: 15, fontWeight: '700', color: theme.primaryText }}>Move</ThemedText>
+                    </Pressable>
+                  </View>
+                </View>
+              </Animated.View>
+            </Pressable>
+          </Pressable>
+        </Animated.View>
+      )}
+
+      {/* Add Activity Modal — search-based */}
       <Modal
         visible={addingToDay !== null}
         animationType="slide"
         presentationStyle="formSheet"
-        onRequestClose={() => setAddingToDay(null)}
+        onRequestClose={() => { setAddingToDay(null); setActSearchQuery(''); setActSearchResults([]); setActSelectedPlace(null); }}
       >
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.addModal, { backgroundColor: theme.background }]}>
             <View style={[styles.addModalHeader, { borderBottomColor: theme.border }]}>
               <ThemedText style={styles.addModalTitle}>Add to Day {addingToDay}</ThemedText>
-              <Pressable onPress={() => setAddingToDay(null)} hitSlop={8} style={styles.addModalClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Pressable onPress={() => { setAddingToDay(null); setActSearchQuery(''); setActSearchResults([]); setActSelectedPlace(null); }} hitSlop={8} style={styles.addModalClose} accessibilityRole="button" accessibilityLabel="Close">
                 <SymbolView name="xmark" size={18} tintColor={theme.textSecondary} />
               </Pressable>
             </View>
-            <ScrollView
-              contentContainerStyle={[styles.addForm, { backgroundColor: theme.background, paddingBottom: 40 }]}
-              keyboardShouldPersistTaps="handled"
-            >
+            <View style={{ padding: 16, paddingBottom: 8 }}>
               <TextInput
                 style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                placeholder="Activity name"
+                value={actSearchQuery}
+                onChangeText={(text) => {
+                  setActSearchQuery(text);
+                  if (actSearchTimer.current) clearTimeout(actSearchTimer.current);
+                  if (text.trim().length < 2) {
+                    setActSearchResults([]);
+                    setActSearchLoading(false);
+                    return;
+                  }
+                  setActSearchLoading(true);
+                  const q = text.trim();
+                  actSearchTimer.current = setTimeout(async () => {
+                    if (!trip) return;
+                    try {
+                      const results = await searchExplorePlaces(q, {
+                        type: 'trip',
+                        tripId: trip.id,
+                        destination: trip.destination,
+                        label: trip.destination,
+                      });
+                      setActSearchResults(results.slice(0, 15));
+                    } catch {
+                      setActSearchResults([]);
+                    } finally {
+                      setActSearchLoading(false);
+                    }
+                  }, 400);
+                }}
+                placeholder="Search for a place..."
                 placeholderTextColor={theme.textSecondary}
                 autoFocus
-                accessibilityLabel="Activity name"
+                returnKeyType="search"
+                accessibilityLabel="Search for a place"
               />
-              <View style={styles.addRow}>
-                <TimePickerButton
-                  value={newTime}
-                  onChange={setNewTime}
-                  showDuration
-                  duration={newDuration}
-                  onDurationChange={setNewDuration}
-                />
-              </View>
-              <View style={styles.typeRow}>
-                {(['activity', 'food', 'hotel', 'flight'] as const).map((t) => (
-                  <Pressable
-                    key={t}
-                    onPress={() => {
-                      setNewType(t);
-                      // Use smart time suggestion based on existing activities
-                      const smartTime = addingToDay
-                        ? suggestTimeForActivity(currentTrip.activities, addingToDay, t)
-                        : defaultTimeForType(t);
-                      setNewTime(smartTime);
-                      setNewDuration(defaultDurationForType(t));
-                    }}
-                    style={[
-                      styles.typeChip,
-                      { backgroundColor: newType === t ? theme.primary : 'transparent', borderWidth: 1, borderColor: newType === t ? theme.primary : theme.border },
-                    ]}
-                  >
-                    <ThemedText style={[styles.typeText, newType === t && { color: theme.primaryText }]}>
-                      {t}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-              <View style={styles.editChipRow}>
-                {(['free', 'budget', 'moderate', 'premium'] as const).map((c) => (
-                  <Pressable
-                    key={c}
-                    onPress={() => setNewCost(newCost === c ? '' : c)}
-                    style={[styles.editChip, { backgroundColor: newCost === c ? theme.primary : theme.backgroundElement, borderColor: newCost === c ? theme.primary : theme.border }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Cost: ${c}`}
-                  >
-                    <ThemedText style={[styles.editChipText, newCost === c && { color: theme.primaryText }]}>{c}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-              <TextInput
-                style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                value={newAddress}
-                onChangeText={setNewAddress}
-                placeholder="Address (optional)"
-                placeholderTextColor={theme.textSecondary}
-                accessibilityLabel="Activity address"
-              />
-              <TextInput
-                style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                value={newActivityNotes}
-                onChangeText={setNewActivityNotes}
-                placeholder="Notes (optional)"
-                placeholderTextColor={theme.textSecondary}
-                accessibilityLabel="Activity notes"
-              />
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
-                <ThemedText style={{ fontSize: 14, fontWeight: '600' }}>Fixed (cannot be moved)</ThemedText>
-                <Switch
-                  value={newFixed}
-                  onValueChange={setNewFixed}
-                  trackColor={{ false: 'rgba(128,128,128,0.2)', true: '#10B981' }}
-                  accessibilityLabel="Mark as fixed activity"
-                />
-              </View>
-              <Pressable
-                onPress={() => {
-                  setAddingToDay(null);
-                  router.push({ pathname: '/(tabs)/explore', params: { tripId: id, day: String(addingToDay) } } as any);
-                }}
-                style={[styles.discoverBtn, { borderColor: theme.border }]}
-                accessibilityRole="button"
-                accessibilityLabel="Discover place in Explore"
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  <SymbolView name="magnifyingglass" size={13} tintColor={theme.primary} />
-                  <ThemedText style={[styles.discoverBtnText, { color: theme.primary }]}>
-                    Discover a place in Explore
+            </View>
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {actSearchLoading && (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={theme.primary} />
+                  <ThemedText style={{ color: theme.textSecondary, fontSize: 13, marginTop: 8 }}>
+                    Searching...
                   </ThemedText>
                 </View>
-              </Pressable>
-              <Pressable
-                onPress={() => { if (addingToDay !== null) handleAddActivity(addingToDay); }}
-                style={[styles.addSaveBtn, { backgroundColor: theme.primary, opacity: newTitle.trim() ? 1 : 0.4 }]}
-                disabled={!newTitle.trim()}
-                accessibilityRole="button"
-                accessibilityLabel="Add activity"
-              >
-                <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>Add Activity</ThemedText>
-              </Pressable>
+              )}
+              {!actSearchLoading && actSearchQuery.trim().length >= 2 && actSearchResults.length === 0 && (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ThemedText style={{ color: theme.textSecondary, fontSize: 14 }}>
+                    No results found
+                  </ThemedText>
+                </View>
+              )}
+              {actSearchResults.map((place) => (
+                <StaySearchResultRow key={place.placeId ?? place.name} place={place} theme={theme} onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  const t = categoryToActivityType(place.category);
+                  setActConfirmTime(addingToDay ? suggestTimeForActivity(currentTrip.activities, addingToDay, t) : defaultTimeForType(t));
+                  setActConfirmStep('preview');
+                  setActSelectedPlace(place);
+                }} />
+              ))}
+              {!actSearchLoading && actSearchQuery.trim().length < 2 && (
+                <>
+                  {actSuggestions.length > 0 && (
+                    <View style={{ marginTop: 8 }}>
+                      <ThemedText style={{ fontSize: 14, fontWeight: '600', marginBottom: 10, color: theme.textSecondary }}>
+                        Recommended in {currentTrip.destination}
+                      </ThemedText>
+                      {actSuggestions.map((place) => (
+                        <StaySearchResultRow key={place.placeId ?? place.name} place={place} theme={theme} onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          const t = categoryToActivityType(place.category);
+                          setActConfirmTime(addingToDay ? suggestTimeForActivity(currentTrip.activities, addingToDay, t) : defaultTimeForType(t));
+                          setActConfirmStep('preview');
+                          setActSelectedPlace(place);
+                        }} />
+                      ))}
+                    </View>
+                  )}
+                  {actSuggestions.length === 0 && (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <SymbolView name="magnifyingglass" size={28} tintColor={theme.border} />
+                      <ThemedText style={{ color: theme.textSecondary, fontSize: 14, marginTop: 10, textAlign: 'center' }}>
+                        Search for restaurants, attractions, cafes, and more
+                      </ThemedText>
+                    </View>
+                  )}
+                </>
+              )}
             </ScrollView>
+
+            {/* Activity confirmation popup — two-stage: preview → time picker */}
+            {actSelectedPlace && (() => {
+              const place = actSelectedPlace;
+              return (
+                <Animated.View
+                  entering={FadeIn.duration(200)}
+                  exiting={FadeOut.duration(150)}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}
+                >
+                  <Pressable
+                    onPress={() => { setActSelectedPlace(null); setActConfirmStep('preview'); }}
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                  >
+                    <Pressable onPress={(e) => e.stopPropagation()} style={{ marginHorizontal: 16, marginBottom: 24, maxHeight: Dimensions.get('window').height * 0.75 }}>
+                      <Animated.View
+                        entering={SlideInDown.duration(250)}
+                        style={{
+                          backgroundColor: theme.background, borderRadius: 20,
+                          overflow: 'hidden', flex: 1,
+                          ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
+                        }}
+                      >
+                        <ScrollView bounces={false}>
+                        {/* Photo banner — only in preview step */}
+                        {actConfirmStep === 'preview' && (
+                          <ActivityConfirmPhoto place={place} theme={theme} />
+                        )}
+
+                        <View style={{ padding: 20, paddingBottom: 24 }}>
+                          {/* Place info */}
+                          <ThemedText style={{ fontSize: actConfirmStep === 'time' ? 17 : 19, fontWeight: '700' }} numberOfLines={2}>{place.name}</ThemedText>
+                          {actConfirmStep === 'preview' && place.rating != null && (
+                            <ThemedText style={{ fontSize: 14, color: theme.textSecondary, marginTop: 4 }}>
+                              ★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${place.reviewCount})` : ''}
+                            </ThemedText>
+                          )}
+                          {actConfirmStep === 'preview' && place.address && (
+                            <ThemedText style={{ fontSize: 14, color: theme.textSecondary, marginTop: 2 }} numberOfLines={2}>
+                              {place.address}
+                            </ThemedText>
+                          )}
+
+                          {/* Stage 1: Preview with Add + View Details */}
+                          {actConfirmStep === 'preview' && (
+                            <>
+                              <Pressable
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                  const isDuplicate = currentTrip.activities.some(
+                                    (a) => a.placeId && a.placeId === place.placeId
+                                  );
+                                  if (isDuplicate) {
+                                    showToast('This place is already in your itinerary', 'info');
+                                    setActSelectedPlace(null);
+                                    return;
+                                  }
+                                  setActConfirmStep('time');
+                                }}
+                                style={({ pressed }) => [{
+                                  backgroundColor: theme.primary, borderRadius: 14,
+                                  paddingVertical: 14, alignItems: 'center',
+                                  marginTop: 18, opacity: pressed ? 0.85 : 1,
+                                }]}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Add to Day ${addingToDay}`}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <SymbolView name="plus.circle.fill" size={18} tintColor={theme.primaryText} />
+                                  <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.primaryText }}>Add to Day {addingToDay}</ThemedText>
+                                </View>
+                              </Pressable>
+
+                              <Pressable
+                                onPress={() => {
+                                  const p = place;
+                                  actSearchReturnDay.current = addingToDay;
+                                  setActSelectedPlace(null);
+                                  setActConfirmStep('preview');
+                                  setAddingToDay(null);
+                                  let url = `/place-detail?name=${encodeURIComponent(p.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(p.primaryTypeLabel || p.category || 'activity')}`;
+                                  if (p.placeId) url += `&placeId=${encodeURIComponent(p.placeId)}`;
+                                  if (p.address) url += `&address=${encodeURIComponent(p.address)}`;
+                                  if (p.lat != null) url += `&lat=${p.lat}`;
+                                  if (p.lng != null) url += `&lng=${p.lng}`;
+                                  if (p.rating != null) url += `&rating=${p.rating}`;
+                                  if (p.reviewCount != null) url += `&reviewCount=${p.reviewCount}`;
+                                  if (p.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(p.photos[0].reference)}`;
+                                  router.push(url as any);
+                                }}
+                                style={({ pressed }) => [{ marginTop: 10, paddingVertical: 10, alignItems: 'center', opacity: pressed ? 0.7 : 1 }]}
+                                accessibilityRole="button"
+                                accessibilityLabel="View full details"
+                              >
+                                <ThemedText style={{ fontSize: 15, color: theme.primary, fontWeight: '600' }}>View Full Details</ThemedText>
+                              </Pressable>
+                            </>
+                          )}
+
+                          {/* Stage 2: Inline time & duration picker */}
+                          {actConfirmStep === 'time' && (() => {
+                            const parsed = parseTime(actConfirmTime);
+                            const snappedMin = Math.round(parsed.minute / 5) * 5;
+                            const chipStyle = (active: boolean) => ({
+                              minWidth: 38, height: 36, borderRadius: 18,
+                              alignItems: 'center' as const, justifyContent: 'center' as const,
+                              paddingHorizontal: 8,
+                              backgroundColor: active ? theme.primary : theme.backgroundElement,
+                            });
+                            const chipText = (active: boolean) => ({
+                              fontSize: 13, fontWeight: '600' as const,
+                              color: active ? theme.primaryText : theme.text,
+                            });
+                            return (
+                            <Animated.View entering={FadeIn.duration(200)}>
+                              {/* Hour */}
+                              <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 16, marginBottom: 6, letterSpacing: 0.5 }}>HOUR</ThemedText>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5 }}>
+                                {HOURS_12.map((h) => (
+                                  <Pressable key={h} onPress={() => setActConfirmTime(formatTime(h, snappedMin, parsed.period))} style={chipStyle(parsed.hour12 === h)}>
+                                    <ThemedText style={chipText(parsed.hour12 === h)}>{h}</ThemedText>
+                                  </Pressable>
+                                ))}
+                              </ScrollView>
+
+                              {/* Minute */}
+                              <ThemedText style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 12, marginBottom: 6, letterSpacing: 0.5 }}>MINUTE</ThemedText>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5 }}>
+                                {MINUTES_5.map((m) => (
+                                  <Pressable key={m} onPress={() => setActConfirmTime(formatTime(parsed.hour12, m, parsed.period))} style={chipStyle(snappedMin === m)}>
+                                    <ThemedText style={chipText(snappedMin === m)}>{String(m).padStart(2, '0')}</ThemedText>
+                                  </Pressable>
+                                ))}
+                              </ScrollView>
+
+                              {/* AM / PM */}
+                              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, justifyContent: 'center' }}>
+                                {(['AM', 'PM'] as const).map((p) => (
+                                  <Pressable key={p} onPress={() => setActConfirmTime(formatTime(parsed.hour12, snappedMin, p))}
+                                    style={{ paddingHorizontal: 22, paddingVertical: 10, borderRadius: 10,
+                                      backgroundColor: parsed.period === p ? theme.primary : theme.backgroundElement }}>
+                                    <ThemedText style={{ fontSize: 14, fontWeight: '700', color: parsed.period === p ? theme.primaryText : theme.text }}>{p}</ThemedText>
+                                  </Pressable>
+                                ))}
+                              </View>
+
+                              {/* Preview */}
+                              <ThemedText style={{ textAlign: 'center', fontSize: 18, fontWeight: '700', marginTop: 14, color: theme.text }}>
+                                {formatTimeDisplay(actConfirmTime)}
+                              </ThemedText>
+
+                              <Pressable
+                                onPress={() => {
+                                  if (addingToDay === null) return;
+                                  const actType = categoryToActivityType(place.category);
+
+                                  addActivity(currentTrip.id, {
+                                    title: place.name,
+                                    day: addingToDay,
+                                    time: actConfirmTime,
+                                    type: actType,
+                                    category: place.primaryTypeLabel || place.category,
+                                    placeId: place.placeId,
+                                    address: place.address,
+                                    lat: place.lat,
+                                    lng: place.lng,
+                                    rating: place.rating,
+                                    reviewCount: place.reviewCount,
+                                  });
+
+                                  showToast(`"${place.name}" added to Day ${addingToDay}`, 'success');
+                                  setActSelectedPlace(null);
+                                  setActConfirmStep('preview');
+                                  setAddingToDay(null);
+                                  setActSearchQuery('');
+                                  setActSearchResults([]);
+                                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                                }}
+                                style={({ pressed }) => [{
+                                  backgroundColor: theme.primary, borderRadius: 14,
+                                  paddingVertical: 14, alignItems: 'center',
+                                  marginTop: 16, opacity: pressed ? 0.85 : 1,
+                                }]}
+                                accessibilityRole="button"
+                                accessibilityLabel="Confirm"
+                              >
+                                <ThemedText style={{ fontSize: 16, fontWeight: '700', color: theme.primaryText }}>Confirm</ThemedText>
+                              </Pressable>
+                            </Animated.View>
+                            );
+                          })()}
+                        </View>
+                        </ScrollView>
+                      </Animated.View>
+                    </Pressable>
+                  </Pressable>
+                </Animated.View>
+              );
+            })()}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -4909,495 +6263,281 @@ export default function TripWorkspace() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Add / Edit Reservation Modal */}
+      {/* Add Stay Search Modal */}
       <Modal
-        visible={showAddReservationModal}
+        visible={showStaySearchModal}
         animationType="slide"
         presentationStyle="formSheet"
-        onRequestClose={() => setShowAddReservationModal(false)}
+        onRequestClose={() => { setShowStaySearchModal(false); setResSelectedPlace(null); }}
       >
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={[styles.addModal, { backgroundColor: theme.background }]}>
             <View style={[styles.addModalHeader, { borderBottomColor: theme.border }]}>
-              <ThemedText style={styles.addModalTitle}>
-                {editingReservation ? 'Edit Reservation' : resEntryMode === 'choose' ? 'Add Reservation' : resEntryMode === 'link' ? 'From Booking Link' : 'Reservation Details'}
-              </ThemedText>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {!editingReservation && resEntryMode !== 'choose' && (
-                  <Pressable onPress={() => setResEntryMode('choose')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back" style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <SymbolView name="chevron.left" size={14} tintColor={theme.primary} />
-                    <ThemedText style={[{ fontSize: 14, color: theme.primary, fontWeight: '600' }]}>Back</ThemedText>
-                  </Pressable>
-                )}
-                <Pressable onPress={() => setShowAddReservationModal(false)} hitSlop={8} style={styles.addModalClose} accessibilityRole="button" accessibilityLabel="Close">
-                  <SymbolView name="xmark" size={18} tintColor={theme.textSecondary} />
-                </Pressable>
-              </View>
+              <ThemedText style={styles.addModalTitle}>Add Stay</ThemedText>
+              <Pressable onPress={() => { setShowStaySearchModal(false); setResSelectedPlace(null); }} hitSlop={8} style={styles.addModalClose} accessibilityRole="button" accessibilityLabel="Close">
+                <SymbolView name="xmark" size={18} tintColor={theme.textSecondary} />
+              </Pressable>
             </View>
 
-            {/* STEP 1: Choose path (new reservation only) */}
-            {!editingReservation && resEntryMode === 'choose' && (
-              <View style={{ padding: 24, gap: 16 }}>
-                <ThemedText style={[{ fontSize: 15, color: theme.textSecondary, textAlign: 'center' }]}>
-                  How would you like to add this reservation?
-                </ThemedText>
-                <Pressable
-                  onPress={() => setResEntryMode('link')}
-                  style={({ pressed }) => [
-                    styles.resChoiceBtn,
-                    { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="From booking link"
+            {/* Search by name */}
+            {(
+              <View style={{ flex: 1 }}>
+                <View style={{ padding: 16, paddingBottom: 8 }}>
+                  <TextInput
+                    style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                    value={resSearchQuery}
+                    onChangeText={(text) => {
+                      setResSearchQuery(text);
+                      if (resSearchTimer.current) clearTimeout(resSearchTimer.current);
+                      if (text.trim().length < 2) {
+                        setResSearchResults([]);
+                        setResSearchLoading(false);
+                        return;
+                      }
+                      setResSearchLoading(true);
+                      const q = text.trim();
+                      resSearchTimer.current = setTimeout(async () => {
+                        if (!trip) return;
+                        try {
+                          const results = await searchExplorePlaces(q, {
+                            type: 'trip',
+                            tripId: trip.id,
+                            destination: trip.destination,
+                            label: trip.destination,
+                          });
+                          const hotels = results.filter((p) =>
+                            p.category?.startsWith('stay/') ||
+                            p.googleTypes?.some((t) => /hotel|lodging|resort|motel|hostel|inn|guest_house/i.test(t))
+                          );
+                          setResSearchResults(hotels.length > 0 ? hotels.slice(0, 10) : results.slice(0, 10));
+                        } catch {
+                          setResSearchResults([]);
+                        } finally {
+                          setResSearchLoading(false);
+                        }
+                      }, 400);
+                    }}
+                    placeholder="Hotel name..."
+                    placeholderTextColor={theme.textSecondary}
+                    autoFocus
+                    returnKeyType="search"
+                  />
+                </View>
+                <ScrollView
+                  contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+                  keyboardShouldPersistTaps="handled"
                 >
-                  <View style={styles.resChoiceBtnIcon}><SymbolView name="link" size={24} tintColor={theme.text} /></View>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.resChoiceBtnTitle}>From Booking Link</ThemedText>
-                    <ThemedText style={[styles.resChoiceBtnDesc, { color: theme.textSecondary }]}>
-                      Paste a URL and AI will extract reservation details
-                    </ThemedText>
-                  </View>
-                  <SymbolView name="chevron.right" size={14} tintColor={theme.textSecondary} />
-                </Pressable>
-                <Pressable
-                  onPress={() => setResEntryMode('manual')}
-                  style={({ pressed }) => [
-                    styles.resChoiceBtn,
-                    { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Enter manually"
-                >
-                  <View style={styles.resChoiceBtnIcon}><SymbolView name="pencil" size={24} tintColor={theme.text} /></View>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.resChoiceBtnTitle}>Enter Manually</ThemedText>
-                    <ThemedText style={[styles.resChoiceBtnDesc, { color: theme.textSecondary }]}>
-                      Fill in the details yourself
-                    </ThemedText>
-                  </View>
-                  <SymbolView name="chevron.right" size={14} tintColor={theme.textSecondary} />
-                </Pressable>
+                  {resSearchLoading && (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={theme.primary} />
+                      <ThemedText style={{ color: theme.textSecondary, fontSize: 13, marginTop: 8 }}>
+                        Searching...
+                      </ThemedText>
+                    </View>
+                  )}
+                  {!resSearchLoading && resSearchQuery.trim().length >= 2 && resSearchResults.length === 0 && (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <ThemedText style={{ color: theme.textSecondary, fontSize: 14 }}>
+                        No results found
+                      </ThemedText>
+                    </View>
+                  )}
+                  {resSearchResults.map((place) => (
+                    <StaySearchResultRow key={place.placeId ?? place.name} place={place} theme={theme} onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setResSelectedPlace(place);
+                    }} />
+                  ))}
+                </ScrollView>
+
+                {/* Confirmation popup overlay */}
+                {resSelectedPlace && (
+                  <StayConfirmPopup
+                    place={resSelectedPlace}
+                    theme={theme}
+                    onDismiss={() => setResSelectedPlace(null)}
+                    onAdd={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      const isDuplicate = currentTrip.activities.some(
+                        (a) => a.type === 'hotel' && a.placeId && a.placeId === resSelectedPlace.placeId
+                      );
+                      if (isDuplicate) {
+                        showToast('This hotel is already in your stays', 'info');
+                        setResSelectedPlace(null);
+                        return;
+                      }
+                      addActivity(currentTrip.id, {
+                        title: resSelectedPlace.name,
+                        day: 1,
+                        time: '15:00',
+                        type: 'hotel',
+                        category: resSelectedPlace.category ?? 'stay/hotel',
+                        cost: resSelectedPlace.priceLevel as any,
+                        description: '',
+                        placeId: resSelectedPlace.placeId,
+                        address: resSelectedPlace.address,
+                        lat: resSelectedPlace.lat,
+                        lng: resSelectedPlace.lng,
+                        rating: resSelectedPlace.rating,
+                        fixed: true,
+                      });
+                      showToast(`"${resSelectedPlace.name}" added to stays`, 'success');
+                      setResSelectedPlace(null);
+                      setShowStaySearchModal(false);
+                    }}
+                    onViewDetails={() => {
+                      const p = resSelectedPlace;
+                      setResSelectedPlace(null);
+                      setShowStaySearchModal(false);
+                      let url = `/place-detail?name=${encodeURIComponent(p.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(p.category ?? 'stay/hotel')}&fromStaySearch=1`;
+                      if (p.placeId) url += `&placeId=${encodeURIComponent(p.placeId)}`;
+                      if (p.address) url += `&address=${encodeURIComponent(p.address)}`;
+                      if (p.lat != null) url += `&lat=${p.lat}`;
+                      if (p.lng != null) url += `&lng=${p.lng}`;
+                      if (p.rating != null) url += `&rating=${p.rating}`;
+                      if (p.reviewCount != null) url += `&reviewCount=${p.reviewCount}`;
+                      if (p.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(p.photos[0].reference)}`;
+                      router.push(url as any);
+                    }}
+                  />
+                )}
               </View>
             )}
 
-            {/* STEP 2A: Booking link path */}
-            {!editingReservation && resEntryMode === 'link' && (
-              <ScrollView
-                contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                <ThemedText style={[styles.modalLabel, { marginTop: 0 }]}>Booking URL</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resLinkUrl}
-                  onChangeText={setResLinkUrl}
-                  placeholder="https://booking.com/..."
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="url"
-                  autoCapitalize="none"
-                  autoFocus
-                  accessibilityLabel="Booking URL"
-                />
-                {resLinkError ? (
-                  <ThemedText style={[{ fontSize: 13, color: theme.danger ?? '#EF4444' }]}>{resLinkError}</ThemedText>
-                ) : null}
-                <Pressable
-                  onPress={async () => {
-                    const url = resLinkUrl.trim();
-                    if (!url) return;
-                    setResLinkLoading(true);
-                    setResLinkError('');
-                    try {
-                      const result = await importPlaceAI({ content: url, contentType: 'url' });
-                      setResTitle(result.name || '');
-                      setResAddress(result.location || '');
-                      setResNotes(result.description || '');
-                      setResBookingUrl(url);
-                      setResEntryMode('manual');
-                    } catch {
-                      setResLinkError('Could not extract details. You can fill them in manually.');
-                    } finally {
-                      setResLinkLoading(false);
-                    }
-                  }}
-                  style={[styles.addSaveBtn, { backgroundColor: theme.primary, opacity: resLinkUrl.trim() && !resLinkLoading ? 1 : 0.4 }]}
-                  disabled={!resLinkUrl.trim() || resLinkLoading}
-                  accessibilityRole="button"
-                  accessibilityLabel="Extract reservation info"
-                >
-                  <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>
-                    {resLinkLoading ? 'Extracting...' : 'Extract Info'}
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={() => { setResBookingUrl(resLinkUrl.trim()); setResEntryMode('manual'); }}
-                  style={[styles.resCancelBtn, { borderColor: theme.border }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Skip and enter manually"
-                >
-                  <ThemedText style={[styles.resCancelBtnText, { color: theme.textSecondary }]}>Skip — enter details manually</ThemedText>
-                </Pressable>
-              </ScrollView>
-            )}
-
-            {/* STEP 2B: Manual entry (also used when editing) */}
-            {(editingReservation || resEntryMode === 'manual') && (
-              <ScrollView
-                contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {/* Type picker */}
-                <ThemedText style={[styles.modalLabel, { marginTop: 0 }]}>Type</ThemedText>
-                <View style={styles.typeRow}>
-                  {([
-                    { value: 'restaurant', symbol: 'fork.knife' },
-                    { value: 'hotel', symbol: 'bed.double.fill' },
-                    { value: 'flight', symbol: 'airplane' },
-                    { value: 'train', symbol: 'tram.fill' },
-                    { value: 'activity', symbol: 'star.fill' },
-                    { value: 'other', symbol: 'doc.text.fill' },
-                  ] as { value: ReservationType; symbol: string }[]).map((opt) => (
-                    <Pressable
-                      key={opt.value}
-                      onPress={() => setResType(opt.value)}
-                      style={[
-                        styles.typeChip,
-                        { backgroundColor: resType === opt.value ? theme.primary : 'transparent', borderWidth: 1, borderColor: resType === opt.value ? theme.primary : theme.border },
-                      ]}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                        <SymbolView name={opt.symbol as any} size={14} tintColor={resType === opt.value ? theme.primaryText : theme.text} />
-                        <ThemedText style={[styles.typeText, resType === opt.value && { color: theme.primaryText }]}>
-                          {opt.value}
-                        </ThemedText>
-                      </View>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {/* Title */}
-                <ThemedText style={styles.modalLabel}>Title *</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resTitle}
-                  onChangeText={setResTitle}
-                  placeholder="e.g. Hotel Majestic, United Flight 123"
-                  placeholderTextColor={theme.textSecondary}
-                  autoFocus={!editingReservation && resEntryMode === 'manual' && !resTitle}
-                  accessibilityLabel="Reservation name"
-                />
-
-                {/* Date fields based on type */}
-                {resType === 'hotel' ? (
-                  <>
-                    <ThemedText style={styles.modalLabel}>Check-in date (YYYY-MM-DD)</ThemedText>
-                    <TextInput
-                      style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                      value={resDate}
-                      onChangeText={(v) => {
-                        setResDate(v);
-                        if (currentTrip.datesKnown !== false && v.trim() && v.trim() >= currentTrip.startDate && v.trim() <= currentTrip.endDate) {
-                          const [sy2, sm2, sd2] = currentTrip.startDate.split('-').map(Number);
-                          const [dy2, dm2, dd2] = v.trim().split('-').map(Number);
-                          const d = Math.round((Date.UTC(dy2, dm2 - 1, dd2) - Date.UTC(sy2, sm2 - 1, sd2)) / 86400000) + 1;
-                          setResDay(String(Math.max(1, Math.min(d, totalDays))));
-                        }
-                      }}
-                      placeholder={currentTrip.startDate}
-                      placeholderTextColor={theme.textSecondary}
-                      accessibilityLabel="Check-in date"
-                    />
-                    <ThemedText style={styles.modalLabel}>Check-out date (YYYY-MM-DD, optional)</ThemedText>
-                    <TextInput
-                      style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                      value={resCheckoutDate}
-                      onChangeText={setResCheckoutDate}
-                      placeholder={currentTrip.endDate}
-                      placeholderTextColor={theme.textSecondary}
-                      accessibilityLabel="Check-out date"
-                    />
-                  </>
-                ) : resType === 'flight' || resType === 'train' ? (
-                  <>
-                    <ThemedText style={styles.modalLabel}>Departure date (YYYY-MM-DD)</ThemedText>
-                    <TextInput
-                      style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                      value={resDate}
-                      onChangeText={(v) => {
-                        setResDate(v);
-                        if (currentTrip.datesKnown !== false && v.trim() && v.trim() >= currentTrip.startDate && v.trim() <= currentTrip.endDate) {
-                          const [sy2, sm2, sd2] = currentTrip.startDate.split('-').map(Number);
-                          const [dy2, dm2, dd2] = v.trim().split('-').map(Number);
-                          const d = Math.round((Date.UTC(dy2, dm2 - 1, dd2) - Date.UTC(sy2, sm2 - 1, sd2)) / 86400000) + 1;
-                          setResDay(String(Math.max(1, Math.min(d, totalDays))));
-                        }
-                      }}
-                      placeholder={currentTrip.startDate}
-                      placeholderTextColor={theme.textSecondary}
-                      accessibilityLabel="Departure date"
-                    />
-                  </>
-                ) : resType === 'restaurant' || resType === 'activity' ? (
-                  <>
-                    <ThemedText style={styles.modalLabel}>Reservation date (YYYY-MM-DD)</ThemedText>
-                    <TextInput
-                      style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                      value={resDate}
-                      onChangeText={(v) => {
-                        setResDate(v);
-                        if (currentTrip.datesKnown !== false && v.trim() && v.trim() >= currentTrip.startDate && v.trim() <= currentTrip.endDate) {
-                          const [sy2, sm2, sd2] = currentTrip.startDate.split('-').map(Number);
-                          const [dy2, dm2, dd2] = v.trim().split('-').map(Number);
-                          const d = Math.round((Date.UTC(dy2, dm2 - 1, dd2) - Date.UTC(sy2, sm2 - 1, sd2)) / 86400000) + 1;
-                          setResDay(String(Math.max(1, Math.min(d, totalDays))));
-                        }
-                      }}
-                      placeholder={currentTrip.startDate}
-                      placeholderTextColor={theme.textSecondary}
-                      accessibilityLabel="Reservation date"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <ThemedText style={styles.modalLabel}>Date (optional, YYYY-MM-DD)</ThemedText>
-                    <TextInput
-                      style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                      value={resDate}
-                      onChangeText={(v) => {
-                        setResDate(v);
-                        if (currentTrip.datesKnown !== false && v.trim() && v.trim() >= currentTrip.startDate && v.trim() <= currentTrip.endDate) {
-                          const [sy2, sm2, sd2] = currentTrip.startDate.split('-').map(Number);
-                          const [dy2, dm2, dd2] = v.trim().split('-').map(Number);
-                          const d = Math.round((Date.UTC(dy2, dm2 - 1, dd2) - Date.UTC(sy2, sm2 - 1, sd2)) / 86400000) + 1;
-                          setResDay(String(Math.max(1, Math.min(d, totalDays))));
-                        }
-                      }}
-                      placeholder="2026-08-20"
-                      placeholderTextColor={theme.textSecondary}
-                      accessibilityLabel="Reservation date"
-                    />
-                  </>
-                )}
-
-                {/* Day selector — only shown when datesKnown is NOT true (dates unknown, so day must be picked manually) */}
-                {currentTrip.datesKnown === false && (
-                  <>
-                    <ThemedText style={styles.modalLabel}>Day (optional)</ThemedText>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moveDayRow}>
-                      <Pressable
-                        onPress={() => setResDay('')}
-                        style={[styles.moveDayChip, { backgroundColor: resDay === '' ? theme.primary : theme.backgroundElement }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Select no day"
-                      >
-                        <ThemedText style={[styles.moveDayText, resDay === '' && { color: theme.primaryText }]}>None</ThemedText>
-                      </Pressable>
-                      {allDays.map((d) => (
-                        <Pressable
-                          key={d}
-                          onPress={() => setResDay(String(d))}
-                          style={[styles.moveDayChip, { backgroundColor: resDay === String(d) ? theme.primary : theme.backgroundElement }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Select day ${d}`}
-                        >
-                          <ThemedText style={[styles.moveDayText, resDay === String(d) && { color: theme.primaryText }]}>Day {d}</ThemedText>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </>
-                )}
-                {/* When datesKnown is true and a date was entered, show the computed day */}
-                {currentTrip.datesKnown !== false && resDay && (
-                  <ThemedText style={[{ fontSize: 13, color: theme.primary, fontWeight: '500' }]}>
-                    Computed: Day {resDay} of trip
-                  </ThemedText>
-                )}
-
-                {/* Time */}
-                <ThemedText style={styles.modalLabel}>Time (optional)</ThemedText>
-                <TimePickerButton value={resTime} onChange={setResTime} />
-
-                {/* Confirmation number */}
-                <ThemedText style={styles.modalLabel}>Confirmation number (optional)</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resConfirmation}
-                  onChangeText={setResConfirmation}
-                  placeholder="ABC123"
-                  placeholderTextColor={theme.textSecondary}
-                  autoCapitalize="characters"
-                  accessibilityLabel="Confirmation number"
-                />
-
-                {/* Booking URL */}
-                <ThemedText style={styles.modalLabel}>Booking URL (optional)</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resBookingUrl}
-                  onChangeText={setResBookingUrl}
-                  placeholder="https://..."
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="url"
-                  autoCapitalize="none"
-                  accessibilityLabel="Booking URL"
-                />
-
-                {/* Price */}
-                <ThemedText style={styles.modalLabel}>Price (optional)</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resPrice}
-                  onChangeText={setResPrice}
-                  placeholder="0.00"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="decimal-pad"
-                  accessibilityLabel="Price"
-                />
-
-                {/* Currency */}
-                <ThemedText style={styles.modalLabel}>Currency</ThemedText>
-                <View style={styles.typeRow}>
-                  {['USD', 'EUR', 'GBP', 'JPY'].map((cur) => (
-                    <Pressable
-                      key={cur}
-                      onPress={() => setResCurrency(cur)}
-                      style={[
-                        styles.typeChip,
-                        { backgroundColor: resCurrency === cur ? theme.primary : 'transparent', borderWidth: 1, borderColor: resCurrency === cur ? theme.primary : theme.border },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Select ${cur} currency`}
-                    >
-                      <ThemedText style={[styles.typeText, resCurrency === cur && { color: theme.primaryText }]}>
-                        {cur}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {/* Address */}
-                <ThemedText style={styles.modalLabel}>Address (optional)</ThemedText>
-                <TextInput
-                  style={[styles.addInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resAddress}
-                  onChangeText={setResAddress}
-                  placeholder="123 Main St, City"
-                  placeholderTextColor={theme.textSecondary}
-                  accessibilityLabel="Address"
-                />
-
-                {/* Notes */}
-                <ThemedText style={styles.modalLabel}>Notes (optional)</ThemedText>
-                <TextInput
-                  style={[styles.addInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.backgroundSelected }]}
-                  value={resNotes}
-                  onChangeText={setResNotes}
-                  placeholder="Additional details..."
-                  placeholderTextColor={theme.textSecondary}
-                  multiline
-                  textAlignVertical="top"
-                  accessibilityLabel="Reservation notes"
-                />
-
-                {/* Cancel reservation button (edit mode only) */}
-                {editingReservation && !editingReservation.cancelled && (
-                  <Pressable
-                    onPress={() => {
-                      Alert.alert('Cancel reservation?', `Mark "${editingReservation.title}" as cancelled?`, [
-                        { text: 'Keep', style: 'cancel' },
-                        {
-                          text: 'Cancel reservation',
-                          style: 'destructive',
-                          onPress: () => {
-                            updateReservation(currentTrip.id, { ...editingReservation, cancelled: true });
-                            setShowAddReservationModal(false);
-                            setEditingReservation(null);
-                          },
-                        },
-                      ]);
-                    }}
-                    style={[styles.resCancelBtn, { borderColor: theme.danger }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cancel reservation"
-                  >
-                    <ThemedText style={[styles.resCancelBtnText, { color: theme.danger }]}>Cancel reservation</ThemedText>
-                  </Pressable>
-                )}
-
-                <Pressable
-                  onPress={() => {
-                    if (!resTitle.trim()) return;
-                    const dayNum = resDay ? parseInt(resDay, 10) : undefined;
-                    if (dayNum != null && dayNum > totalDays) {
-                      Alert.alert('Invalid day', `Day ${dayNum} is outside the trip range (1–${totalDays}).`);
-                      return;
-                    }
-                    if (resDate.trim() && currentTrip.datesKnown !== false && (resDate.trim() < currentTrip.startDate || resDate.trim() > currentTrip.endDate)) {
-                      Alert.alert('Invalid date', `Date ${resDate.trim()} is outside the trip dates (${currentTrip.startDate} to ${currentTrip.endDate}).`);
-                      return;
-                    }
-                    // Build notes, appending checkout date for hotels if provided
-                    const checkoutNote = resType === 'hotel' && resCheckoutDate.trim() ? `Check-out: ${resCheckoutDate.trim()}` : '';
-                    const combinedNotes = [resNotes.trim(), checkoutNote].filter(Boolean).join('\n') || undefined;
-                    const payload: Omit<Reservation, 'id' | 'tripId'> = {
-                      type: resType,
-                      title: resTitle.trim(),
-                      day: dayNum,
-                      time: resTime || undefined,
-                      confirmationNumber: resConfirmation.trim() || undefined,
-                      bookingUrl: resBookingUrl.trim() || undefined,
-                      price: resPrice ? parseFloat(resPrice) : undefined,
-                      notes: combinedNotes,
-                      address: resAddress.trim() || undefined,
-                      currency: resCurrency || undefined,
-                      fixed: true,
-                      date: resDate.trim() || undefined,
-                    };
-                    if (editingReservation) {
-                      updateReservation(currentTrip.id, { ...editingReservation, ...payload });
-                    } else {
-                      addReservation(currentTrip.id, payload);
-                    }
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setShowAddReservationModal(false);
-                    setEditingReservation(null);
-                  }}
-                  style={[styles.addSaveBtn, { backgroundColor: theme.primary, opacity: resTitle.trim() ? 1 : 0.4 }]}
-                  disabled={!resTitle.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel={editingReservation ? 'Save reservation changes' : 'Add reservation'}
-                >
-                  <ThemedText style={[styles.addSaveText, { color: theme.primaryText }]}>
-                    {editingReservation ? 'Save Changes' : 'Add Reservation'}
-                  </ThemedText>
-                </Pressable>
-              </ScrollView>
-            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Post-visit feedback */}
-      {feedbackDay != null && (
-        <PostVisitFeedback
-          activities={(dayMap.get(feedbackDay) ?? []).sort(compareByTime)}
-          dayLabel={formatDayLabel(feedbackDay, currentTrip.startDate, currentTrip.datesKnown)}
-          visible={feedbackDay != null}
-          onClose={() => setFeedbackDay(null)}
-          onFeedback={handlePostVisitFeedback}
-        />
-      )}
+      {/* Booking Modal (shared AddBookingModal) */}
+      <Modal
+        visible={showBookingModal}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setShowBookingModal(false)}
+      >
+        {showBookingModal && (
+          <AddBookingModal
+            visible={showBookingModal}
+            onClose={() => { setShowBookingModal(false); setBookingEditRes(null); setPendingImportData(null); }}
+            editRes={bookingEditRes}
+            pendingImport={pendingImportData}
+            trips={trips}
+            fixedTripId={currentTrip.id}
+            onAdd={addReservation}
+            onUpdate={updateReservation}
+            onDelete={(res, tripId) => {
+              Alert.alert('Remove booking?', `Remove "${res.title}"?`, [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Remove',
+                  style: 'destructive',
+                  onPress: () => {
+                    removeReservation(tripId, res.id);
+                    setShowBookingModal(false);
+                    setBookingEditRes(null);
+                  },
+                },
+              ]);
+            }}
+            onMarkImported={async (id) => {
+              try { await markBookingImportedAI(id); } catch { /* ignore */ }
+              setPendingBookings((prev) => prev.filter((b) => b.id !== id));
+              setPendingImportData(null);
+            }}
+          />
+        )}
+      </Modal>
+
       <UpgradePrompt
         visible={showUpgradePrompt}
         feature={upgradeFeature}
-        title={upgradeFeature === 'edit_trip' ? 'AI trip editing' : upgradeFeature === 'analyze_trip' ? 'Trip analysis' : upgradeFeature === 'natural_search' ? 'AI search' : 'More imports'}
-        description={upgradeFeature === 'edit_trip' ? 'Unlock unlimited AI-powered trip edits with Travonal+.' : upgradeFeature === 'analyze_trip' ? 'Get deep AI analysis of your trips with Travonal+.' : upgradeFeature === 'natural_search' ? 'Search and discover places with AI using Travonal+.' : 'Import places from links, text, and screenshots with Travonal+.'}
-        icon={upgradeFeature === 'edit_trip' ? 'wand.and.stars' : upgradeFeature === 'analyze_trip' ? 'chart.bar' : upgradeFeature === 'natural_search' ? 'magnifyingglass' : 'link'}
+        title={
+          upgradeFeature === 'edit_trip' ? 'AI trip editing' :
+          upgradeFeature === 'analyze_trip' ? 'Trip analysis' :
+          upgradeFeature === 'natural_search' ? 'AI search' :
+          upgradeFeature === 'export_pdf' ? 'Export your itinerary' :
+          'More imports'
+        }
+        description={
+          upgradeFeature === 'edit_trip' ? 'Unlock unlimited AI-powered trip edits with Tripseek+.' :
+          upgradeFeature === 'analyze_trip' ? 'Get deep AI analysis of your trips with Tripseek+.' :
+          upgradeFeature === 'natural_search' ? 'Search and discover places with AI using Tripseek+.' :
+          upgradeFeature === 'export_pdf' ? 'Save or print your trip as a PDF with Tripseek+.' :
+          'Import places from links, text, and screenshots with Tripseek+.'
+        }
+        icon={
+          upgradeFeature === 'edit_trip' ? 'wand.and.stars' :
+          upgradeFeature === 'analyze_trip' ? 'chart.bar' :
+          upgradeFeature === 'natural_search' ? 'magnifyingglass' :
+          upgradeFeature === 'export_pdf' ? 'doc.text' :
+          'link'
+        }
         onClose={() => setShowUpgradePrompt(false)}
       />
+
+      {/* Share / Export sheet */}
+      <Modal visible={showShareSheet} transparent animationType="fade" onRequestClose={() => setShowShareSheet(false)}>
+        <Pressable style={shareSheetStyles.backdrop} onPress={() => setShowShareSheet(false)}>
+          <Pressable style={[shareSheetStyles.sheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 16 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[shareSheetStyles.handle, { backgroundColor: theme.border }]} />
+            <ThemedText style={shareSheetStyles.title}>Share itinerary</ThemedText>
+            <Pressable
+              onPress={() => { setShowShareSheet(false); createShareLink('view'); }}
+              style={({ pressed }) => [shareSheetStyles.option, pressed && { opacity: 0.7 }]}
+            >
+              <View style={[shareSheetStyles.optionIcon, { backgroundColor: theme.primaryMuted }]}>
+                <SymbolView name="link" size={18} tintColor={theme.primary} />
+              </View>
+              <View style={shareSheetStyles.optionText}>
+                <ThemedText style={shareSheetStyles.optionLabel}>Share link</ThemedText>
+                <ThemedText style={[shareSheetStyles.optionDesc, { color: theme.textSecondary }]}>Anyone with the link can view your trip</ThemedText>
+              </View>
+            </Pressable>
+            <View style={[shareSheetStyles.separator, { backgroundColor: theme.border }]} />
+            <Pressable
+              onPress={handleExportPDF}
+              style={({ pressed }) => [shareSheetStyles.option, pressed && { opacity: 0.7 }]}
+            >
+              <View style={[shareSheetStyles.optionIcon, { backgroundColor: exportGate.allowed ? theme.primaryMuted : theme.backgroundElement }]}>
+                <SymbolView name="doc.text" size={18} tintColor={exportGate.allowed ? theme.primary : theme.textSecondary} />
+              </View>
+              <View style={shareSheetStyles.optionText}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ThemedText style={shareSheetStyles.optionLabel}>Export as PDF</ThemedText>
+                  {!exportGate.allowed && (
+                    <View style={[shareSheetStyles.plusBadge, { backgroundColor: theme.primary }]}>
+                      <ThemedText style={shareSheetStyles.plusBadgeText}>Plus</ThemedText>
+                    </View>
+                  )}
+                </View>
+                <ThemedText style={[shareSheetStyles.optionDesc, { color: theme.textSecondary }]}>Save or print a formatted itinerary PDF</ThemedText>
+              </View>
+            </Pressable>
+            <Pressable onPress={() => setShowShareSheet(false)} style={[shareSheetStyles.cancel, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText style={{ fontSize: 16, fontWeight: '600' }}>Cancel</ThemedText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
+
+const shareSheetStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8, paddingHorizontal: 20 },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  title: { fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 20 },
+  option: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
+  optionIcon: { width: 42, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  optionText: { flex: 1, gap: 2 },
+  optionLabel: { fontSize: 16, fontWeight: '600' },
+  optionDesc: { fontSize: 13 },
+  separator: { height: StyleSheet.hairlineWidth, marginHorizontal: 4 },
+  plusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  plusBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  cancel: { marginTop: 12, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 4 },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -5512,66 +6652,15 @@ const styles = StyleSheet.create({
   },
   daySelectorTextActive: {
   },
-  liveDotSmall: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  liveToggleRow: {
-    flexDirection: 'row' as const,
-    gap: 8,
-    paddingHorizontal: Spacing.three,
-    paddingBottom: 8,
-  },
-  liveToggleBtn: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: Radius.md,
-  },
-  liveToggleText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-
-  // Undo banner
-  undoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: Spacing.four,
-    marginTop: Spacing.two,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: Radius.sm,
-  },
-  undoText: {
-    fontSize: 13,
-    flex: 1,
-    marginRight: 8,
-  },
-  undoBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: Radius.md,
-  },
-  undoBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  undoDismissBtn: {
-    padding: 4,
-    marginLeft: 4,
-  },
-  undoDismissText: {
-    fontSize: 12,
-    fontWeight: '300',
-  },
-
   // Itinerary
   itinerary: { paddingHorizontal: Spacing.four, paddingTop: Spacing.three },
+
+  // Section divider
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: Spacing.three,
+    marginBottom: Spacing.four + 8,
+  },
 
   // Day section
   daySection: { marginBottom: Spacing.four },
@@ -5580,29 +6669,198 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingBottom: 8,
   },
   dayLabel: { fontSize: 17, fontWeight: '700' },
+  dayHeaderLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  dayHeaderMeta: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
   dayDate: { fontSize: 13, marginTop: 2 },
   dayAction: { fontSize: 13, fontWeight: '600' },
 
-  // Quick action chips — compact row (not horizontal scroll)
-  quickActionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
+  // Day cards carousel (overview mode)
+  dayCardsCarousel: {
+    marginBottom: Spacing.four,
   },
-  quickActionChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radius.md,
-    backgroundColor: '#F4F5FA',
+  dayCard: {
+    height: 200,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    ...Shadow.medium,
+    shadowColor: '#000000',
   },
-  quickActionText: {
-    fontSize: 12,
+  dayCardImages: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  dayCardEmptyImage: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  dayCardCoverRow: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    gap: 2,
+  },
+  dayCardCoverPinterest: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    gap: 2,
+  },
+  dayCardCoverStack: {
+    flex: 1,
+    gap: 2,
+  },
+  dayCardOverlay: {
+    position: 'absolute' as const,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+  },
+  dayCardLabel: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  dayCardCount: {
+    fontSize: 13,
     fontWeight: '500',
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  dayCardDots: {
+    flexDirection: 'row' as const,
+    justifyContent: 'center' as const,
+    gap: 6,
+    marginTop: 10,
+  },
+  dayCardDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  // Day detail header
+  dayDetailHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginBottom: 18,
+  },
+  dayDetailBackBtn: {
+    width: 30,
+    alignItems: 'flex-start' as const,
+    justifyContent: 'center' as const,
+  },
+  dayDetailAddBtn: {
+    width: 30,
+    alignItems: 'flex-end' as const,
+    justifyContent: 'center' as const,
+  },
+  dayDetailCenter: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 4,
+  },
+
+  // Visual activity cards (day detail mode) — full-bleed style
+  visualActivityCard: {
+    borderRadius: Radius.sm,
+    height: 160,
+    overflow: 'hidden' as const,
+    marginBottom: 10,
+  },
+  visualActivityPhotoPlaceholder: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  visualActivityOverlay: {
+    position: 'absolute' as const,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 14,
+  },
+  visualActivityTime: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.8)',
+  },
+  visualActivityTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  visualActivityMeta: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  activityCardTopRow: {
+    position: 'absolute' as const,
+    top: 10,
+    left: 10,
+    right: 10,
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+  },
+  activityMenuBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  activityStatusBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  activityStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  activityStatusLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+
+  // Day info panel
+  dayInfoPanel: {
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+    gap: 10,
+  },
+  dayInfoRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  dayInfoText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    flex: 1,
   },
 
   // Timeline
@@ -5701,11 +6959,15 @@ const styles = StyleSheet.create({
   },
 
   // Empty day
-  emptyDay: {
+  emptyDayTap: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: Radius.sm,
   },
   emptyDayText: { fontSize: 14 },
 
@@ -5867,19 +7129,15 @@ const styles = StyleSheet.create({
   prepProgressBar: { height: 4, borderRadius: 2, marginBottom: 16 },
   prepProgressFill: { height: 4, borderRadius: 2 },
   prepItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: Radius.sm, marginBottom: 8, gap: 10 },
-  prepCheckbox: { fontSize: 18, lineHeight: 22 },
   prepItemText: { fontSize: 14, fontWeight: '500', flex: 1 },
   prepItemDone: { textDecorationLine: 'line-through', opacity: 0.5 },
-  prepRemove: { fontSize: 14, padding: 4 },
-  prepAddRow: { flexDirection: 'row', gap: 8, marginTop: 8, borderWidth: 1, borderRadius: Radius.sm, paddingHorizontal: 12, alignItems: 'center' },
-  prepAddInput: { flex: 1, paddingVertical: 10, fontSize: 14 },
-  prepAddBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.xs },
-  prepAddBtnText: { fontSize: 13, fontWeight: '600' },
+  prepEmptyCard: { alignItems: 'center', padding: 32, borderRadius: Radius.sm, marginTop: 8 },
+  prepCategoryHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, marginBottom: 6, paddingVertical: 4 },
 
   // Budget
-  budgetCard: { padding: 16, borderRadius: Radius.sm, marginBottom: 12, gap: 4 },
+  budgetCard: { padding: 16, borderRadius: Radius.sm, marginBottom: 12, gap: 6 },
   budgetLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
-  budgetAmount: { fontSize: 24, fontWeight: '700' },
+  budgetAmount: { fontSize: 24, fontWeight: '700', lineHeight: 32 },
   budgetEstNote: { fontSize: 11, fontStyle: 'italic', marginTop: 4 },
   budgetWarning: { fontSize: 12, color: '#DC2626', fontWeight: '600', marginTop: 4 },
   budgetEditRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -5891,6 +7149,9 @@ const styles = StyleSheet.create({
   budgetDayLabel: { fontSize: 14, fontWeight: '600', width: 50 },
   budgetDayAmount: { fontSize: 14, fontWeight: '700', width: 60 },
   budgetDayCount: { fontSize: 12, flex: 1 },
+  budgetProgressTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 8 },
+  budgetProgressFill: { height: '100%', borderRadius: 4 },
+  budgetBookingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 8 },
 
   // Expense cards
   expenseCard: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: Radius.sm, marginBottom: 8, gap: 8 },
@@ -6069,25 +7330,210 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
 
-  // Invite disclaimer
-  inviteDisclaimer: {
-    fontSize: 12,
+  // Email forwarding hero
+  bookingEmailHero: {
+    padding: 16,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 12,
+  },
+  bookingEmailHeroContent: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+  },
+  bookingEmailHeroTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  bookingEmailHeroSub: {
+    fontSize: 13,
     lineHeight: 18,
-    textAlign: 'center',
-    marginTop: 8,
+  },
+  bookingEmailBox: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+  },
+  bookingEmailText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  bookingEmailLoading: {
+    fontSize: 13,
+    paddingLeft: 40,
   },
 
-  // Invitation status badge
-  invStatusBadge: {
+  // Pending bookings from email
+  bookingPendingSection: {
+    marginBottom: 16,
+    gap: 8,
+  },
+  bookingPendingCard: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+  },
+  bookingPendingRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    padding: 12,
+    gap: 12,
+  },
+  bookingPendingIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.xs,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  bookingPendingName: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+  },
+  bookingPendingMeta: {
+    fontSize: 13,
+  },
+  bookingPendingBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
-  invStatusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+  bookingPendingBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
+
+  // Expandable booked card
+  bookedCardContainer: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+    marginBottom: 8,
+  },
+  bookedCardCompact: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    padding: 12,
+    gap: 12,
+  },
+  bookedCardPhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.xs,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    overflow: 'hidden' as const,
+  },
+  bookedCardPhotoImg: {
+    width: 52,
+    height: 52,
+  },
+  bookedCardInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  bookedCardTitle: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+  },
+  bookedCardMeta: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  bookedCardConfirmedBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  bookedCardExpanded: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  bookedCardExpandedPhoto: {
+    width: '100%' as any,
+    height: 160,
+    borderRadius: Radius.xs,
+  },
+  bookedCardTypeBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radius.xs,
+    alignSelf: 'flex-start' as const,
+  },
+  bookedCardTypeText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  bookedCardDivider: {
+    height: 1,
+    marginVertical: 2,
+  },
+  bookedCardDetailRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingVertical: 2,
+  },
+  bookedCardDetailLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    width: 90,
+  },
+  bookedCardDetailValue: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  bookedCardActions: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    marginTop: 2,
+  },
+  bookedCardActionBtn: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: Radius.sm,
+  },
+  bookedCardActionText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+
+  // Unbooked nudge text
+  bookingUnbookedNudge: {
+    fontSize: 12,
+    fontStyle: 'italic' as const,
+    marginTop: 4,
+  },
+
+  // Manual entry fallback
+  manualEntryLink: {
+    alignItems: 'center' as const,
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  manualEntryText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    textDecorationLine: 'underline' as const,
+  },
+
 
   // Reservation modal extras
   resProtectedRow: {
@@ -6102,31 +7548,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  resCancelBtn: {
-    borderWidth: 1.5,
-    borderRadius: Radius.sm,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  resCancelBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Reservation entry mode choice buttons
-  resChoiceBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 16,
-  },
-  resChoiceBtnIcon: { width: 36, alignItems: 'center' as const, justifyContent: 'center' as const },
-  resChoiceBtnTitle: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
-  resChoiceBtnDesc: { fontSize: 13, lineHeight: 18 },
-
   // Budget currency row
   budgetCurrencyRow: {
     flexDirection: 'row',
@@ -6152,263 +7573,347 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
 
-  // Offline readiness
-  offlineSection: {
-    marginTop: 20,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(128,128,128,0.2)',
-  },
-  offlineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-  },
-  offlineIcon: {
-    fontSize: 16,
-    lineHeight: 20,
-  },
-  offlineText: {
-    fontSize: 13,
-    flex: 1,
-  },
-
-  // Members tab
-  memberRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    padding: 14,
-    marginBottom: 10,
-  },
-  memberRowLeft: { flex: 1, gap: 4 },
-  memberName: { fontSize: 16, fontWeight: '600' },
-  memberRoleBadge: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  memberRoleText: { fontSize: 12, fontWeight: '600' },
-  inviteForm: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 16,
-    gap: 6,
-  },
-  inviteCodeBox: {
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    padding: 12,
-    gap: 4,
-    alignItems: 'center',
-  },
   dayHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   distanceIndicator: {
-    paddingLeft: 78, // align with activity content (time col + dot col)
-    marginTop: -4,
-    marginBottom: -2,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 4,
+    paddingVertical: 6,
   },
   distanceText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '500' as const,
   },
 
-  // AI view (Edit with AI tab)
-  aiView: {
+  // Edit with AI chat
+  editChatHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  editChatHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '600' as const,
+  },
+  editChatContainer: {
+    flex: 1,
+  },
+  editChatBottomBar: {
+    position: 'absolute' as const,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  editChatList: {
     padding: Spacing.four,
+    paddingBottom: 120,
   },
-  aiViewTitle: {
-    fontSize: 22,
-    fontWeight: '700' as const,
-    marginBottom: 4,
-  },
-  aiViewSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  aiViewInputRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    borderWidth: 1,
+  editChatBubble: {
+    maxWidth: '82%' as any,
     borderRadius: Radius.md,
+    padding: 14,
+    marginBottom: 10,
+  },
+  editChatBubbleUser: {
+    alignSelf: 'flex-end' as const,
+    borderBottomRightRadius: 4,
+  },
+  editChatBubbleCompact: {
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
-    gap: 8,
   },
-  aiViewInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-  aiViewSendBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  aiViewDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 24,
-  },
-  aiViewSectionLabel: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-
-  // Trip Analysis
-  analysisCard: {
-    padding: 16,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    marginBottom: Spacing.four,
-  },
-  analysisCardHeader: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 12,
-  },
-  analysisCardTextCol: {
-    flex: 1,
-    flexShrink: 1,
-  },
-  analysisCardTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-  },
-  analysisCardDesc: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  analysisLoadingText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-  analysisResults: {
-    gap: 10,
-    marginBottom: 8,
-  },
-  analysisOverall: {
-    padding: 16,
-    borderRadius: Radius.md,
-    alignItems: 'center' as const,
-    gap: 8,
-  },
-  analysisScoreRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'baseline' as const,
-  },
-  analysisScoreNum: {
-    fontSize: 36,
-    fontWeight: '800' as const,
-  },
-  analysisScoreLabel: {
-    fontSize: 18,
-    fontWeight: '600' as const,
-  },
-  analysisOverallText: {
-    fontSize: 14,
-    textAlign: 'center' as const,
-    lineHeight: 20,
-  },
-  analysisRefreshBtn: {
+  editChatContextTag: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 4,
-    marginTop: 4,
+    marginBottom: 4,
+    paddingLeft: 4,
   },
-  analysisRefreshText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-  analysisCatCard: {
-    borderRadius: Radius.md,
-    overflow: 'hidden' as const,
-  },
-  analysisCatHeader: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    padding: 14,
-    gap: 10,
-  },
-  analysisCatEmoji: {
-    fontSize: 20,
-  },
-  analysisCatLabel: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-  },
-  analysisCatScoreBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  analysisCatScoreText: {
+  editChatContextText: {
     fontSize: 12,
-    fontWeight: '700' as const,
+    fontWeight: '500' as const,
+    fontStyle: 'italic' as const,
   },
-  analysisCatBody: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
+  editChatBubbleAssistant: {
+    alignSelf: 'flex-start' as const,
+    borderBottomLeftRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  analysisCatSummary: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 10,
+  editChatWelcomeList: {
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 8,
   },
-  analysisSuggestions: {
-    gap: 8,
-  },
-  analysisSugRow: {
+  editChatWelcomeRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 10,
   },
-  analysisSugText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
+  editChatWelcomeEmoji: {
+    fontSize: 16,
+    width: 22,
+    textAlign: 'center' as const,
   },
-  analysisSugBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  editChatWelcomeLabel: {
+    fontSize: 14,
+    lineHeight: 20,
+    flex: 1,
+  },
+  editChatAssistantLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    opacity: 0.5,
+  },
+  editChatBubbleText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  editChatTime: {
+    fontSize: 10,
+    marginTop: 3,
+    marginBottom: 4,
+    alignSelf: 'flex-start' as const,
+    marginLeft: 4,
+  },
+  editChatTimeUser: {
+    alignSelf: 'flex-end' as const,
+    marginLeft: 0,
+    marginRight: 4,
+  },
+  editChatActionsContainer: {
+    gap: 6,
+    marginBottom: 10,
+    maxWidth: '82%' as any,
+  },
+  editChatActionResult: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    padding: 10,
     borderRadius: Radius.sm,
   },
-  analysisSugBtnText: {
-    fontSize: 12,
+  editChatActionLabel: {
+    fontSize: 13,
     fontWeight: '600' as const,
   },
-  aiViewCommands: {
+  editChatActionDetail: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  editChatConfirmCard: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 10,
+    maxWidth: '82%' as any,
     gap: 8,
   },
-  aiViewCommandRow: {
+  editChatConfirmHeader: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    padding: 14,
-    borderRadius: Radius.md,
-    gap: 12,
+    gap: 8,
   },
-  aiViewCommandText: {
+  editChatConfirmTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  editChatConfirmAction: {
+    fontSize: 13,
+    paddingLeft: 24,
+  },
+  editChatConfirmBtns: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    marginTop: 4,
+  },
+  editChatConfirmBtn: {
     flex: 1,
+    alignItems: 'center' as const,
+    paddingVertical: 10,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  aiViewCommandLabel: {
+  editChatRetryBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    marginBottom: 10,
+  },
+  editChatTyping: {
+    alignSelf: 'flex-start' as const,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  editChatTypingText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    fontStyle: 'italic' as const,
+  },
+  editChatSugRow: {
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  editChatSugChip: {
+    borderWidth: 1,
+    borderRadius: Radius.xl,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  editChatSugText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  editChatInputBar: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  editChatTextInput: {
+    flex: 1,
+    fontSize: 15,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 16,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    maxHeight: 100,
+  },
+  editChatSendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  editChatBarBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+
+  // Edit thread list
+  editThreadBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end' as const,
+  },
+  editThreadSheet: {
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
+    paddingTop: 12,
+    paddingHorizontal: Spacing.four,
+    maxHeight: '70%' as any,
+  },
+  editThreadHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center' as const,
+    marginBottom: 16,
+  },
+  editThreadSheetTitle: {
+    textAlign: 'center' as const,
+    marginBottom: 16,
+  },
+  editThreadNewBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    marginBottom: 12,
+  },
+  editThreadNewBtnText: {
     fontSize: 15,
     fontWeight: '600' as const,
   },
-  aiViewCommandDesc: {
-    fontSize: 13,
-    marginTop: 1,
+  editThreadList: {
+    maxHeight: 400,
+  },
+  editThreadCard: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    marginBottom: 8,
+    overflow: 'hidden' as const,
+  },
+  editThreadRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+  },
+  editThreadRowContent: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 4,
+  },
+  editThreadDotsBtn: {
+    padding: 12,
+  },
+  editThreadRowText: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+  },
+  editThreadTitle: {
+    fontSize: 15,
+    fontWeight: '500' as const,
+    flex: 1,
+    marginRight: 8,
+  },
+  editThreadDate: {
+    fontSize: 12,
+  },
+  editThreadEmpty: {
+    textAlign: 'center' as const,
+    paddingVertical: 24,
+    fontSize: 14,
+  },
+  editThreadOptionBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+  },
+  editThreadOptionText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  editThreadOptionDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  editThreadRenameRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  editThreadRenameInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 4,
   },
 
   // Floating chat bar

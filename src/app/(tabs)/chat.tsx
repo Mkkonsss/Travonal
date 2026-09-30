@@ -16,7 +16,6 @@ import {
 import { SymbolView } from 'expo-symbols';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image as ExpoImage } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,13 +23,14 @@ import { ChatMarkdown } from '@/components/chat-markdown';
 import { BoardPicker } from '@/components/board-picker';
 import { Radius, Spacing } from '@/constants/theme';
 import { useProfile } from '@/context/profile';
-import { useTrips } from '@/context/trips';
+import { useTrips, getLastViewedTripId } from '@/context/trips';
 import { useBoards } from '@/context/boards';
 import { useInbox } from '@/context/inbox';
 import { useMemory } from '@/context/memory';
 import { useTheme } from '@/hooks/use-theme';
 import { loadChatMessages, saveChatMessages, loadChatThreads, saveChatThreads } from '@/services/storage';
-import { chatAI, getPlacePhotoAI, type TripAction, type ChatPlace } from '@/services/ai';
+import { chatAI, type TripAction, type ChatPlace } from '@/services/ai';
+import { ChatPlaceCard, placeStyles } from '@/components/chat-place-card';
 import { normalizeTimeTo24 } from '@/services/ai-utils';
 import { compareByTime } from '@/services/itinerary-engine';
 import { useGate } from '@/hooks/use-gate';
@@ -259,172 +259,6 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-// ---------- Place Photo Hook ----------
-
-function usePlacePhoto(ref: string | undefined) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!ref) return;
-    let cancelled = false;
-    getPlacePhotoAI({ reference: ref, maxWidth: 400 }).then(({ url: u }) => {
-      if (!cancelled) setUrl(u);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [ref]);
-  return url;
-}
-
-// ---------- Place Card ----------
-
-const ChatPlaceCard = memo(function ChatPlaceCard({
-  place,
-  onAddToTrip,
-  onSaveToBoard,
-  isPrimary,
-}: {
-  place: ChatPlace;
-  onAddToTrip: () => void;
-  onSaveToBoard: () => void;
-  isPrimary?: boolean;
-}) {
-  const theme = useTheme();
-  const router = useRouter();
-  const photoUrl = usePlacePhoto(place.photoRefs?.[0]);
-
-  function openDetail() {
-    let url = `/place-detail?name=${encodeURIComponent(place.name)}`;
-    if (place.placeId) url += `&placeId=${encodeURIComponent(place.placeId)}`;
-    if (place.address) url += `&address=${encodeURIComponent(place.address)}`;
-    if (place.rating != null) url += `&rating=${place.rating}`;
-    if (place.ratingCount != null) url += `&reviewCount=${place.ratingCount}`;
-    if (place.lat != null) url += `&lat=${place.lat}`;
-    if (place.lng != null) url += `&lng=${place.lng}`;
-    router.push(url as any);
-  }
-
-  const typeLabel = place.types?.[0]?.replace(/_/g, ' ') ?? '';
-
-  return (
-    <Pressable
-      onPress={openDetail}
-      style={({ pressed }) => [
-        placeStyles.card,
-        isPrimary && placeStyles.cardPrimary,
-        { backgroundColor: theme.backgroundElement, borderColor: theme.border },
-        pressed && { opacity: 0.85 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={`View ${place.name}`}
-    >
-      {photoUrl ? (
-        <ExpoImage source={{ uri: photoUrl }} style={[placeStyles.cardImage, isPrimary && placeStyles.cardImagePrimary]} contentFit="cover" cachePolicy="memory-disk" />
-      ) : (
-        <View style={[placeStyles.cardImage, isPrimary && placeStyles.cardImagePrimary, { backgroundColor: theme.border }]}>
-          <SymbolView name="mappin" size={22} tintColor={theme.textSecondary} />
-        </View>
-      )}
-      <View style={placeStyles.cardInfo}>
-        <ThemedText style={placeStyles.cardName} numberOfLines={2}>{place.name}</ThemedText>
-        <View style={placeStyles.cardMeta}>
-          {place.rating != null && (
-            <View style={placeStyles.ratingRow}>
-              <SymbolView name="star.fill" size={10} tintColor="#F59E0B" />
-              <ThemedText style={placeStyles.ratingText}>{place.rating.toFixed(1)}</ThemedText>
-            </View>
-          )}
-          {typeLabel ? (
-            <ThemedText style={[placeStyles.typeText, { color: theme.textSecondary }]} numberOfLines={1}>
-              {typeLabel}
-            </ThemedText>
-          ) : null}
-        </View>
-      </View>
-      <View style={[placeStyles.actionRow, { borderTopColor: theme.border }]}>
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onAddToTrip(); }}
-          hitSlop={4}
-          style={({ pressed }) => [placeStyles.actionBtn, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityLabel={`Add ${place.name} to trip`}
-        >
-          <SymbolView name="plus.circle" size={14} tintColor={theme.primary} />
-        </Pressable>
-        <View style={[placeStyles.actionDivider, { backgroundColor: theme.border }]} />
-        <Pressable
-          onPress={(e) => { e.stopPropagation(); onSaveToBoard(); }}
-          hitSlop={4}
-          style={({ pressed }) => [placeStyles.actionBtn, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityLabel={`Save ${place.name} to board`}
-        >
-          <SymbolView name="bookmark" size={14} tintColor={theme.primary} />
-        </Pressable>
-      </View>
-    </Pressable>
-  );
-});
-
-const placeStyles = StyleSheet.create({
-  card: {
-    width: 180,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  cardPrimary: {
-    width: 220,
-  },
-  cardImage: {
-    width: '100%',
-    height: 90,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardImagePrimary: {
-    height: 110,
-  },
-  cardInfo: {
-    padding: 10,
-    gap: 3,
-  },
-  cardName: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cardMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  ratingText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  typeText: {
-    fontSize: 11,
-    textTransform: 'capitalize',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
-  },
-  actionDivider: {
-    width: StyleSheet.hairlineWidth,
-  },
-});
 
 // ---------- Typing Indicator ----------
 
@@ -502,7 +336,6 @@ const typingStyles = StyleSheet.create({
     borderRadius: Radius.md,
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.four,
   },
   text: {
     fontSize: 14,
@@ -881,11 +714,20 @@ function buildContext(
     }
   }
 
-  // Memory
+  // Memory — grouped by category for stronger signal
   if (memoryEntries.length) {
     lines.push('\nTravel preferences learned:');
+    const grouped = new Map<string, string[]>();
     for (const e of memoryEntries) {
-      lines.push(`- ${e.detail}`);
+      const key = e.category ?? 'general';
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(e.detail);
+    }
+    for (const [category, details] of grouped) {
+      lines.push(`[${category}] (${details.length} signal${details.length > 1 ? 's' : ''}):`);
+      for (const d of details) {
+        lines.push(`  - ${d}`);
+      }
     }
   }
 
@@ -915,12 +757,16 @@ function resolveMentionedTrip(
     return state !== 'past';
   });
 
-  // Check if the message mentions any trip by title, destination, or country
+  // Check if the message mentions any trip by title, destination, or country.
+  // Also try the city portion of destination (before first comma) so "Paris"
+  // matches a destination stored as "Paris, France".
   for (const trip of relevantTrips) {
+    const cityPart = trip.destination?.split(',')[0]?.trim();
     const candidates = [
       trip.title,
       trip.destination,
       trip.country,
+      cityPart,
     ].filter(Boolean).map((s) => s!.toLowerCase());
     if (candidates.some((c) => c.length > 1 && lower.includes(c))) return trip;
   }
@@ -929,6 +775,13 @@ function resolveMentionedTrip(
   if (lastActedTripId) {
     const lastActed = relevantTrips.find((t) => t.id === lastActedTripId);
     if (lastActed) return lastActed;
+  }
+
+  // Fall back to the last trip the user was viewing (e.g. switched from trip page)
+  const lastViewedId = getLastViewedTripId();
+  if (lastViewedId) {
+    const lastViewed = relevantTrips.find((t) => t.id === lastViewedId);
+    if (lastViewed) return lastViewed;
   }
 
   // Only one non-past trip — use it unambiguously
@@ -946,7 +799,7 @@ export default function ChatScreen() {
   const theme = useTheme();
   const { trips, getTripState, getTrip, addActivity, removeActivity, updateActivity, moveActivity, replaceActivity, setTripActivities, addTripWithActivities, updateTrip, deleteTrip, addReservation, updateReservation, removeReservation, toggleLock } = useTrips();
   const { profile, updateProfile } = useProfile();
-  const { getActiveEntries } = useMemory();
+  const { getActiveEntries, addEntry: addMemoryEntry } = useMemory();
   const { boards, addItemToBoard, createBoard, deleteBoard, renameBoard, removeItemFromBoard, markItemPlanned } = useBoards();
   const { savedPlaces } = useInbox();
   const { user } = useAuth();
@@ -1594,7 +1447,7 @@ export default function ChatScreen() {
         role: 'assistant',
         text: chatGate.isPlus
           ? 'You\u2019ve used all 50 AI messages this month. Your allowance resets next billing cycle.'
-          : 'You\u2019ve used your 10 free messages this month. Upgrade to Travonal+ for 50 messages per month.',
+          : 'You\u2019ve used your 10 free messages this month. Upgrade to Tripseek+ for 50 messages per month.',
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, { id: generateId(), role: 'user', text: text.trim(), timestamp: Date.now() }, limitMsg]);
@@ -1648,6 +1501,20 @@ export default function ChatScreen() {
         activeTripId: mentionedTrip?.id,
         activeTrip: mentionedTrip,
       });
+
+      // Process memory signals extracted by AI from the conversation
+      if (result.memorySignals && result.memorySignals.length > 0) {
+        for (const signal of result.memorySignals) {
+          addMemoryEntry({
+            type: (signal.type || 'preference_saved') as any,
+            category: (signal.category || 'preference') as any,
+            detail: signal.detail,
+            tripId: mentionedTrip?.id ?? '',
+            isGlobal: true,
+            origin: 'Chat conversation',
+          });
+        }
+      }
 
       // Fix up tripIds: if the AI used a tripId that doesn't match any real trip,
       // substitute the resolved mentionedTrip's ID (the AI often fabricates or picks wrong IDs).
@@ -1765,7 +1632,7 @@ export default function ChatScreen() {
         id: generateId(),
         role: 'assistant',
         text: isUsageLimit
-          ? String((err as any).message ?? 'Message limit reached. Upgrade to Travonal+ for more.')
+          ? String((err as any).message ?? 'Message limit reached. Upgrade to Tripseek+ for more.')
           : "Something went wrong — trying again...",
         timestamp: Date.now(),
         failed: !isUsageLimit,
@@ -1823,18 +1690,29 @@ export default function ChatScreen() {
 
     const content = (
       <>
-        <View
-          style={[
-            styles.messageBubble,
-            isUser
-              ? [styles.userBubble, { backgroundColor: theme.primary }]
-              : [styles.assistantBubble, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
-          ]}
-        >
+        <View style={isUser ? styles.userRow : styles.assistantRow}>
           {!isUser && (
-            <ThemedText style={styles.assistantLabel}>Travonal</ThemedText>
+            <View style={[styles.avatarCircle, { backgroundColor: theme.text }]}>
+              <ThemedText style={[styles.avatarLabel, { color: theme.background }]}>TS</ThemedText>
+            </View>
           )}
-          <ChatMarkdown text={item.text} isUser={isUser} />
+          <View
+            style={[
+              styles.messageBubble,
+              isUser
+                ? [styles.userBubble, { backgroundColor: theme.primary }]
+                : [styles.assistantBubble, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
+            ]}
+          >
+            <ChatMarkdown text={item.text} isUser={isUser} />
+          </View>
+          {isUser && (
+            <View style={[styles.avatarCircle, { backgroundColor: theme.primaryMuted }]}>
+              <ThemedText style={[styles.avatarLabel, { color: theme.primary }]}>
+                {(user?.email?.[0] ?? 'U').toUpperCase()}
+              </ThemedText>
+            </View>
+          )}
         </View>
         {timeStr && (
           <ThemedText style={[styles.messageTime, { color: theme.textSecondary }, isUser && styles.messageTimeUser]}>
@@ -1860,8 +1738,8 @@ export default function ChatScreen() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.placeCardsContainer}
-            style={styles.placeCardsScroll}
+            contentContainerStyle={placeStyles.cardsContainer}
+            style={placeStyles.cardsScroll}
           >
             {item.places.slice(0, 5).map((place, i) => (
               <ChatPlaceCard
@@ -1877,7 +1755,7 @@ export default function ChatScreen() {
 
         {/* Action result cards */}
         {!isUser && item.actionResults && item.actionResults.length > 0 && (
-          <View style={styles.placeCardsContainer}>
+          <View style={placeStyles.cardsContainer}>
             {item.actionResults.map((ar, i) => (
               <ActionResultCard key={`ar${i}`} result={ar} theme={theme} />
             ))}
@@ -1963,7 +1841,7 @@ export default function ChatScreen() {
           style={styles.headerTitleBtn}
         >
           <ThemedText style={styles.headerTitle} numberOfLines={1}>
-            {activeThreadId ? (threads.find((t) => t.id === activeThreadId)?.title ?? 'Ask Travonal') : 'Ask Travonal'}
+            {activeThreadId ? (threads.find((t) => t.id === activeThreadId)?.title ?? 'Ask Tripseek') : 'Ask Tripseek'}
           </ThemedText>
           {(() => {
             const sel = selectedTripId ? trips.find((t) => t.id === selectedTripId) : undefined;
@@ -2110,6 +1988,9 @@ export default function ChatScreen() {
               initialNumToRender={15}
               ListFooterComponent={isTyping ? (
                 <Animated.View entering={FadeIn.duration(200)} style={styles.typingRow}>
+                  <View style={[styles.avatarCircle, { backgroundColor: theme.text }]}>
+                    <ThemedText style={[styles.avatarLabel, { color: theme.background }]}>TS</ThemedText>
+                  </View>
                   <TypingIndicator userMessage={messages.filter((m) => m.role === 'user').pop()?.text} />
                 </Animated.View>
               ) : null}
@@ -2337,8 +2218,32 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 12,
   },
+  userRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'flex-end' as const,
+    alignItems: 'flex-end' as const,
+    gap: 8,
+  },
+  assistantRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    gap: 8,
+  },
+  avatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    flexShrink: 0,
+  },
+  avatarLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.2,
+  },
   messageBubble: {
-    maxWidth: '82%',
+    maxWidth: '78%',
     borderRadius: Radius.md,
     padding: 14,
     gap: 4,
@@ -2351,13 +2256,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  assistantLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    opacity: 0.5,
   },
   messageTime: {
     fontSize: 10,
@@ -2385,16 +2283,6 @@ const styles = StyleSheet.create({
     color: '#E53935',
   },
   // Place cards
-  placeCardsScroll: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-  },
-  placeCardsContainer: {
-    gap: 10,
-    paddingRight: 4,
-  },
-
   // Context label
   contextLabelRow: {
     flexDirection: 'row',
@@ -2434,6 +2322,9 @@ const styles = StyleSheet.create({
   // Typing
   typingRow: {
     paddingTop: 8,
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    gap: 8,
   },
 
   // Empty state

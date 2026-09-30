@@ -9,7 +9,6 @@ export interface InboxItem {
   source?: string; // URL or "Camera Roll"
   category?: string;
   cost?: 'free' | 'budget' | 'moderate' | 'premium';
-  duration?: number;
   description?: string;
   tags?: string[];
   crowdLevel?: 'low' | 'medium' | 'high';
@@ -29,7 +28,6 @@ export interface SavePlaceInput {
   type: 'flight' | 'hotel' | 'activity' | 'food';
   category: string;
   cost: 'free' | 'budget' | 'moderate' | 'premium';
-  duration: number;
   description: string;
   tags: string[];
   crowdLevel?: 'low' | 'medium' | 'high';
@@ -152,7 +150,6 @@ export function InboxProvider({ children }: { children: ReactNode }) {
       destination: place.destination,
       category: place.category,
       cost: place.cost,
-      duration: place.duration,
       description: place.description,
       tags: place.tags,
       crowdLevel: place.crowdLevel,

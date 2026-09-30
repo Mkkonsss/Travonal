@@ -98,7 +98,7 @@ export default function SignUpScreen() {
           </View>
         </Pressable>
 
-        <Text style={styles.wordmark}>✦  TRAVONAL</Text>
+        <Text style={styles.wordmark}>✦  TOVELI</Text>
 
         <View style={styles.hero}>
           <SymbolView name="airplane" size={36} tintColor="#111827" style={styles.heroEmoji} />

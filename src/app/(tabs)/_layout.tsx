@@ -4,7 +4,7 @@ import { SymbolView } from 'expo-symbols';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
-import { HouseIcon, PersonIcon, SuitcaseIcon, BoardsIcon } from '@/components/icons';
+import { HouseIcon, PersonIcon, SuitcaseIcon, BoardsIcon, BookingsIcon, JoinTripIcon } from '@/components/icons';
 import { useTheme } from '@/hooks/use-theme';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 
@@ -46,7 +46,9 @@ function NewTripIcon() {
 
 const PLUS_ACTIONS = [
   { key: 'trip', Icon: SuitcaseIcon, label: 'Plan a new trip', desc: 'Start planning your next adventure', route: '/add-trip' },
-  { key: 'board', Icon: BoardsIcon, label: 'Create a board', desc: 'Organize travel ideas, links & screenshots', route: '/inbox' },
+  { key: 'join', Icon: JoinTripIcon, label: 'Join a trip', desc: 'Enter an invite code to join someone\'s trip', route: '/join-trip' },
+  { key: 'board', Icon: BoardsIcon, label: 'Create a board', desc: 'Save and organize your travel inspiration', route: '/inbox' },
+  { key: 'bookings', Icon: BookingsIcon, label: 'My Bookings', desc: 'View and manage your trip bookings', route: '/bookings' },
 ] as const;
 
 export default function TabLayout() {

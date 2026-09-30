@@ -102,9 +102,7 @@ export interface NowPosition {
 
 /**
  * Determine where "now" falls in today's schedule.
- * - pastActivities: activities whose end time (time + duration) has passed
- * - currentActivity: activity that is happening right now (started but not ended)
- * - upcomingActivities: activities that haven't started yet
+ * Uses a fixed 60-minute slot per activity for current/past/upcoming classification.
  */
 export function getNowPosition(trip: Trip, timezone?: string): NowPosition {
   const { timeStr } = getDestinationNow(timezone);
@@ -121,7 +119,7 @@ export function getNowPosition(trip: Trip, timezone?: string): NowPosition {
 
   for (const a of dayActivities) {
     const startMin = timeToMinutes(a.time);
-    const endMin = startMin + (a.duration ?? 60);
+    const endMin = startMin + 60;
 
     if (endMin <= nowMinutes) {
       past.push(a);

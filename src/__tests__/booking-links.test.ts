@@ -2,7 +2,7 @@ import { getBookingLinks, getPrimaryBookingLink, isBookableActivity, getTripRead
 import { Activity } from '@/context/trips';
 
 function makeActivity(overrides: Partial<Activity> & { id: string; title: string; day: number; time: string; type: Activity['type'] }): Activity {
-  return { duration: 60, ...overrides };
+  return { ...overrides };
 }
 
 describe('getBookingLinks', () => {

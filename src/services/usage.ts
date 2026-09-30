@@ -1,5 +1,5 @@
 /**
- * Travonal+ usage tracking service.
+ * Tripseek+ usage tracking service.
  *
  * Talks to the Supabase `check_and_use`, `rollback_usage`, and
  * `get_usage_summary` RPC functions. Caches the last-known usage
@@ -10,7 +10,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-const CACHE_KEY = '@travonal/usage_summary';
+const CACHE_KEY = '@toveli/usage_summary';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +79,10 @@ export function getActionCategory(action: string): UsageCategory | null {
       return 'assistance';
     case 'import_place':
       return 'import';
+    case 'export_pdf':
+    case 'invite_member':
+      // Gated but not metered (no server counter)
+      return null;
     default:
       // Ungated actions: google_places, place_details, city_autocomplete,
       // places_nearby, get_photo_key, place_photo, photo_cache_*
@@ -92,7 +96,7 @@ export function isFreeActionAllowed(action: string): boolean {
   if (category === null) return true; // ungated
   if (category === 'generation') return true; // limited but allowed
   if (category === 'import') return true; // limited but allowed
-  // assistance: only chat is free
+  // assistance: only chat is free (editing/search/analysis are Plus-only)
   return action === 'chat';
 }
 
@@ -208,11 +212,9 @@ function getDefaultSummary(): UsageSummary {
     imports_text_lifetime: 0,
     imports_image_lifetime: 0,
     limits: {
-      generations_lifetime: 2,
-      assistance: 10,
-      imports_link_lifetime: 2,
-      imports_text_lifetime: 2,
-      imports_image_lifetime: 1,
+      generations: 1,    // 1 trip generation/month on free
+      assistance: 20,    // 20 chat messages/month on free
+      imports: 3,        // 3 imports/month on free (unified across types)
     },
   };
 }

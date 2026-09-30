@@ -9,7 +9,7 @@ import type { TravelProfile } from '@/context/profile';
 
 const PACE_IDX: Record<string, number> = { relaxed: 0, moderate: 1, active: 2 };
 const FLEX_IDX: Record<string, number> = { planned: 0, some: 1, freeflow: 2 };
-const BUDGET_IDX: Record<string, number> = { budget: 0, moderate: 1, premium: 2 };
+const BUDGET_IDX: Record<string, number> = { '$': 0, '$$': 1, '$$$': 2, '$$$$': 3 };
 
 function ScaleBar({
   label,
@@ -82,7 +82,7 @@ export function TravelStyleCard({
           <ScaleBar label="Pace" left="Relaxed" right="Active" value={PACE_IDX[profile.pace] ?? 1} theme={theme} />
           <ScaleBar label="Flexibility" left="Planned" right="Spontaneous" value={FLEX_IDX[profile.flexibility] ?? 1} theme={theme} />
           {profile.budget != null && (
-            <ScaleBar label="Budget" left="Budget" right="Premium" value={BUDGET_IDX[profile.budget] ?? 1} theme={theme} />
+            <ScaleBar label="Budget" left="$" right="$$$$" value={Math.round((BUDGET_IDX[profile.budget] ?? 1) * 2 / 3)} theme={theme} />
           )}
         </View>
       )}

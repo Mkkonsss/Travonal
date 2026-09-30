@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Dimensions, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 
@@ -11,6 +11,7 @@ import { Spacing, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useToast } from '@/context/toast';
 import { useSubscription } from '@/context/subscription';
+import { TERMS_OF_USE_URL, PRIVACY_POLICY_URL } from '@/constants/legal';
 import {
   SubscriptionProduct,
   SubscriptionStatus,
@@ -27,13 +28,11 @@ const SLIDE_PADDING = 24;
 // ─── Slide 1: Features ─────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: 'sparkles', title: '3 AI trip plans / month', desc: 'Full AI-powered itineraries, regenerated fresh every month' },
-  { icon: 'bubble.left.and.bubble.right', title: '50 AI messages / month', desc: 'Chat with your AI travel assistant to refine any plan' },
-  { icon: 'wand.and.stars', title: 'AI trip editing', desc: 'Restructure your itinerary with a single instruction' },
-  { icon: 'chart.bar', title: 'Trip analysis', desc: 'Deep AI review of pacing, balance, and logistics' },
-  { icon: 'square.and.arrow.down', title: '10 imports / month', desc: 'Import places from links, text, and screenshots' },
-  { icon: 'magnifyingglass', title: 'Natural language search', desc: 'Find activities by describing what you want' },
-  { icon: 'brain', title: 'Smart fixes', desc: 'Auto-resolve schedule conflicts with one tap' },
+  { icon: 'sparkles', title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month — one for every adventure' },
+  { icon: 'bubble.left.and.bubble.right', title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
+  { icon: 'square.and.arrow.down', title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere — Tripseek finds the place' },
+  { icon: 'doc.text', title: 'PDF export', desc: 'Save or print your itinerary as a formatted PDF' },
+  { icon: 'person.2', title: 'Trip collaboration', desc: 'Invite companions to view or co-edit your itinerary together' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {
@@ -60,19 +59,21 @@ function FeaturesSlide({ theme }: { theme: any }) {
 // ─── Slide 2: Free vs Plus ──────────────────────────────────────────────────
 
 const COMPARISON = [
-  { label: 'AI trip plans', free: '2 lifetime', plus: '3 / month' },
-  { label: 'AI messages', free: '10 / month', plus: '50 / month' },
-  { label: 'Imports', free: '5 lifetime', plus: '10 / month' },
-  { label: 'AI editing', free: '\u2014', plus: '\u2713' },
-  { label: 'Trip analysis', free: '\u2014', plus: '\u2713' },
-  { label: 'Smart fixes', free: '\u2014', plus: '\u2713' },
-  { label: 'Natural search', free: '\u2014', plus: '\u2713' },
+  { label: 'AI trip plans', free: '1 / month', plus: '5 / month' },
+  { label: 'AI chat messages', free: '20 / month', plus: '100 / month' },
+  { label: 'Board imports', free: '3 / month', plus: '15 / month' },
+  { label: 'PDF export', free: '\u2014', plus: '\u2713' },
+  { label: 'Trip collaboration', free: '\u2014', plus: '\u2713' },
+  { label: 'Trip management', free: '\u2713', plus: '\u2713' },
+  { label: 'Explore & map', free: '\u2713', plus: '\u2713' },
+  { label: 'Boards & saves', free: '\u2713', plus: '\u2713' },
+  { label: 'Booking tracking', free: '\u2713', plus: '\u2713' },
 ];
 
 function ComparisonSlide({ theme }: { theme: any }) {
   return (
     <View style={slideStyles.slideContainer}>
-      <ThemedText style={slideStyles.slideTitle}>Free vs Travonal+</ThemedText>
+      <ThemedText style={slideStyles.slideTitle}>Free vs Tripseek+</ThemedText>
       <View style={[slideStyles.comparisonCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
         {/* Header */}
         <View style={[slideStyles.comparisonHeader, { borderBottomColor: theme.border }]}>
@@ -115,12 +116,12 @@ function UsageRow({ label, used, total, theme }: { label: string; used: number; 
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 
-export default function TravonalPlusScreen() {
+export default function ToveliPlusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { showToast } = useToast();
-  const { isPlus, usage, refresh: refreshSubscription } = useSubscription();
+  const { isPlus, plan: currentPlan, usage, refresh: refreshSubscription } = useSubscription();
 
   const [status, setStatus] = useState<SubscriptionStatus>('loading');
   const [products, setProducts] = useState<SubscriptionProduct[]>([]);
@@ -131,25 +132,25 @@ export default function TravonalPlusScreen() {
   const [activeSlide, setActiveSlide] = useState(0);
   const pagerRef = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    async function init() {
-      setStatus('loading');
-      try {
-        const subscribed = await verifyEntitlement();
-        setIsSubscribed(subscribed);
-        const loaded = await loadSubscriptionProducts();
-        if (loaded === null || loaded.length === 0) {
-          setStatus('unavailable');
-        } else {
-          setProducts(loaded);
-          setStatus('available');
-        }
-      } catch {
-        setStatus('error');
+  const loadProducts = useCallback(async () => {
+    setStatus('loading');
+    try {
+      const subscribed = await verifyEntitlement();
+      setIsSubscribed(subscribed);
+      const loaded = await loadSubscriptionProducts();
+      if (loaded === null || loaded.length === 0) {
+        setStatus('unavailable');
+      } else {
+        setProducts(loaded);
+        setStatus('available');
       }
+    } catch {
+      // IAP connection fails in simulator / when products aren't configured
+      setStatus('unavailable');
     }
-    init();
   }, []);
+
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
   async function handleSubscribe() {
     if (status !== 'available') return;
@@ -159,7 +160,7 @@ export default function TravonalPlusScreen() {
       if (!result.error) {
         setIsSubscribed(true);
         await refreshSubscription();
-        showToast('Welcome to Travonal+!');
+        showToast('Welcome to Tripseek+!');
       } else {
         showToast(result.error ?? 'Purchase failed. Please try again.');
       }
@@ -192,6 +193,14 @@ export default function TravonalPlusScreen() {
   const annualProduct = products.find((p) => p.planId === 'annual');
   const monthlyProduct = products.find((p) => p.planId === 'monthly');
 
+  const renewalInfo = (() => {
+    if (!usage?.expires_at) return null;
+    const formatted = new Date(usage.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (usage.status === 'cancelled') return `Expires ${formatted}`;
+    if (usage.status === 'grace_period') return `Grace period until ${formatted}`;
+    return `Renews ${formatted}`;
+  })();
+
   return (
     <ThemedView style={styles.container}>
       {/* ── Header ── */}
@@ -209,49 +218,76 @@ export default function TravonalPlusScreen() {
 
       {/* ── Hero branding ── */}
       <Animated.View entering={FadeIn.duration(400)} style={styles.hero}>
-        <ThemedText style={styles.logo}>Travonal+</ThemedText>
+        <Image
+          source={theme.background === '#FFFFFF'
+            ? require('@/assets/images/tripseek-plus-dark.png')
+            : require('@/assets/images/tripseek-plus-light.png')}
+          style={styles.logoImg}
+          resizeMode="contain"
+        />
         <ThemedText style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Your trips, taken to the next level
+          {isSubscribed ? 'Manage your subscription' : 'Your trips, taken to the next level'}
         </ThemedText>
       </Animated.View>
 
-      {/* ── Slide dots ── */}
-      <View style={styles.dotRow}>
-        {[0, 1].map((i) => (
-          <Pressable
-            key={i}
-            onPress={() => {
-              setActiveSlide(i);
-              pagerRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
-            }}
-            hitSlop={8}
-          >
-            <View style={[styles.dot, i === activeSlide && styles.dotActive, { backgroundColor: i === activeSlide ? theme.primary : theme.border }]} />
-          </Pressable>
-        ))}
-      </View>
-
-      {/* ── Swipeable content slides ── */}
-      <View style={styles.pagerContainer}>
-        <ScrollView
-          ref={pagerRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
-          onMomentumScrollEnd={(e) => {
-            setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH));
-          }}
-          style={styles.pager}
-        >
-          <View style={{ width: SCREEN_WIDTH, paddingHorizontal: SLIDE_PADDING }}>
-            <FeaturesSlide theme={theme} />
+      {!isSubscribed ? (
+        <>
+          {/* ── Slide dots ── */}
+          <View style={styles.dotRow}>
+            {[0, 1].map((i) => (
+              <Pressable
+                key={i}
+                onPress={() => {
+                  setActiveSlide(i);
+                  pagerRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
+                }}
+                hitSlop={8}
+              >
+                <View style={[styles.dot, i === activeSlide && styles.dotActive, { backgroundColor: i === activeSlide ? theme.primary : theme.border }]} />
+              </Pressable>
+            ))}
           </View>
-          <View style={{ width: SCREEN_WIDTH, paddingHorizontal: SLIDE_PADDING }}>
-            <ComparisonSlide theme={theme} />
+
+          {/* ── Swipeable content slides ── */}
+          <View style={styles.pagerContainer}>
+            <ScrollView
+              ref={pagerRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onMomentumScrollEnd={(e) => {
+                setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH));
+              }}
+              style={styles.pager}
+            >
+              <ScrollView style={{ width: SCREEN_WIDTH }} contentContainerStyle={{ paddingHorizontal: SLIDE_PADDING }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                <FeaturesSlide theme={theme} />
+              </ScrollView>
+              <ScrollView style={{ width: SCREEN_WIDTH }} contentContainerStyle={{ paddingHorizontal: SLIDE_PADDING }} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+                <ComparisonSlide theme={theme} />
+              </ScrollView>
+            </ScrollView>
+          </View>
+        </>
+      ) : (
+        <ScrollView style={styles.pagerContainer} contentContainerStyle={{ paddingHorizontal: SLIDE_PADDING, paddingTop: 4 }}>
+          <ThemedText style={slideStyles.slideTitle}>Your plan</ThemedText>
+          <View style={slideStyles.featureList}>
+            {FEATURES.map((f, i) => (
+              <View key={i} style={slideStyles.featureRow}>
+                <View style={[slideStyles.featureIcon, { backgroundColor: theme.primaryMuted }]}>
+                  <SymbolView name={f.icon as any} size={16} tintColor={theme.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={slideStyles.featureTitle}>{f.title}</ThemedText>
+                </View>
+                <SymbolView name={"checkmark" as any} size={14} tintColor="#22C55E" />
+              </View>
+            ))}
           </View>
         </ScrollView>
-      </View>
+      )}
 
       {/* ── Fixed bottom: pricing + CTA ── */}
       <Animated.View
@@ -264,6 +300,26 @@ export default function TravonalPlusScreen() {
           </View>
         )}
 
+        {/* Error state */}
+        {status === 'error' && !isSubscribed && (
+          <View style={styles.errorSection}>
+            <SymbolView name={"exclamationmark.triangle" as any} size={20} tintColor={theme.textSecondary} />
+            <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center' }}>
+              Something went wrong loading subscriptions.
+            </ThemedText>
+            <Pressable
+              onPress={loadProducts}
+              style={({ pressed }) => [
+                styles.retryButton,
+                { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.7 : 1 },
+              ]}
+              accessibilityRole="button"
+            >
+              <ThemedText style={{ fontSize: 14, fontWeight: '600' }}>Try again</ThemedText>
+            </Pressable>
+          </View>
+        )}
+
         {/* Subscribed state */}
         {status !== 'loading' && isSubscribed && (
           <View style={styles.subscribedBottom}>
@@ -271,11 +327,21 @@ export default function TravonalPlusScreen() {
               <SymbolView name={"checkmark.circle.fill" as any} size={16} tintColor="#22C55E" />
               <ThemedText style={{ fontSize: 14, fontWeight: '700' }}>You{'\u2019'}re subscribed</ThemedText>
             </View>
+            <View style={{ alignItems: 'center', gap: 2 }}>
+              <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
+                {currentPlan === 'annual' ? 'Annual plan' : 'Monthly plan'}
+              </ThemedText>
+              {renewalInfo && (
+                <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
+                  {renewalInfo}
+                </ThemedText>
+              )}
+            </View>
             {usage && (
               <View style={styles.usageSummary}>
                 <UsageRow label="AI plans" used={usage.generations_used} total={usage.limits.generations ?? 3} theme={theme} />
                 <UsageRow label="Messages" used={usage.assistance_used} total={usage.limits.assistance ?? 50} theme={theme} />
-                <UsageRow label="Imports" used={usage.imports_used} total={usage.limits.imports ?? 10} theme={theme} />
+                <UsageRow label="Places from links" used={usage.imports_used} total={usage.limits.imports ?? 10} theme={theme} />
               </View>
             )}
             <Pressable onPress={openSubscriptionManagement} style={styles.manageBtn} accessibilityRole="button">
@@ -285,7 +351,7 @@ export default function TravonalPlusScreen() {
         )}
 
         {/* Purchase flow */}
-        {status !== 'loading' && !isSubscribed && (
+        {(status === 'available' || status === 'unavailable') && !isSubscribed && (
           <>
             {/* Plan toggle */}
             <View style={styles.planToggle}>
@@ -339,10 +405,16 @@ export default function TravonalPlusScreen() {
                 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Continue"
+              accessibilityLabel="Subscribe"
             >
               <ThemedText style={[styles.ctaText, { color: theme.primaryText }]}>
-                {purchasing ? 'Processing...' : status !== 'available' ? 'Not yet available' : 'Continue'}
+                {purchasing
+                  ? 'Processing...'
+                  : status !== 'available'
+                    ? 'Not yet available'
+                    : selectedProduct
+                      ? `Subscribe \u2013 ${selectedProduct.displayPrice}/${selectedPlan === 'annual' ? 'yr' : 'mo'}`
+                      : 'Subscribe'}
               </ThemedText>
             </Pressable>
 
@@ -354,9 +426,13 @@ export default function TravonalPlusScreen() {
                 </ThemedText>
               </Pressable>
               <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'\u00B7'}</ThemedText>
-              <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Terms</ThemedText>
+              <Pressable onPress={() => TERMS_OF_USE_URL && Linking.openURL(TERMS_OF_USE_URL)} accessibilityRole="link">
+                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Terms</ThemedText>
+              </Pressable>
               <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'\u00B7'}</ThemedText>
-              <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Privacy</ThemedText>
+              <Pressable onPress={() => PRIVACY_POLICY_URL && Linking.openURL(PRIVACY_POLICY_URL)} accessibilityRole="link">
+                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Privacy</ThemedText>
+              </Pressable>
             </View>
           </>
         )}
@@ -410,7 +486,7 @@ const styles = StyleSheet.create({
 
   // Hero
   hero: { alignItems: 'center', paddingTop: 12, paddingBottom: 14, overflow: 'visible' },
-  logo: { fontSize: 28, fontWeight: '800', letterSpacing: -0.8, lineHeight: 34 },
+  logoImg: { height: 44, width: 132 },
   subtitle: { fontSize: 14, marginTop: 6 },
 
   // Dots
@@ -488,4 +564,8 @@ const styles = StyleSheet.create({
   bottomLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bottomLinkText: { fontSize: 12 },
   bottomLinkDot: { fontSize: 12 },
+
+  // Error / unavailable
+  errorSection: { alignItems: 'center' as const, gap: 12, paddingVertical: 20 },
+  retryButton: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: Radius.md, borderWidth: 1 },
 });

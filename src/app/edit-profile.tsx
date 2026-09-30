@@ -320,7 +320,7 @@ export default function EditProfileScreen() {
           {/* Travel rules */}
           <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>Travel rules</ThemedText>
           <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: 8 }}>
-            {'Rules Travonal will always follow when planning your trips.'}
+            {'Rules Tripseek will always follow when planning your trips.'}
           </ThemedText>
           {rules.map((rule, i) => (
             <View key={i} style={[styles.ruleRow, { borderBottomColor: theme.border }]}>
@@ -353,7 +353,7 @@ export default function EditProfileScreen() {
           {/* Dislikes */}
           <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>Dislikes</ThemedText>
           <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: 8 }}>
-            {'Things Travonal should avoid recommending.'}
+            {'Things Tripseek should avoid recommending.'}
           </ThemedText>
           <View style={styles.chipGrid}>
             {dislikes.map((item) => (

@@ -22,14 +22,12 @@ const TYPE_LABELS: Record<Activity['type'], string> = {
   food: 'Food',
 };
 
-function formatDuration(minutes: number): string {
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m ? `${h}h ${m}m` : `${h}h`;
-  }
-  return `${minutes}m`;
-}
+const TYPE_PLACEHOLDER: Record<Activity['type'], { bg: string; icon: string }> = {
+  food: { bg: '#FEF3C7', icon: 'fork.knife' },
+  activity: { bg: '#EFF6FF', icon: 'mappin.circle.fill' },
+  hotel: { bg: '#F5F3FF', icon: 'bed.double.fill' },
+  flight: { bg: '#F0FDF4', icon: 'airplane' },
+};
 
 interface ActivityCardProps {
   activity: Activity;
@@ -77,13 +75,17 @@ export function ActivityCard({
               style={styles.thumbnail}
               contentFit="cover"
               cachePolicy="memory-disk"
+              transition={200}
             />
-          ) : null}
+          ) : (
+            <View style={[styles.thumbnail, styles.thumbnailPlaceholder, { backgroundColor: TYPE_PLACEHOLDER[activity.type]?.bg ?? '#F3F4F6' }]}>
+              <SymbolView name={TYPE_PLACEHOLDER[activity.type]?.icon as any ?? 'mappin'} size={18} tintColor={activity.type === 'food' ? '#D97706' : activity.type === 'hotel' ? '#7C3AED' : activity.type === 'flight' ? '#059669' : '#2563EB'} />
+            </View>
+          )}
           <View style={styles.activityInfo}>
             <ThemedText style={styles.activityTitle}>{activity.title}</ThemedText>
             <ThemedText style={[styles.activityMeta, { color: theme.textSecondary }]}>
               {TYPE_LABELS[activity.type]}
-              {activity.duration ? ` \u00B7 ${formatDuration(activity.duration)}` : ''}
               {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
             </ThemedText>
             {/* Book button — inline below meta for unbooked activities */}
@@ -163,6 +165,10 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
+  },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   activityInfo: {
     flex: 1,

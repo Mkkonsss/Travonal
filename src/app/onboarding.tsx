@@ -36,6 +36,7 @@ import { useMemory } from '@/context/memory';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useTheme } from '@/hooks/use-theme';
 import { setOnboardingComplete } from '@/services/storage';
+import { requestNotificationPermission } from '@/services/notifications';
 
 // ---------- phases ----------
 type Phase = 'welcome' | 'survey' | 'reveal';
@@ -65,7 +66,7 @@ const STEP_TITLES: Record<Step, string> = {
   crowdTolerance: 'How do you feel about busy, touristy places?',
   foodImportance: 'How important is food when you travel?',
   dietary: 'Anything we should keep in mind about food?',
-  accessibility: 'Is there anything Travonal should consider when recommending places or planning your day?',
+  accessibility: 'Is there anything Tripseek should consider when recommending places or planning your day?',
   spendingPriorities: 'Where are you happiest spending a little more?',
   recommendationStyle: 'How do you like recommendations?',
   features: 'Your smart travel assistant',
@@ -74,7 +75,7 @@ const STEP_TITLES: Record<Step, string> = {
 const STEP_SUBTITLES: Record<Step, string> = {
   interests: 'Choose at least 3. Add your own too.',
   pace: 'This becomes your default pace — you can still change it for individual trips.',
-  planningStyle: 'This influences how much structure Travonal surfaces throughout the app.',
+  planningStyle: 'This influences how much structure Tripseek surfaces throughout the app.',
   decisionPriorities: 'Choose 1 to 3.',
   crowdTolerance: '',
   foodImportance: '',
@@ -82,7 +83,7 @@ const STEP_SUBTITLES: Record<Step, string> = {
   accessibility: 'Select any that apply.',
   spendingPriorities: 'Choose up to 2. This tells us where you tend to see value — not your budget.',
   recommendationStyle: '',
-  features: 'Two features help you get the most from Travonal.',
+  features: 'Two features help you get the most from Tripseek.',
 };
 
 // Required steps: Next disabled until valid, no skip button
@@ -419,6 +420,10 @@ export default function OnboardingScreen() {
       goToStep(step + 1);
     } else {
       updateProfile(getProfileUpdates());
+      // Request notification permission if user enabled Trip Alerts
+      if (tripPulseEnabled) {
+        requestNotificationPermission();
+      }
       setPhase('reveal');
     }
   }
@@ -446,7 +451,7 @@ export default function OnboardingScreen() {
           entering={FadeIn.delay(200).duration(600)}
           style={[styles.welcomeTopBar, { paddingTop: insets.top + 16 }]}
         >
-          <Text style={styles.welcomeWordmark}>✦  TRAVONAL</Text>
+          <Text style={styles.welcomeWordmark}>✦  TOVELI</Text>
         </Animated.View>
 
         <View
@@ -479,7 +484,7 @@ export default function OnboardingScreen() {
                   <Text style={wStyles.bubbleUserText}>"Make day 2 more budget-friendly"</Text>
                 </Animated.View>
                 <Animated.View style={[wStyles.bubbleAI, uc2Float, { alignSelf: 'flex-start' }]}>
-                  <Text style={wStyles.bubbleAILabel}>✦  TRAVONAL</Text>
+                  <Text style={wStyles.bubbleAILabel}>✦  TOVELI</Text>
                   <Text style={wStyles.bubbleAIText}>Done! Swapped the restaurant for a local street food market. Saving you ~€40.</Text>
                   <View style={wStyles.bubbleAITag}><Text style={wStyles.bubbleAITagText}>Day 2 updated ✓</Text></View>
                 </Animated.View>
@@ -630,10 +635,10 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* How Travonal will tailor */}
+          {/* How Tripseek will tailor */}
           <Animated.View entering={FadeInDown.delay(420).duration(350)}>
             <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-              How Travonal will tailor trips
+              How Tripseek will tailor trips
             </ThemedText>
             <View style={[revealStyles.tailorCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <View style={revealStyles.tailorRow}>
@@ -985,7 +990,7 @@ export default function OnboardingScreen() {
                 <View style={[styles.featureRow, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
                   <View style={styles.featureIcon}><ThemedText style={styles.featureEmoji}>{'\u2708\uFE0F'}</ThemedText></View>
                   <View style={styles.featureInfo}>
-                    <ThemedText style={styles.featureTitle}>Trip Pulse</ThemedText>
+                    <ThemedText style={styles.featureTitle}>Trip Alerts</ThemedText>
                     <ThemedText style={[styles.featureDesc, { color: theme.textSecondary }]}>
                       Smart alerts about schedule gaps, conflicts, and personalized suggestions as you plan.
                     </ThemedText>

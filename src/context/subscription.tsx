@@ -1,5 +1,5 @@
 /**
- * SubscriptionProvider — exposes Travonal+ state to the entire app.
+ * SubscriptionProvider — exposes Tripseek+ state to the entire app.
  *
  * Source of truth is server-side (Supabase). This context:
  *   - Fetches subscription + usage on mount and after purchases

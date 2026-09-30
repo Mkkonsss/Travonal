@@ -5,7 +5,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
-import { TimePickerButton, defaultTimeForType, defaultDurationForType } from '@/components/time-picker';
+import { TimePickerButton, defaultTimeForType } from '@/components/time-picker';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing, Radius } from '@/constants/theme';
 import { useInbox } from '@/context/inbox';
@@ -24,7 +24,6 @@ export default function PlaceTripScreen() {
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState('10:00');
-  const [selectedDuration, setSelectedDuration] = useState(60);
 
   const item = items.find((i) => i.id === itemId);
 
@@ -52,7 +51,6 @@ export default function PlaceTripScreen() {
       day: selectedDay,
       time: selectedTime,
       type: (item.category === 'food' ? 'food' : 'activity') as 'activity' | 'food',
-      duration: selectedDuration,
       category: item.category,
       cost: item.cost,
       description: item.description,
@@ -127,7 +125,6 @@ export default function PlaceTripScreen() {
                     setSelectedDay(null);
                     const actType = item?.category === 'food' ? 'food' : 'activity';
                     setSelectedTime(defaultTimeForType(actType as any));
-                    setSelectedDuration(defaultDurationForType(actType as any));
                   }}
                   style={({ pressed }) => [
                     styles.tripCard,
@@ -192,18 +189,15 @@ export default function PlaceTripScreen() {
           </Animated.View>
         )}
 
-        {/* Time & duration */}
+        {/* Time picker */}
         {selectedDay && (
           <Animated.View entering={FadeIn.duration(200)}>
             <ThemedText type="sectionTitle" style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-              Time & duration
+              Time
             </ThemedText>
             <TimePickerButton
               value={selectedTime}
               onChange={setSelectedTime}
-              showDuration
-              duration={selectedDuration}
-              onDurationChange={setSelectedDuration}
             />
           </Animated.View>
         )}

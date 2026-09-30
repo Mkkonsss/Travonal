@@ -190,7 +190,7 @@ export function getTripReadiness(activities: Activity[]): {
 
 /**
  * Generate booking links from place data (category-based).
- * Used on the place-detail screen where we have TravonalCategory instead of Activity.
+ * Used on the place-detail screen where we have ToveliCategory instead of Activity.
  */
 export function getPlaceBookingLinks(
   placeName: string,

@@ -111,6 +111,17 @@ export function ChatMarkdown({ text, isUser = false }: ChatMarkdownProps) {
       continue;
     }
 
+    // Section header: entire line is just **bold text**
+    const headerMatch = line.match(/^\s*\*\*(.+?)\*\*\s*$/);
+    if (headerMatch) {
+      elements.push(
+        <Text key={key++} style={[mdStyles.sectionHeader, isUser && { color: '#fff' }]}>
+          {headerMatch[1]}
+        </Text>
+      );
+      continue;
+    }
+
     // Regular text
     elements.push(
       <Text key={key++} style={[mdStyles.text, isUser && { color: '#fff' }]}>
@@ -158,6 +169,13 @@ const mdStyles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     flex: 1,
+  },
+  sectionHeader: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 1,
   },
   spacer: {
     height: 8,

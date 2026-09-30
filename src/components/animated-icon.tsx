@@ -1,9 +1,8 @@
 import * as SplashScreen from 'expo-splash-screen';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { SymbolView } from 'expo-symbols';
 
 const DURATION = 600;
 
@@ -33,10 +32,11 @@ export function AnimatedSplashOverlay() {
   });
 
   const logo = (
-    <View style={styles.logoContainer}>
-      <SymbolView name="airplane" size={48} tintColor="#FFFFFF" />
-      <Text style={styles.logoText}>Travonal</Text>
-    </View>
+    <Image
+      source={require('@/assets/images/logo-light.png')}
+      style={styles.splashLogo}
+      resizeMode="contain"
+    />
   );
 
   return animate ? (
@@ -66,22 +66,19 @@ export function AnimatedSplashOverlay() {
 export function AnimatedIcon() {
   return (
     <View style={styles.iconContainer}>
-      <View style={styles.background} />
-      <SymbolView name="airplane" size={48} tintColor="#FFFFFF" />
+      <Image
+        source={require('@/assets/images/icon-dark.png')}
+        style={styles.iconImage}
+        resizeMode="contain"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  logoContainer: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: 1,
+  splashLogo: {
+    width: 200,
+    height: 80,
   },
   iconContainer: {
     justifyContent: 'center',
@@ -90,16 +87,14 @@ const styles = StyleSheet.create({
     height: 128,
     zIndex: 100,
   },
-  background: {
-    borderRadius: 40,
-    backgroundColor: '#208AEF',
+  iconImage: {
     width: 128,
     height: 128,
-    position: 'absolute',
+    borderRadius: 28,
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,

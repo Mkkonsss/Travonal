@@ -15,7 +15,6 @@ import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 
 import { DatePickerModal, formatDisplayDate } from '@/components/date-picker-modal';
-import { TimePickerButton } from '@/components/time-picker';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTrips } from '@/context/trips';
@@ -107,9 +106,10 @@ const PACE_OPTIONS = [
 ];
 
 const BUDGET_OPTIONS = [
-  { value: 'budget' as const, label: 'Budget' },
-  { value: 'moderate' as const, label: 'Moderate' },
-  { value: 'premium' as const, label: 'Premium' },
+  { value: '$' as const, label: '$' },
+  { value: '$$' as const, label: '$$' },
+  { value: '$$$' as const, label: '$$$' },
+  { value: '$$$$' as const, label: '$$$$' },
 ];
 
 const TRAVEL_WITH_OPTIONS = [
@@ -120,19 +120,6 @@ const TRAVEL_WITH_OPTIONS = [
   { value: 'group' as const, label: 'Group' },
 ];
 
-const RESERVATION_TYPES = [
-  { value: 'activity' as const, label: 'Activity' },
-  { value: 'food' as const, label: 'Food' },
-  { value: 'hotel' as const, label: 'Hotel' },
-];
-
-interface Reservation {
-  id: string;
-  title: string;
-  dayOrDate: string;
-  time: string;
-  type: 'activity' | 'food' | 'hotel';
-}
 
 export default function AddTripScreen() {
   const { addTrip, addTripWithActivities } = useTrips();
@@ -148,7 +135,7 @@ export default function AddTripScreen() {
   const generateGate = useGate('generate_trip');
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
-  // Mode: 'choose' (landing), 'quick' (Plan it for me), 'detailed' (Plan with Travonal)
+  // Mode: 'choose' (landing), 'quick' (Plan it for me), 'detailed' (Plan with Tripseek)
   // Auto-enter quick mode when coming from inbox with saved items, or detailed if explicitly requested
   const [mode, setMode] = useState<'choose' | 'quick' | 'detailed'>(
     modeParam === 'detailed' ? 'detailed' : (fromInboxDest || fromBoardId ? 'quick' : 'choose'),
@@ -172,7 +159,7 @@ export default function AddTripScreen() {
   // country field removed from UI; derived from destination
   const [travelers, setTravelers] = useState(1);
   const [departureFrom, setDepartureFrom] = useState('');
-  const [budget, setBudget] = useState<'budget' | 'moderate' | 'premium'>(profile.budget ?? 'moderate');
+  const [budget, setBudget] = useState<'$' | '$$' | '$$$' | '$$$$'>(profile.budget ?? '$$');
   const [pace, setPace] = useState<'relaxed' | 'moderate' | 'active'>(profile.pace);
   const [travelWith, setTravelWith] = useState<'solo' | 'partner' | 'family' | 'friends' | 'group'>(profile.travelWith ?? 'solo');
   const [tripPurpose] = useState('');
@@ -295,58 +282,7 @@ export default function AddTripScreen() {
     return { start: s, end: e, datesKnown: false };
   }
 
-  // Fixed reservations
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [showAddReservation, setShowAddReservation] = useState(false);
-  const [newResTitle, setNewResTitle] = useState('');
-  const [newResDayOrDate, setNewResDayOrDate] = useState('');
-  const [newResTime, setNewResTime] = useState('');
-  const [newResType, setNewResType] = useState<'activity' | 'food' | 'hotel'>('activity');
-
   const today = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })();
-  const inputStyle = [styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }];
-
-  // Total trip days for reservation validation
-  const totalTripDays = (() => {
-    if (dateMode === 'duration') return durationDays;
-    if (startDate && endDate && endDate >= startDate) {
-      const [sy, sm, sd] = startDate.split('-').map(Number);
-      const [ey, em, ed] = endDate.split('-').map(Number);
-      return Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86400000) + 1;
-    }
-    return 0; // dates not set yet
-  })();
-
-  function addReservation() {
-    if (!newResTitle.trim()) return;
-    const time = newResTime || '19:00';
-    // Validate day number
-    const dayNum = parseInt(newResDayOrDate.trim() || '1', 10);
-    if (isNaN(dayNum) || dayNum < 1) return;
-    if (totalTripDays > 0 && dayNum > totalTripDays) {
-      Alert.alert('Invalid day', `Your trip is ${totalTripDays} day${totalTripDays !== 1 ? 's' : ''} long. Day ${dayNum} is out of range.`);
-      return;
-    }
-    setReservations((prev) => [
-      ...prev,
-      {
-        id: generateId(),
-        title: newResTitle.trim(),
-        dayOrDate: String(dayNum),
-        time,
-        type: newResType,
-      },
-    ]);
-    setNewResTitle('');
-    setNewResDayOrDate('');
-    setNewResTime('');
-    setNewResType('activity');
-    setShowAddReservation(false);
-  }
-
-  function removeReservation(id: string) {
-    setReservations((prev) => prev.filter((r) => r.id !== id));
-  }
 
   function handleSetStartDate(date: string) {
     setStartDate(date);
@@ -372,23 +308,6 @@ export default function AddTripScreen() {
     const tripTitle = title.trim() || `${dest} Trip`;
     const dates = getEffectiveDates();
 
-    const buildActivities = reservations.map((r) => ({
-      title: r.title,
-      day: parseInt(r.dayOrDate, 10) || 1,
-      time: r.time,
-      type: r.type as Activity['type'],
-      fixed: true,
-      locked: true,
-    }));
-
-    const buildReservations = reservations.map((r) => ({
-      type: (r.type === 'food' ? 'restaurant' : r.type) as 'restaurant' | 'hotel' | 'activity' | 'other',
-      title: r.title,
-      day: parseInt(r.dayOrDate, 10) || 1,
-      time: r.time,
-      fixed: true,
-    }));
-
     // Pull matching inbox items
     const inboxItemsForDest = fromInboxDest
       ? inboxItems.filter(i => i.status !== 'planned' && i.destination?.toLowerCase() === fromInboxDest.toLowerCase())
@@ -400,7 +319,7 @@ export default function AddTripScreen() {
       : Math.max(1, Math.round((Date.parse(dates.end) - Date.parse(dates.start)) / 86400000) + 1);
 
     // Track placed activities for smart time suggestions
-    const placedSoFar: Activity[] = [...buildActivities.map((a) => ({ id: '', ...a }) as Activity)];
+    const placedSoFar: Activity[] = [];
 
     const inboxActivities = inboxItemsForDest.map((item) => {
       const actType = (item.activityType ?? (item.category === 'food' ? 'food' : 'activity')) as Activity['type'];
@@ -436,8 +355,8 @@ export default function AddTripScreen() {
       return act;
     });
 
-    const allActivities = [...buildActivities, ...inboxActivities, ...boardActivities];
-    const hasActivities = allActivities.length > 0 || buildReservations.length > 0;
+    const allActivities = [...inboxActivities, ...boardActivities];
+    const hasActivities = allActivities.length > 0;
 
     const tripId = hasActivities
       ? addTripWithActivities({
@@ -457,7 +376,7 @@ export default function AddTripScreen() {
           restrictions: restrictions.trim() || undefined,
           travelers: travelers > 1 ? travelers : undefined,
           status: 'draft',
-        }, allActivities, buildReservations)
+        }, allActivities, [])
       : addTrip({
           title: tripTitle,
           destination: dest,
@@ -508,23 +427,6 @@ export default function AddTripScreen() {
     const tripTitle = title.trim() || `${dest} Trip`;
     const dates = getEffectiveDates();
 
-    const quickActivities = reservations.map((r) => ({
-      title: r.title,
-      day: parseInt(r.dayOrDate, 10) || 1,
-      time: r.time,
-      type: r.type as Activity['type'],
-      fixed: true,
-      locked: true,
-    }));
-
-    const quickReservations = reservations.map((r) => ({
-      type: (r.type === 'food' ? 'restaurant' : r.type) as 'restaurant' | 'hotel' | 'activity' | 'other',
-      title: r.title,
-      day: parseInt(r.dayOrDate, 10) || 1,
-      time: r.time,
-      fixed: true,
-    }));
-
     // Pull matching inbox items when coming from the inbox "Plan a trip" flow
     const inboxItemsForDest = fromInboxDest
       ? inboxItems.filter(i => i.status !== 'planned' && i.destination?.toLowerCase() === fromInboxDest.toLowerCase())
@@ -571,10 +473,10 @@ export default function AddTripScreen() {
       notes: item.notes,
     }));
 
-    const allActivities = [...quickActivities, ...inboxActivities, ...boardActivities];
+    const allActivities = [...inboxActivities, ...boardActivities];
     const requestedQuick = allActivities.filter(a => a.requested);
     const quickGeoContext = buildGeoContext(requestedQuick);
-    const hasActivities = allActivities.length > 0 || quickReservations.length > 0;
+    const hasActivities = allActivities.length > 0;
 
     const tripId = hasActivities
       ? addTripWithActivities({
@@ -593,7 +495,7 @@ export default function AddTripScreen() {
           departurePoint: departureFrom.trim() || undefined,
           geoContext: quickGeoContext || undefined,
           status: 'draft',
-        }, allActivities, quickReservations)
+        }, allActivities, [])
       : addTrip({
           title: tripTitle,
           destination: dest,
@@ -656,26 +558,6 @@ export default function AddTripScreen() {
           <ThemedText type="subtitle" style={styles.chooseTitle}>How would you like to start?</ThemedText>
 
           <Pressable
-            onPress={() => setMode('quick')}
-            style={({ pressed }) => [
-              styles.chooseCard,
-              { backgroundColor: theme.backgroundElement, borderColor: theme.primary, opacity: pressed ? 0.9 : 1 },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Start with a full plan"
-          >
-            <View style={styles.chooseCardHeader}>
-              <ThemedText style={styles.chooseCardTitle}>Start with a full plan</ThemedText>
-              <View style={[styles.recommendedBadge, { backgroundColor: theme.primaryMuted }]}>
-                <ThemedText style={[styles.recommendedText, { color: theme.primary }]}>Recommended</ThemedText>
-              </View>
-            </View>
-            <ThemedText style={[styles.chooseCardDesc, { color: theme.textSecondary }]}>
-              Get a complete itinerary personalized to you. Swap, move, or change anything in seconds.
-            </ThemedText>
-          </Pressable>
-
-          <Pressable
             onPress={() => setMode('detailed')}
             style={({ pressed }) => [
               styles.chooseCard,
@@ -686,13 +568,25 @@ export default function AddTripScreen() {
           >
             <ThemedText style={styles.chooseCardTitle}>Build my own trip</ThemedText>
             <ThemedText style={[styles.chooseCardDesc, { color: theme.textSecondary }]}>
-              Start with an empty trip and add what you want, with Travonal ready to help at every step.
+              Start with an empty trip and add what you want, with Tripseek ready to help at every step.
             </ThemedText>
           </Pressable>
 
-          <ThemedText style={[styles.chooseFooter, { color: theme.textSecondary }]}>
-            Whichever you choose, your trip stays flexible and effortless to update.
-          </ThemedText>
+          <Pressable
+            onPress={() => setMode('quick')}
+            style={({ pressed }) => [
+              styles.chooseCard,
+              { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.9 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Generate with AI"
+          >
+            <ThemedText style={styles.chooseCardTitle}>Generate with AI</ThemedText>
+            <ThemedText style={[styles.chooseCardDesc, { color: theme.textSecondary }]}>
+              Get a complete itinerary personalized to you. Swap, move, or change anything in seconds.
+            </ThemedText>
+          </Pressable>
+
         </View>
       </View>
     );
@@ -700,21 +594,33 @@ export default function AddTripScreen() {
 
   // ========== Multi-step wizard (both quick/AI and detailed/manual modes) ==========
   if (mode === 'quick' || mode === 'detailed') {
-    const TOTAL_STEPS = 5;
-    const stepTitles = [
-      'Where are you going?',
-      'When are you going?',
-      'A few more details',
-      (fromInboxDest || fromBoardId) ? 'Review your saved places' : 'Anything to include?',
-      'Review your trip',
-    ];
+    // Detailed mode: 3 steps (destination → dates → review), skipping steps 3 & 4
+    const TOTAL_STEPS = mode === 'detailed' ? 3 : 5;
+    const stepTitles = mode === 'detailed'
+      ? ['Where are you going?', 'When are you going?', 'Review your trip']
+      : [
+          'Where are you going?',
+          'When are you going?',
+          'A few more details',
+          (fromInboxDest || fromBoardId) ? 'Review your saved places' : 'Anything to include?',
+          'Review your trip',
+        ];
+    // Map internal quickStep → display step for detailed mode (1→1, 2→2, 5→3)
+    const displayStep = mode === 'detailed' && quickStep === 5 ? 3 : quickStep;
     const canGoNext =
       quickStep === 1 ? !!destination.trim() :
       quickStep === 2 ? (dateMode === 'duration' || (!!startDate && !!endDate)) :
       true;
 
     function handleNext() {
-      if (quickStep < TOTAL_STEPS) {
+      const isLastStep = mode === 'detailed' ? (quickStep === 2 || quickStep === 5) : quickStep === 5;
+      if (mode === 'detailed' && quickStep === 2) {
+        // Detailed: jump straight from dates to review (step 5)
+        Haptics.selectionAsync();
+        setQuickStep(5);
+        return;
+      }
+      if (!isLastStep) {
         Haptics.selectionAsync();
 
         // Fetch hotel suggestions when entering step 4
@@ -778,16 +684,7 @@ export default function AddTripScreen() {
           ];
 
           if (rawItems.length > 0) {
-            const existingActs = reservations.map((r) => ({
-              id: r.id,
-              title: r.title,
-              day: parseInt(r.dayOrDate, 10) || 1,
-              time: r.time,
-              type: r.type as Activity['type'],
-              fixed: true,
-              locked: true,
-            }));
-            const distributed = distributeActivitiesAcrossDays(rawItems, tripDays, existingActs);
+            const distributed = distributeActivitiesAcrossDays(rawItems, tripDays, []);
             const assignments = new Map<string, number>();
             for (const a of distributed) {
               assignments.set(a.title, a.day);
@@ -803,7 +700,10 @@ export default function AddTripScreen() {
     }
 
     function handleBack() {
-      if (quickStep > 1) {
+      if (mode === 'detailed' && quickStep === 5) {
+        // Detailed: back from review goes to dates (step 2), not step 4
+        setQuickStep(2);
+      } else if (quickStep > 1) {
         setQuickStep(quickStep - 1);
       } else {
         setMode('choose');
@@ -819,7 +719,7 @@ export default function AddTripScreen() {
           <Pressable onPress={handleBack} style={styles.navHeaderBtn} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <ThemedText style={[styles.navHeaderBack, { color: theme.primary }]}>{'\u2039'} Back</ThemedText>
           </Pressable>
-          <ThemedText style={styles.navHeaderTitle}>Step {quickStep} of {TOTAL_STEPS}</ThemedText>
+          <ThemedText style={styles.navHeaderTitle}>Step {displayStep} of {TOTAL_STEPS}</ThemedText>
           <View style={[styles.navHeaderBtn, { alignItems: 'flex-end' as const }]}>
             <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
               <SymbolView name="xmark" size={16} tintColor={theme.textSecondary} />
@@ -829,7 +729,7 @@ export default function AddTripScreen() {
 
         {/* Progress bar */}
         <View style={[styles.progressBarTrack, { backgroundColor: theme.border }]}>
-          <View style={[styles.progressBarFill, { width: `${(quickStep / TOTAL_STEPS) * 100}%`, backgroundColor: theme.primary }]} />
+          <View style={[styles.progressBarFill, { width: `${(displayStep / TOTAL_STEPS) * 100}%`, backgroundColor: theme.primary }]} />
         </View>
 
         <ScrollView
@@ -837,7 +737,7 @@ export default function AddTripScreen() {
           keyboardShouldPersistTaps="always"
           keyboardDismissMode="interactive"
         >
-          <ThemedText type="subtitle" style={styles.wizardStepTitle}>{stepTitles[quickStep - 1]}</ThemedText>
+          <ThemedText type="subtitle" style={styles.wizardStepTitle}>{stepTitles[displayStep - 1]}</ThemedText>
 
           {/* ---- Step 1: Destination ---- */}
           {quickStep === 1 && (
@@ -1047,33 +947,6 @@ export default function AddTripScreen() {
                 </Pressable>
               </View>
 
-              <ThemedText style={styles.label}>Traveling with</ThemedText>
-              <View style={styles.chipRow}>
-                {TRAVEL_WITH_OPTIONS.map((o) => (
-                  <Pressable
-                    key={o.value}
-                    onPress={() => {
-                      setTravelWith(o.value);
-                      if (o.value === 'solo' && travelers > 1) setTravelers(1);
-                      if (o.value !== 'solo' && travelers < 2) setTravelers(2);
-                    }}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: travelWith === o.value ? theme.primary : theme.backgroundElement,
-                        borderColor: travelWith === o.value ? theme.primary : theme.border,
-                      },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Travel with: ${o.label}`}
-                  >
-                    <ThemedText style={[styles.chipText, travelWith === o.value && { color: theme.primaryText }]}>
-                      {o.label}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-
               <ThemedText style={styles.label}>Budget</ThemedText>
               <View style={styles.chipRow}>
                 {BUDGET_OPTIONS.map((o) => (
@@ -1097,66 +970,7 @@ export default function AddTripScreen() {
                 ))}
               </View>
 
-              <ThemedText style={styles.label}>Pace</ThemedText>
-              <View style={styles.chipRow}>
-                {PACE_OPTIONS.map((o) => (
-                  <Pressable
-                    key={o.value}
-                    onPress={() => setPace(o.value)}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: pace === o.value ? theme.primary : theme.backgroundElement,
-                        borderColor: pace === o.value ? theme.primary : theme.border,
-                      },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Pace: ${o.label}`}
-                  >
-                    <ThemedText style={[styles.chipText, pace === o.value && { color: theme.primaryText }]}>
-                      {o.label}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-
-              <ThemedText style={styles.label}>Departing from</ThemedText>
-              <View style={{ position: 'relative', zIndex: 10 }}>
-                <TextInput
-                  style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                  value={departureFrom}
-                  onChangeText={setDepartureFrom}
-                  placeholder="e.g. New York"
-                  placeholderTextColor={theme.textSecondary}
-                  returnKeyType="done"
-                />
-                {depSuggestions.length > 0 && (
-                  <View style={[styles.autocompleteDropdown, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    {depSuggestions.map((place, i) => (
-                      <Pressable
-                        key={`${place.city}-${i}`}
-                        onPress={() => selectDeparture(place)}
-                        style={[styles.autocompleteItem, i < depSuggestions.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={place.display}
-                      >
-                        <View style={styles.autocompleteItemRow}>
-                          <SymbolView name="airplane.departure" size={16} tintColor={theme.textSecondary} />
-                          <View style={{ flex: 1 }}>
-                            <ThemedText style={styles.autocompleteItemText}>{place.city}</ThemedText>
-                            <ThemedText style={[styles.autocompleteItemSub, { color: theme.textSecondary }]}>{place.display}</ThemedText>
-                          </View>
-                        </View>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-                {depSearching && departureFrom.length >= 2 && depSuggestions.length === 0 && (
-                  <ThemedText style={[styles.autocompleteSearching, { color: theme.textSecondary }]}>Searching...</ThemedText>
-                )}
-              </View>
-
-              <ThemedText style={styles.label}>Notes</ThemedText>
+              <ThemedText style={styles.label}>Notes (optional)</ThemedText>
               <TextInput
                 style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
                 value={notes}
@@ -1267,22 +1081,6 @@ export default function AddTripScreen() {
                         </Pressable>
                       );
                     })}
-                    <Pressable
-                      onPress={() => {
-                        Haptics.selectionAsync();
-                        const id = createBoard('My Places');
-                        setSelectedBoardId(id);
-                        router.push(`/board-detail?id=${id}` as any);
-                      }}
-                      style={({ pressed }) => [
-                        styles.addButton,
-                        { borderColor: theme.text, opacity: pressed ? 0.85 : 1 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Create a new board"
-                    >
-                      <ThemedText style={[styles.addButtonText, { color: theme.text }]}>+ Create a board</ThemedText>
-                    </Pressable>
                   </View>
                 )}
               </View>
@@ -1353,120 +1151,6 @@ export default function AddTripScreen() {
                 </>
               )}
 
-              {/* ── Divider ── */}
-              <View style={[styles.step4Divider, { backgroundColor: theme.border }]} />
-
-              {/* ── Reservations section ── */}
-              <View style={styles.step4Section}>
-                <View style={styles.step4SectionHeader}>
-                  <SymbolView name="calendar.badge.clock" size={16} tintColor={theme.textSecondary} />
-                  <ThemedText style={[styles.step4SectionTitle, { color: theme.text }]}>Reservations</ThemedText>
-                </View>
-                <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: 10 }}>
-                  Pre-booked plans that the AI should work around.
-                </ThemedText>
-
-                {reservations.map((res) => (
-                  <View
-                    key={res.id}
-                    style={[styles.reservationCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                  >
-                    <View style={styles.reservationInfo}>
-                      <ThemedText type="smallBold">{res.title}</ThemedText>
-                      <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                        Day {res.dayOrDate} at {res.time} · {res.type}
-                      </ThemedText>
-                    </View>
-                    <Pressable onPress={() => removeReservation(res.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove reservation">
-                      <ThemedText style={{ color: theme.danger, fontSize: 14, fontWeight: '600' }}>Remove</ThemedText>
-                    </Pressable>
-                  </View>
-                ))}
-
-                {showAddReservation ? (
-                  <View style={[styles.addResForm, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    <TextInput
-                      style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                      value={newResTitle}
-                      onChangeText={setNewResTitle}
-                      placeholder="e.g. Dinner at La Maison"
-                      placeholderTextColor={theme.textSecondary}
-                      returnKeyType="done"
-                    />
-                    <View style={styles.row}>
-                      <View style={styles.halfField}>
-                        <ThemedText type="small" style={{ marginBottom: 4 }}>Day number{totalTripDays > 0 ? ` (1\u2013${totalTripDays})` : ''}</ThemedText>
-                        <TextInput
-                          style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                          value={newResDayOrDate}
-                          onChangeText={setNewResDayOrDate}
-                          placeholder="1"
-                          placeholderTextColor={theme.textSecondary}
-                          keyboardType="number-pad"
-                          returnKeyType="done"
-                        />
-                      </View>
-                      <View style={styles.halfField}>
-                        <ThemedText type="small" style={{ marginBottom: 4 }}>Time</ThemedText>
-                        <TimePickerButton
-                          value={newResTime || '19:00'}
-                          onChange={setNewResTime}
-                        />
-                      </View>
-                    </View>
-                    <View style={styles.chipRow}>
-                      {RESERVATION_TYPES.map((t) => (
-                        <Pressable
-                          key={t.value}
-                          onPress={() => setNewResType(t.value)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: newResType === t.value ? theme.primary : theme.backgroundElement,
-                              borderColor: newResType === t.value ? theme.primary : theme.border,
-                            },
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Type: ${t.label}`}
-                        >
-                          <ThemedText style={[styles.chipText, newResType === t.value && { color: theme.primaryText }]}>
-                            {t.label}
-                          </ThemedText>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <View style={styles.row}>
-                      <Pressable
-                        onPress={addReservation}
-                        style={[styles.smallButton, { backgroundColor: theme.primary }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Add reservation"
-                      >
-                        <ThemedText style={[styles.smallButtonText, { color: theme.primaryText }]}>Add</ThemedText>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => setShowAddReservation(false)}
-                        style={[styles.smallButton, { backgroundColor: theme.backgroundElement, borderWidth: 1, borderColor: theme.border }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Cancel reservation"
-                      >
-                        <ThemedText style={[styles.smallButtonText, { color: theme.text }]}>Cancel</ThemedText>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={() => setShowAddReservation(true)}
-                    style={[styles.addButton, { borderColor: theme.text }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Add reservation"
-                  >
-                    <ThemedText style={[styles.addButtonText, { color: theme.text }]}>
-                      + Add reservation
-                    </ThemedText>
-                  </Pressable>
-                )}
-              </View>
             </>
           )}
 
@@ -1485,12 +1169,10 @@ export default function AddTripScreen() {
                 </View>
 
                 {/* Trip name */}
-                {title.trim() ? (
-                  <View style={styles.reviewRow}>
-                    <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Trip name</ThemedText>
-                    <ThemedText style={styles.reviewValue}>{title}</ThemedText>
-                  </View>
-                ) : null}
+                <View style={styles.reviewRow}>
+                  <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Trip name</ThemedText>
+                  <ThemedText style={styles.reviewValue}>{title.trim() || `${destination.trim()} Trip`}</ThemedText>
+                </View>
 
                 {/* Dates / Duration */}
                 <View style={styles.reviewRow}>
@@ -1504,37 +1186,23 @@ export default function AddTripScreen() {
                   </ThemedText>
                 </View>
 
-                {/* Travelers */}
-                <View style={styles.reviewRow}>
-                  <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Travelers</ThemedText>
-                  <ThemedText style={styles.reviewValue}>
-                    {travelers} · {TRAVEL_WITH_OPTIONS.find(o => o.value === travelWith)?.label ?? travelWith}
-                  </ThemedText>
-                </View>
-
-                {/* Budget */}
-                <View style={styles.reviewRow}>
-                  <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Budget</ThemedText>
-                  <ThemedText style={styles.reviewValue}>
-                    {BUDGET_OPTIONS.find(o => o.value === budget)?.label ?? budget}
-                  </ThemedText>
-                </View>
-
-                {/* Pace */}
-                <View style={styles.reviewRow}>
-                  <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Pace</ThemedText>
-                  <ThemedText style={styles.reviewValue}>
-                    {PACE_OPTIONS.find(o => o.value === pace)?.label ?? pace}
-                  </ThemedText>
-                </View>
-
-                {/* Departing from */}
-                {departureFrom.trim() ? (
+                {/* Travelers — only shown in quick/AI mode (step 3 collects it) */}
+                {mode === 'quick' && (
                   <View style={styles.reviewRow}>
-                    <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Departing from</ThemedText>
-                    <ThemedText style={styles.reviewValue}>{departureFrom}</ThemedText>
+                    <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Travelers</ThemedText>
+                    <ThemedText style={styles.reviewValue}>{travelers}</ThemedText>
                   </View>
-                ) : null}
+                )}
+
+                {/* Budget — only shown in quick/AI mode */}
+                {mode === 'quick' && (
+                  <View style={styles.reviewRow}>
+                    <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Budget</ThemedText>
+                    <ThemedText style={styles.reviewValue}>
+                      {BUDGET_OPTIONS.find(o => o.value === budget)?.label ?? budget}
+                    </ThemedText>
+                  </View>
+                )}
 
                 {/* Notes */}
                 {notes.trim() ? (
@@ -1555,7 +1223,7 @@ export default function AddTripScreen() {
                   ? inboxItems.filter(i => i.status !== 'planned' && i.destination?.toLowerCase() === fromInboxDest.toLowerCase() && !excludedBoardItems.has(i.id))
                   : [];
                 const savedCount = boardForTrip.length + inboxForDest.length;
-                if (savedCount === 0 && reservations.length === 0) return null;
+                if (savedCount === 0) return null;
 
                 const dates = getEffectiveDates();
                 const tripDays = dateMode === 'duration'
@@ -1631,16 +1299,6 @@ export default function AddTripScreen() {
                           ))}
                         </View>
                       ))}
-                      {reservations.length > 0 && (
-                        <View style={{ gap: 6, marginTop: 4 }}>
-                          <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Reservations</ThemedText>
-                          {reservations.map((r) => (
-                            <ThemedText key={r.id} style={[styles.reviewValue, { fontSize: 14 }]}>
-                              {r.title} · Day {r.dayOrDate} at {r.time}
-                            </ThemedText>
-                          ))}
-                        </View>
-                      )}
                     </View>
                   );
                 }
@@ -1652,16 +1310,6 @@ export default function AddTripScreen() {
                       <View style={styles.reviewRow}>
                         <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Saved places</ThemedText>
                         <ThemedText style={styles.reviewValue}>{savedCount} included</ThemedText>
-                      </View>
-                    )}
-                    {reservations.length > 0 && (
-                      <View style={{ gap: 6 }}>
-                        <ThemedText style={[styles.reviewLabel, { color: theme.textSecondary }]}>Reservations</ThemedText>
-                        {reservations.map((r) => (
-                          <ThemedText key={r.id} style={[styles.reviewValue, { fontSize: 14 }]}>
-                            {r.title} · Day {r.dayOrDate} at {r.time}
-                          </ThemedText>
-                        ))}
                       </View>
                     )}
                   </View>
@@ -1676,27 +1324,19 @@ export default function AddTripScreen() {
               onPress={handleNext}
               style={({ pressed }) => [
                 styles.buildButton,
-                { backgroundColor: theme.primary, opacity: !canGoNext ? 0.4 : pressed ? 0.85 : 1 },
+                {
+                  backgroundColor: !canGoNext ? theme.backgroundElement : '#111827',
+                  opacity: pressed && canGoNext ? 0.85 : 1,
+                },
               ]}
               disabled={!canGoNext}
               accessibilityRole="button"
-              accessibilityLabel={quickStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
+              accessibilityLabel={displayStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
             >
-              <ThemedText style={[styles.buildButtonText, { color: theme.primaryText }]}>
-                {quickStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
+              <ThemedText style={[styles.buildButtonText, { color: !canGoNext ? theme.textSecondary : '#ffffff' }]}>
+                {displayStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
               </ThemedText>
             </Pressable>
-
-            {(quickStep === 3 || quickStep === 4) && (
-              <Pressable
-                onPress={() => setQuickStep(quickStep + 1)}
-                style={styles.skipBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Skip this step"
-              >
-                <ThemedText style={[styles.skipText, { color: theme.textSecondary }]}>Skip</ThemedText>
-              </Pressable>
-            )}
 
             {quickStep === 1 && mode === 'quick' && (
               <Pressable onPress={() => setMode('detailed')} style={styles.switchModeBtn} accessibilityRole="button" accessibilityLabel="Build my own trip">
@@ -1711,7 +1351,7 @@ export default function AddTripScreen() {
           visible={showUpgradePrompt}
           feature="generate_trip"
           title="Unlimited AI trip plans"
-          description="Generate up to 3 AI-powered itineraries every month with Travonal+."
+          description="Generate up to 3 AI-powered itineraries every month with Tripseek+."
           icon="sparkles"
           onClose={() => setShowUpgradePrompt(false)}
         />
@@ -1839,20 +1479,8 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 8,
   },
-  chooseCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
   chooseCardTitle: { fontSize: 17, fontWeight: '700' },
   chooseCardDesc: { fontSize: 14, lineHeight: 21 },
-  recommendedBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  recommendedText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
   chooseFooter: { fontSize: 13, lineHeight: 19, textAlign: 'center', paddingHorizontal: 8 },
 
   // Quick mode wizard

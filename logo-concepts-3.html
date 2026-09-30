@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flow Away — Logo Concepts v3</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f0f0f0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      color: #111;
+      min-height: 100vh;
+      padding: 64px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+    }
+
+    header .round {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    header .inspo {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #aaa;
+      letter-spacing: 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 44px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .concept-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #ccc;
+      margin-bottom: 36px;
+      align-self: flex-start;
+    }
+
+    .icon-stage {
+      width: 180px;
+      height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: #f0f0f0;
+      margin-bottom: 24px;
+    }
+
+    .mockups {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+
+    .mockup-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mockup-label {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .app-icon {
+      width: 68px;
+      height: 68px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-icon.light {
+      background: #fff;
+      box-shadow: 0 0 0 1px #e4e4e4, 0 4px 20px rgba(0,0,0,0.07);
+    }
+
+    .app-icon.dark {
+      background: #111;
+    }
+
+    .card-meta {
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 5px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="round">Flow Away — Round 3</div>
+  <p>Arc &amp; Wave Language</p>
+  <div class="inspo">Inspired by Audible, Spotify, Whispr Flow</div>
+</header>
+
+<div class="grid">
+
+  <!-- CONCEPT 1: THREE WIND ARCS (Spotify-style but flowing sideways like wind) -->
+  <div class="card">
+    <span class="concept-label">Concept 01</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Three arcs, all sweeping from left to right like wind currents -->
+        <!-- Bottom arc - thickest -->
+        <path d="M18 110 C50 90 110 90 142 110" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- Middle arc -->
+        <path d="M28 80 C55 58 105 58 132 80" stroke="#111" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+        <!-- Top arc - thinnest -->
+        <path d="M40 50 C62 34 98 34 120 50" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M18 110 C50 90 110 90 142 110" stroke="#111" stroke-width="10" stroke-linecap="round" fill="none"/>
+            <path d="M28 80 C55 58 105 58 132 80" stroke="#111" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+            <path d="M40 50 C62 34 98 34 120 50" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M18 110 C50 90 110 90 142 110" stroke="#fff" stroke-width="10" stroke-linecap="round" fill="none"/>
+            <path d="M28 80 C55 58 105 58 132 80" stroke="#fff" stroke-width="7.5" stroke-linecap="round" fill="none"/>
+            <path d="M40 50 C62 34 98 34 120 50" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Wind Arcs</p>
+      <p class="card-desc">Three stacked curves like layers of moving air. Same rhythm as Spotify but suggesting wind and open sky rather than sound.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: SIGNAL ARCS — opening upward and away like a broadcast -->
+  <div class="card">
+    <span class="concept-label">Concept 02</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Origin point — bottom center -->
+        <circle cx="80" cy="118" r="7" fill="#111"/>
+        <!-- Arc 1 — small, close -->
+        <path d="M54 98 C54 70 106 70 106 98" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <!-- Arc 2 — medium -->
+        <path d="M34 98 C34 50 126 50 126 98" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+        <!-- Arc 3 — large, farthest away -->
+        <path d="M14 98 C14 28 146 28 146 98" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="80" cy="118" r="7" fill="#111"/>
+            <path d="M54 98 C54 70 106 70 106 98" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M34 98 C34 50 126 50 126 98" stroke="#111" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <path d="M14 98 C14 28 146 28 146 98" stroke="#111" stroke-width="4" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="80" cy="118" r="7" fill="#fff"/>
+            <path d="M54 98 C54 70 106 70 106 98" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+            <path d="M34 98 C34 50 126 50 126 98" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/>
+            <path d="M14 98 C14 28 146 28 146 98" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Signal Broadcast</p>
+      <p class="card-desc">A point sending out expanding arcs — like a signal broadcasting "away." Closest to the Audible language but more open and airy.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: THREE FLOWING S-CURVES — like the letter from Spotify but for flow/air -->
+  <div class="card">
+    <span class="concept-label">Concept 03</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Three flowing curves moving from left side outward, like wind flowing past -->
+        <!-- Each one is an S-curve going left to right -->
+        <!-- Top curve - thin -->
+        <path d="M20 45 C50 45 50 72 80 72 C110 72 110 45 140 45" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+        <!-- Middle curve - thickest -->
+        <path d="M20 80 C50 80 50 107 80 107 C110 107 110 80 140 80" stroke="#111" stroke-width="8" stroke-linecap="round" fill="none"/>
+        <!-- Bottom curve - medium -->
+        <path d="M20 115 C50 115 50 88 80 88 C110 88 110 115 140 115" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M20 45 C50 45 50 72 80 72 C110 72 110 45 140 45" stroke="#111" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <path d="M20 80 C50 80 50 107 80 107 C110 107 110 80 140 80" stroke="#111" stroke-width="8" stroke-linecap="round" fill="none"/>
+            <path d="M20 115 C50 115 50 88 80 88 C110 88 110 115 140 115" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <path d="M20 45 C50 45 50 72 80 72 C110 72 110 45 140 45" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+            <path d="M20 80 C50 80 50 107 80 107 C110 107 110 80 140 80" stroke="#fff" stroke-width="8" stroke-linecap="round" fill="none"/>
+            <path d="M20 115 C50 115 50 88 80 88 C110 88 110 115 140 115" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">Flow Waves</p>
+      <p class="card-desc">Three S-curves interweaving like air currents or water. The name literally drawn as motion. Feels closest to Whispr Flow's language.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 4: SINGLE BOLD ARC + DOT — Audible simplicity -->
+  <div class="card">
+    <span class="concept-label">Concept 04</span>
+    <div class="icon-stage">
+      <svg width="160" height="160" viewBox="0 0 160 160" fill="none">
+        <!-- Single large bold arc sweeping upward from a dot -->
+        <!-- Dot — origin -->
+        <circle cx="38" cy="118" r="10" fill="#111"/>
+        <!-- Single sweeping arc from dot, curving up and right and away -->
+        <path d="M38 118 C38 60 80 28 138 28" stroke="#111" stroke-width="12" stroke-linecap="round" fill="none"/>
+        <!-- Tiny arrowhead suggestion at the end — just a thinner second arc -->
+        <path d="M118 24 C126 18 138 16 144 22" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div class="mockup-col">
+        <div class="app-icon light">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="38" cy="118" r="10" fill="#111"/>
+            <path d="M38 118 C38 60 80 28 138 28" stroke="#111" stroke-width="12" stroke-linecap="round" fill="none"/>
+            <path d="M118 24 C126 18 138 16 144 22" stroke="#111" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Light</span>
+      </div>
+      <div class="mockup-col">
+        <div class="app-icon dark">
+          <svg width="46" height="46" viewBox="0 0 160 160" fill="none">
+            <circle cx="38" cy="118" r="10" fill="#fff"/>
+            <path d="M38 118 C38 60 80 28 138 28" stroke="#fff" stroke-width="12" stroke-linecap="round" fill="none"/>
+            <path d="M118 24 C126 18 138 16 144 22" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <span class="mockup-label">Dark</span>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Departure Arc</p>
+      <p class="card-desc">One bold stroke lifting off from a grounded point and curving away into the distance. Simple as Audible, directional as a flight path — without looking like one.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

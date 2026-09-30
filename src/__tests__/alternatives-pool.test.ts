@@ -39,7 +39,7 @@ describe('findReplacement', () => {
     type: 'activity',
     day: 1,
     time: '10:00',
-    duration: 120,
+    
     category: 'art',
   };
 

@@ -1,7 +1,7 @@
 import { Activity, Trip } from '@/context/trips';
 import { TravelProfile } from '@/context/profile';
-import { TravelMemoryEntry } from '@/context/memory';
-import { TravonalCommand } from '@/components/ask-travonal';
+import { TravelMemoryEntry, MemoryCategory } from '@/context/memory';
+import { ToveliCommand } from '@/components/ask-toveli';
 import { findReplacement, findSurprise, PlaceOption, getAlternatives } from './alternatives-pool';
 import { reflowDay, generateId, timeToMinutes, minutesToTime } from './itinerary-engine';
 
@@ -18,7 +18,7 @@ export interface TransformResult {
   whyFits?: string;
   memoryEntry?: {
     type: TravelMemoryEntry['type'];
-    category: string;
+    category: MemoryCategory;
     detail: string;
   };
   lockedProtectedCount?: number;
@@ -29,15 +29,12 @@ function isLocked(a: Activity): boolean {
 }
 
 function placeToActivity(place: PlaceOption, day: number, time: string): Activity {
-  // Cap non-hotel durations at 240 minutes (4 hours) to prevent overlaps
-  const maxDuration = place.type === 'hotel' ? 480 : 240;
   return {
     id: generateId(),
     title: place.title,
     type: place.type,
     day,
     time,
-    duration: Math.min(place.duration, maxDuration),
     category: place.category,
     cost: place.cost,
     description: place.description,
@@ -160,7 +157,7 @@ function scopeLabel(scope: TransformScope): string {
 
 function transformSingleDay(
   trip: Trip,
-  command: TravonalCommand,
+  command: ToveliCommand,
   day: number,
   profile: TravelProfile,
   activities: Activity[],
@@ -407,13 +404,13 @@ function transformSingleDay(
       for (const act of reordered) {
         for (const l of locked) {
           const lStart = timeToMinutes(l.time);
-          const lEnd = lStart + (l.duration ?? 60);
+          const lEnd = lStart + 60;
           if (currentTime >= lStart && currentTime < lEnd) {
             currentTime = lEnd + 15;
           }
         }
         result.push({ ...act, time: minutesToTime(currentTime) });
-        currentTime += (act.duration ?? 60) + 30;
+        currentTime += 60 + 30;
       }
       // Verify that the reorder actually improved proximity
       function totalDistance(acts: Activity[]): number {
@@ -479,7 +476,7 @@ function transformSingleDay(
       for (let i = 0; i < sorted.length - 1; i++) {
         const cur = sorted[i];
         const next = sorted[i + 1];
-        const curEnd = timeToMinutes(cur.time) + (cur.duration ?? 60);
+        const curEnd = timeToMinutes(cur.time) + 60;
         if (curEnd > timeToMinutes(next.time)) {
           hasOverlaps = true;
           break;
@@ -500,7 +497,7 @@ function transformSingleDay(
         } else {
           result.push({
             id: generateId(), title: 'Lunch break', type: 'food', day, time: '12:30',
-            duration: 60, category: 'food', description: 'Time for a meal',
+            category: 'food', description: 'Time for a meal',
           });
           changes.push('Added lunch break');
         }
@@ -513,7 +510,7 @@ function transformSingleDay(
         } else {
           result.push({
             id: generateId(), title: 'Dinner', type: 'food', day, time: '19:00',
-            duration: 75, category: 'food', description: 'Time for dinner',
+            category: 'food', description: 'Time for dinner',
           });
           changes.push('Added dinner break');
         }
@@ -561,14 +558,14 @@ function transformSingleDay(
 }
 
 // Multi-day commands that can be iterated over each day
-const MULTI_DAY_COMMANDS: TravonalCommand[] = [
+const MULTI_DAY_COMMANDS: ToveliCommand[] = [
   'make_relaxed', 'make_adventurous', 'reduce_cost', 'avoid_crowds',
   'reduce_travel_time', 'fix_my_day', 'reflow_day',
 ];
 
 export function transformTrip(
   trip: Trip,
-  command: TravonalCommand,
+  command: ToveliCommand,
   scope: TransformScope,
   profile: TravelProfile,
   memory: TravelMemoryEntry[],
@@ -620,7 +617,7 @@ export function transformTrip(
       whyFits: `"${replacement.title}": ${replacement.description}. Matches your interest in ${replacement.tags[0] ?? 'exploration'}.`,
       memoryEntry: {
         type: 'activity_replaced',
-        category: target.category ?? target.type,
+        category: 'preference' as MemoryCategory,
         detail: `Replaced "${target.title}" with "${replacement.title}" in ${trip.destination}`,
       },
     };
@@ -691,7 +688,7 @@ export function transformTrip(
       whyFits: `Picked because you enjoy ${surprise.tags.filter((t) => profile.interests.includes(t)).join(', ') || surprise.tags[0]}. ${surprise.crowdLevel === 'low' ? 'Low crowd level.' : ''}`,
       memoryEntry: {
         type: 'recommendation_accepted',
-        category: surprise.category,
+        category: 'discovery' as MemoryCategory,
         detail: `Accepted surprise: "${surprise.title}" in ${trip.destination}`,
       },
     };

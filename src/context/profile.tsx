@@ -7,7 +7,7 @@ export interface TravelProfile {
   pace: 'relaxed' | 'moderate' | 'active';
   flexibility: 'planned' | 'some' | 'freeflow';
   /** Only set if the user explicitly chose a budget preference. */
-  budget?: 'budget' | 'moderate' | 'premium';
+  budget?: '$' | '$$' | '$$$' | '$$$$';
   interests: string[];
   dietaryRestrictions: string[];
   /** Free-text note about dietary needs (e.g. "severe peanut allergy"). */

@@ -33,7 +33,7 @@ function makeTrip(overrides?: Partial<Trip>): Trip {
 }
 
 function makeActivity(overrides: Partial<Activity> & { id: string; title: string; day: number; time: string }): Activity {
-  return { type: 'activity', duration: 60, ...overrides };
+  return { type: 'activity', ...overrides };
 }
 
 describe('findTopReplacements', () => {

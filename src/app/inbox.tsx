@@ -124,25 +124,23 @@ function BoardCard({
 
 // ─── Create Board Card ──────────────────────────────────────────────────────
 
-function CreateBoardCard({ onPress, index }: { onPress: () => void; index: number }) {
+function CreateBoardCard({ onPress }: { onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.boardCard,
-          { opacity: pressed ? 0.7 : 1 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Create a new board"
-      >
-        <View style={[styles.boardCover, styles.createCover, { borderColor: theme.border }]}>
-          <SymbolView name="plus" size={28} tintColor={theme.textSecondary} />
-        </View>
-        <ThemedText style={styles.boardName}>New board</ThemedText>
-      </Pressable>
-    </Animated.View>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.boardCard,
+        { opacity: pressed ? 0.7 : 1 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel="Create a new board"
+    >
+      <View style={[styles.boardCover, styles.createCover, { borderColor: theme.border }]}>
+        <SymbolView name="plus" size={28} tintColor={theme.textSecondary} />
+      </View>
+      <ThemedText style={styles.boardName}>New board</ThemedText>
+    </Pressable>
   );
 }
 
@@ -217,7 +215,7 @@ export default function BoardsScreen() {
       >
         {/* Create board inline input */}
         {showCreate && (
-          <Animated.View entering={FadeIn.duration(200)} style={[styles.createInput, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+          <View style={[styles.createInput, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
             <TextInput
               ref={inputRef}
               value={newName}
@@ -228,6 +226,7 @@ export default function BoardsScreen() {
               returnKeyType="done"
               onSubmitEditing={handleCreate}
               autoCapitalize="words"
+              autoFocus
             />
             <View style={styles.createActions}>
               <Pressable onPress={() => { setShowCreate(false); setNewName(''); }} style={styles.createCancelBtn} accessibilityRole="button">
@@ -242,7 +241,7 @@ export default function BoardsScreen() {
                 <ThemedText style={{ color: newName.trim() ? '#fff' : theme.textSecondary, fontSize: 15, fontWeight: '600' }}>Create</ThemedText>
               </Pressable>
             </View>
-          </Animated.View>
+          </View>
         )}
 
         {boards.length === 0 && !showCreate ? (
@@ -250,7 +249,7 @@ export default function BoardsScreen() {
             <BoardsIcon size={48} color={theme.textSecondary} />
             <ThemedText type="headline">No boards yet</ThemedText>
             <ThemedText style={[styles.emptyDesc, { color: theme.textSecondary }]}>
-              {"Create a board to organize your travel ideas. Add links, screenshots, or text — AI will sort everything and help you plan a trip."}
+{"Create a board to collect and organize your travel inspiration — places you want to visit, ideas, and anything that catches your eye."}
             </ThemedText>
             <Pressable
               onPress={handleOpenCreate}
@@ -263,19 +262,19 @@ export default function BoardsScreen() {
           </Animated.View>
         ) : (
           <View style={styles.boardsGrid}>
+            <CreateBoardCard onPress={handleOpenCreate} />
             {boards
               .sort((a, b) => b.updatedAt - a.updatedAt)
               .map((board, i) => (
                 <BoardCard
                   key={board.id}
                   board={board}
-                  index={i}
+                  index={i + 1}
                   onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
                   onDelete={() => deleteBoard(board.id)}
                   resolvedPhotos={resolvedPhotos}
                 />
               ))}
-            <CreateBoardCard onPress={handleOpenCreate} index={boards.length} />
           </View>
         )}
       </ScrollView>

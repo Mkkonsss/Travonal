@@ -27,11 +27,9 @@ describe('simulateImportIdentification', () => {
     expect(result).toHaveProperty('destination');
     expect(result).toHaveProperty('category');
     expect(result).toHaveProperty('cost');
-    expect(result).toHaveProperty('duration');
     expect(result).toHaveProperty('description');
     expect(result).toHaveProperty('tags');
     expect(result).toHaveProperty('type');
-    expect(result.duration).toBeGreaterThan(0);
     expect(Array.isArray(result.tags)).toBe(true);
   });
 });

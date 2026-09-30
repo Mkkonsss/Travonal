@@ -1,4 +1,4 @@
-# Travonal
+# Toveli
 
 AI-powered travel planning app built with Expo (iOS, Android, Web).
 

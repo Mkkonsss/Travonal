@@ -8,10 +8,11 @@
 
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 
@@ -22,6 +23,7 @@ import { TimePickerButton } from '@/components/time-picker';
 import { SelectionSheet, SelectionOption } from '@/components/selection-sheet';
 
 import { SymbolView } from 'expo-symbols';
+import { LocationPinIcon } from '@/components/icons';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -174,7 +176,7 @@ function LocationSelector({ location, onPress }: { location: ExploreLocation | n
       accessibilityLabel="Change explore location"
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <SymbolView name="mappin" size={14} tintColor={theme.primary} />
+        <LocationPinIcon size={14} color={theme.primary} />
         <ThemedText style={styles.locationLabel}>{label}</ThemedText>
         <SymbolView name="chevron.down" size={10} tintColor={theme.text} />
       </View>
@@ -182,106 +184,80 @@ function LocationSelector({ location, onPress }: { location: ExploreLocation | n
   );
 }
 
-// ============ PlaceCard ============
+// ============ PlaceCard (2-column image grid) ============
 
-function ExplorePlaceCard({
+function ExploreGridCard({
   place,
+  cardWidth,
   onPress,
   onSaveToBoard,
   onAdd,
-  destination,
 }: {
   place: NormalizedPlace;
+  cardWidth: number;
   onPress: () => void;
   onSaveToBoard: () => void;
   onAdd: () => void;
-  destination: string;
 }) {
   const theme = useTheme();
+  const cardHeight = cardWidth * 1.15;
 
-  // Build category label from Google types, with fallback to category name
-  const formattedTypes = place.googleTypes?.length ? formatGoogleTypes(place.googleTypes) : '';
+  const rawCat = place.googleTypes?.length ? formatGoogleTypes(place.googleTypes) : '';
   const fallbackLabel = place.category.split('/').pop() ?? place.category;
-  const catLabel = formattedTypes || (fallbackLabel === 'other' ? 'Place' : fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1));
-
-  const priceLabel = priceLevelLabel(place.priceLevel, place.category);
-  const distLabel = formatDistance(place.distance);
+  const catLabel = rawCat
+    ? rawCat.split(' \u00B7 ')[0]
+    : fallbackLabel === 'other' ? 'Place' : fallbackLabel.charAt(0).toUpperCase() + fallbackLabel.slice(1);
 
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.placeCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+      style={({ pressed }) => [styles.gridCard, { width: cardWidth, height: cardHeight, opacity: pressed ? 0.9 : 1 }]}
       accessibilityRole="button"
       accessibilityLabel={place.name}
     >
-      <View style={styles.cardRow}>
-        <PlacePhotoImage place={place} style={styles.cardPhoto} />
-        <View style={styles.cardContent}>
-          <View style={styles.cardTopRow}>
-            <ThemedText style={styles.cardName} numberOfLines={1}>{place.name}</ThemedText>
-            <Pressable
-              onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSaveToBoard(); }}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Save to board"
-            >
-              <SymbolView name="bookmark" size={20} tintColor="#9CA3AF" />
-            </Pressable>
-          </View>
+      {/* Background image */}
+      <PlacePhotoImage place={place} style={StyleSheet.absoluteFill} />
 
-          {place.address && (
-            <ThemedText style={[styles.cardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-              {place.address}
-            </ThemedText>
-          )}
+      {/* Gradient overlay */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)']}
+        locations={[0, 0.45, 1]}
+        style={StyleSheet.absoluteFill}
+      />
 
-          <View style={styles.cardMetaRow}>
-            {place.rating != null && (
-              <>
-                <SymbolView name="star.fill" size={12} tintColor="#F59E0B" />
-                <ThemedText style={styles.ratingNum}>{place.rating.toFixed(1)}</ThemedText>
-                {place.reviewCount != null && (
-                  <ThemedText style={[styles.reviewCount, { color: theme.textSecondary }]}>({place.reviewCount})</ThemedText>
-                )}
-              </>
-            )}
-            {priceLabel ? <ThemedText style={[styles.priceLabel, { color: theme.primary }]}>{priceLabel}</ThemedText> : null}
-            {distLabel ? <ThemedText style={[styles.distLabel, { color: theme.textSecondary }]}>{distLabel}</ThemedText> : null}
-            {place.openNow != null && (
-              <ThemedText style={[styles.openStatus, { color: place.openNow ? '#22C55E' : '#DC2626' }]}>
-                {place.openNow ? 'Open' : 'Closed'}
-              </ThemedText>
-            )}
-          </View>
+      {/* Top-right action buttons */}
+      <View style={styles.gridCardActions}>
+        <Pressable
+          onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onAdd(); }}
+          style={styles.gridCardActionBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Add to trip"
+          hitSlop={6}
+        >
+          <SymbolView name="plus" size={14} tintColor="#fff" />
+        </Pressable>
+        <Pressable
+          onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSaveToBoard(); }}
+          style={styles.gridCardActionBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Save to board"
+          hitSlop={6}
+        >
+          <SymbolView name="bookmark" size={14} tintColor="#fff" />
+        </Pressable>
+      </View>
 
-          <View style={styles.cardBottomRow}>
-            <View style={[styles.catChip, { backgroundColor: theme.primaryMuted }]}>
-              <ThemedText style={styles.catChipText} numberOfLines={1}>{catLabel}</ThemedText>
+      {/* Bottom text */}
+      <View style={styles.gridCardBottom}>
+        <ThemedText style={styles.gridCardName} numberOfLines={2}>{place.name}</ThemedText>
+        <View style={styles.gridCardMeta}>
+          {place.rating != null && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <SymbolView name="star.fill" size={11} tintColor="#F59E0B" />
+              <ThemedText style={styles.gridCardRating}>{place.rating.toFixed(1)}</ThemedText>
             </View>
-            {isBookablePlace({ category: place.category, reservable: place.reservable, priceLevel: place.priceLevel }) ? (
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  const links = getPlaceBookingLinks(place.name, place.category, destination);
-                  if (links[0]) openBookingLink(links[0].url);
-                }}
-                style={[styles.viewBtn, { backgroundColor: theme.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 }]}
-                accessibilityRole="button"
-                accessibilityLabel={getBookableCTA(place.category) ?? undefined}
-              >
-                <ThemedText style={[styles.viewBtnText, { color: theme.primaryText }]}>{getBookableCTA(place.category)?.replace('Get ', '')}</ThemedText>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={onPress}
-                style={styles.viewBtn}
-                accessibilityRole="button"
-                accessibilityLabel={`View ${place.name}`}
-              >
-                <ThemedText style={[styles.viewBtnText, { color: theme.primary }]}>View {'\u203A'}</ThemedText>
-              </Pressable>
-            )}
-          </View>
+          )}
+          <ThemedText style={styles.gridCardCat} numberOfLines={1}>{catLabel}</ThemedText>
         </View>
       </View>
     </Pressable>
@@ -347,9 +323,8 @@ function buildMapHtml(
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#f0f0f0}
+body{background:#e8e8e8}
 #map{width:100%;height:100vh}
-.leaflet-tile-pane{filter:saturate(0.25) brightness(1.05) contrast(0.95)}
 .pin-marker{
   display:flex;align-items:center;justify-content:center;
   width:26px;height:26px;border-radius:50%;
@@ -360,15 +335,15 @@ body{background:#f0f0f0}
 }
 .pin-marker.active{transform:scale(1.3);border-color:#111;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
 .pin-marker svg{width:13px;height:13px}
-.leaflet-popup-content-wrapper{border-radius:14px;padding:0;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.18)}
-.leaflet-popup-content{margin:0;min-width:230px;max-width:260px}
-.leaflet-popup-tip{border-top-color:#fff}
-.popup-card{font-family:-apple-system,BlinkMacSystemFont,sans-serif}
-.popup-img{width:100%;height:130px;object-fit:cover;display:block;background:#f3f4f6}
+.leaflet-popup-content-wrapper{border-radius:16px;padding:0;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.12);border:1px solid #f0f0f0}
+.leaflet-popup-content{margin:0;min-width:220px;max-width:250px}
+.leaflet-popup-tip-container{display:none}
+.popup-card{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#fff}
+.popup-img{width:100%;height:120px;object-fit:cover;display:block;background:#f3f4f6}
 .popup-body{padding:10px 12px}
-.popup-name{font-size:14px;font-weight:700;margin-bottom:3px}
-.popup-rating{font-size:12px;color:#F59E0B;margin-bottom:2px}
-.popup-addr{font-size:11px;color:#6B7280;line-height:1.3}
+.popup-name{font-size:14px;font-weight:700;color:#111;margin-bottom:3px}
+.popup-rating{font-size:12px;color:#F59E0B;font-weight:600;margin-bottom:2px}
+.popup-addr{font-size:11px;color:#9CA3AF;line-height:1.4}
 </style>
 </head><body><div id="map"></div><script>
 var places=${placesJson};
@@ -561,13 +536,13 @@ function MapPreview({
           <Pressable
             key={place.placeId ?? `map-card-${i}`}
             onPress={() => { setFullScreen(false); onNavigateToDetail(place); }}
-            style={[styles.mapCard, { backgroundColor: '#1c1c1e' }]}
+            style={[styles.mapCard, { backgroundColor: theme.background }]}
             accessibilityRole="button"
             accessibilityLabel={place.name}
           >
             <MapCardPhoto place={place} />
             <View style={styles.mapCardBody}>
-              <ThemedText style={[styles.mapCardName, { color: '#fff' }]} numberOfLines={1}>{place.name}</ThemedText>
+              <ThemedText style={[styles.mapCardName, { color: theme.text }]} numberOfLines={1}>{place.name}</ThemedText>
               {place.rating != null && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <SymbolView name="star.fill" size={12} tintColor="#F59E0B" />
@@ -578,7 +553,7 @@ function MapPreview({
                 </View>
               )}
               {place.address && (
-                <ThemedText style={[styles.mapCardAddr, { color: '#aaa' }]} numberOfLines={1}>
+                <ThemedText style={[styles.mapCardAddr, { color: theme.textSecondary }]} numberOfLines={1}>
                   {place.address}
                 </ThemedText>
               )}
@@ -590,19 +565,19 @@ function MapPreview({
                       const links = getPlaceBookingLinks(place.name, place.category, location?.label ?? '');
                       if (links[0]) openBookingLink(links[0].url);
                     }}
-                    style={[styles.mapCardAddBtn, { backgroundColor: '#fff' }]}
+                    style={[styles.mapCardAddBtn, { backgroundColor: '#111' }]}
                     accessibilityRole="button"
                   >
-                    <ThemedText style={[styles.mapCardAddText, { color: '#000' }]}>{getBookableCTA(place.category)}</ThemedText>
+                    <ThemedText style={[styles.mapCardAddText, { color: '#fff' }]}>{getBookableCTA(place.category)}</ThemedText>
                   </Pressable>
                 ) : (
                   <>
                     <Pressable
                       onPress={(e) => { e.stopPropagation(); onAddToTrip(place); }}
-                      style={[styles.mapCardAddBtn, { backgroundColor: '#fff' }]}
+                      style={[styles.mapCardAddBtn, { backgroundColor: '#111' }]}
                       accessibilityRole="button"
                     >
-                      <ThemedText style={[styles.mapCardAddText, { color: '#000' }]}>Add to trip</ThemedText>
+                      <ThemedText style={[styles.mapCardAddText, { color: '#fff' }]}>Add to trip</ThemedText>
                     </Pressable>
                     <Pressable
                       onPress={(e) => { e.stopPropagation(); onToggleSave(place); }}
@@ -610,7 +585,7 @@ function MapPreview({
                       accessibilityRole="button"
                       accessibilityLabel="Save to board"
                     >
-                      <SymbolView name="bookmark" size={18} tintColor="#aaa" />
+                      <SymbolView name="bookmark" size={18} tintColor={theme.textSecondary} />
                     </Pressable>
                   </>
                 )}
@@ -645,7 +620,7 @@ function MapPreview({
               key={`${centerLat.toFixed(3)},${centerLng.toFixed(3)}`}
               markers={nativeMarkers}
               interactive={false}
-              userInterfaceStyle="dark"
+              userInterfaceStyle="light"
             />
           )}
           {/* Expand button overlay */}
@@ -683,7 +658,7 @@ function MapPreview({
               onMarkerPress={handleNativeMarkerPress}
               activeMarkerIndex={activeMarkerIndex}
               initialPadding={{ top: 60, right: 50, bottom: 250, left: 50 }}
-              userInterfaceStyle="dark"
+              userInterfaceStyle="light"
             />
           )}
 
@@ -722,11 +697,15 @@ export function ExploreSearchView() {
   const { tripId: paramTripId, day: paramDay } = useLocalSearchParams<{ tripId?: string; day?: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const gridGap = 10;
+  const gridPadding = Spacing.four;
+  const cardWidth = (screenWidth - gridPadding * 2 - gridGap) / 2;
   const { showToast } = useToast();
   const { trips, addActivity, getTripState } = useTrips();
   const { profile } = useProfile();
   const { savedPlaces, savePlace, unsavePlace, isSaved } = useInbox();
-  const { addItemToBoard } = useBoards();
+  const { boards, addItemToBoard } = useBoards();
   const [boardPickerVisible, setBoardPickerVisible] = useState(false);
   const [pendingBoardPlace, setPendingBoardPlace] = useState<NormalizedPlace | null>(null);
 
@@ -761,7 +740,6 @@ export function ExploreSearchView() {
     day: number;
     place: NormalizedPlace;
     time: string;
-    duration: number;
   } | null>(null);
   const [sheetState, setSheetState] = useState<{
     title: string;
@@ -1011,7 +989,7 @@ export function ExploreSearchView() {
 
   function handleAddToTrip(place: NormalizedPlace) {
     if (trips.length === 0) {
-      showToast('Plan a trip first, then add activities', 'info');
+      Alert.alert("No trips yet", "Plan a trip first, then you can add activities to it.");
       return;
     }
 
@@ -1074,13 +1052,12 @@ export function ExploreSearchView() {
       day,
       place,
       time: '10:00',
-      duration: 60,
     });
   }
 
   function confirmPendingAdd() {
     if (!pendingAdd) return;
-    const { tripId, day, place, time, duration } = pendingAdd;
+    const { tripId, day, place, time } = pendingAdd;
     const trip = trips.find((t) => t.id === tripId);
     const actType = categoryToActivityType(place.category);
     addActivity(tripId, {
@@ -1088,7 +1065,6 @@ export function ExploreSearchView() {
       day,
       time,
       type: actType,
-      duration,
       category: place.category,
       cost: place.priceLevel != null && place.priceLevel <= 1 ? 'budget' : 'moderate',
       description: place.description ?? place.address ?? '',
@@ -1100,6 +1076,10 @@ export function ExploreSearchView() {
   // ---- Save ----
 
   function handleSaveToBoard(place: NormalizedPlace) {
+    if (boards.length === 0) {
+      Alert.alert("No boards yet", "Create a board first to save places to it.");
+      return;
+    }
     setPendingBoardPlace(place);
     setBoardPickerVisible(true);
   }
@@ -1114,7 +1094,6 @@ export function ExploreSearchView() {
       type: categoryToActivityType(place.category) as 'activity' | 'food' | 'hotel' | 'flight',
       category: place.category,
       cost: place.priceLevel != null && place.priceLevel <= 1 ? 'budget' : 'moderate',
-      duration: 60,
       description: place.description ?? place.address ?? '',
       sourceType: 'explore',
       placeId: place.placeId,
@@ -1290,11 +1269,10 @@ export function ExploreSearchView() {
                 accessibilityLabel={`Filter by ${cat.label}`}
                 accessibilityState={{ selected: activeCategory === cat.id }}
                 style={[styles.categoryTab, {
-                  backgroundColor: activeCategory === cat.id ? theme.primary : theme.backgroundElement,
                   borderColor: activeCategory === cat.id ? theme.primary : theme.border,
                 }]}
               >
-                <ThemedText style={[styles.categoryTabText, activeCategory === cat.id && { color: theme.primaryText }]}>{cat.label}</ThemedText>
+                <ThemedText style={[styles.categoryTabText, { color: activeCategory === cat.id ? theme.primary : theme.textSecondary }]}>{cat.label}</ThemedText>
               </Pressable>
             ))}
           </ScrollView>
@@ -1339,17 +1317,17 @@ export function ExploreSearchView() {
           </View>
         )}
 
-        {/* Place feed */}
+        {/* Place feed — 2-column image grid */}
         {displayPlaces.length > 0 && (
-          <View style={styles.placesList}>
+          <View style={styles.placesGrid}>
             {displayPlaces.map((place, i) => (
-              <ExplorePlaceCard
+              <ExploreGridCard
                 key={place.placeId ?? `place-${i}`}
                 place={place}
+                cardWidth={cardWidth}
                 onPress={() => navigateToDetail(place)}
                 onSaveToBoard={() => handleSaveToBoard(place)}
                 onAdd={() => handleAddToTrip(place)}
-                destination={exploreLocation?.label ?? ''}
               />
             ))}
           </View>
@@ -1385,7 +1363,7 @@ export function ExploreSearchView() {
         />
       )}
 
-      {/* Time & duration picker */}
+      {/* Time picker */}
       {pendingAdd && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setPendingAdd(null)}>
           <Pressable style={styles.addModalBackdrop} onPress={() => setPendingAdd(null)} accessibilityRole="button" accessibilityLabel="Close">
@@ -1397,9 +1375,6 @@ export function ExploreSearchView() {
               <TimePickerButton
                 value={pendingAdd.time}
                 onChange={(t) => setPendingAdd((p) => p ? { ...p, time: t } : p)}
-                showDuration
-                duration={pendingAdd.duration}
-                onDurationChange={(d) => setPendingAdd((p) => p ? { ...p, duration: d } : p)}
               />
               <View style={styles.addModalBtns}>
                 <Pressable onPress={() => setPendingAdd(null)} style={[styles.addModalCancel, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel">
@@ -1639,32 +1614,17 @@ const styles = StyleSheet.create({
   mapCardAddText: { fontSize: 12, fontWeight: '600' },
   mapCardSaveIcon: { fontSize: 20 },
 
-  // Place cards
-  placesList: { gap: 12 },
-  placeCard: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
-  cardRow: { flexDirection: 'row', minHeight: 110 },
-  cardPhoto: { width: 100 },
-  photoPlaceholder: { width: 100, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
-  placeholderIcon: { fontSize: 22, opacity: 0.4 },
-  cardContent: { flex: 1, padding: 12, gap: 4 },
-  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardName: { fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8 },
-  cardMeta: { fontSize: 12 },
-  cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' },
-  ratingStar: { fontSize: 13, color: '#F59E0B' },
-  ratingNum: { fontSize: 13, fontWeight: '700' },
-  reviewCount: { fontSize: 11 },
-  priceLabel: { fontSize: 12, fontWeight: '700', marginLeft: 4 },
-  distLabel: { fontSize: 11, marginLeft: 4 },
-  cardBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  catChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, flexShrink: 1 },
-  catChipText: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase' },
-  openStatus: { fontSize: 11, fontWeight: '600', marginLeft: 4 },
-
-  // Save / View
-  saveIcon: { fontSize: 20 },
-  viewBtn: { paddingHorizontal: 2, paddingVertical: 4 },
-  viewBtnText: { fontSize: 13, fontWeight: '600' },
+  // Place grid
+  placesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  gridCard: { borderRadius: 14, overflow: 'hidden' },
+  photoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  gridCardActions: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', gap: 6 },
+  gridCardActionBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center' },
+  gridCardBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10, gap: 4 },
+  gridCardName: { fontSize: 13, fontWeight: '700', color: '#fff', lineHeight: 17 },
+  gridCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  gridCardRating: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  gridCardCat: { fontSize: 11, color: 'rgba(255,255,255,0.75)', flex: 1 },
 
   // Sections
   sectionTitle: { marginTop: Spacing.three, marginBottom: 8 },

@@ -45,33 +45,16 @@ export function checkConflicts(activities: Activity[], _totalDays: number): Conf
       const current = sorted[i];
       const next = sorted[i + 1];
 
-      // Hard overlap: only flag when both activities have explicit durations,
-      // or when they start at the exact same time.
-      const sameStart = current.time === next.time;
-      const bothHaveDuration = current.duration != null && next.duration != null;
-
-      if (sameStart) {
+      // Flag activities that start at the exact same time
+      if (current.time === next.time) {
         conflicts.push({
           type: 'overlap',
-          message: `"${current.title}" and "${next.title}" are both at ${current.time} on Day ${day}`,
+          message: `"${current.title}" and "${next.title}" are both at ${current.time}.`,
           activityIds: [current.id, next.id],
           day,
           severity: 'error',
         });
-      } else if (bothHaveDuration) {
-        const currentEnd = timeToMinutes(current.time) + current.duration!;
-        const nextStart = timeToMinutes(next.time);
-        if (currentEnd > nextStart) {
-          conflicts.push({
-            type: 'overlap',
-            message: `"${current.title}" and "${next.title}" overlap on Day ${day}`,
-            activityIds: [current.id, next.id],
-            day,
-            severity: 'error',
-          });
-        }
       }
-      // If only one activity has a duration, don't flag — the user hasn't
       // specified how long the other takes, so we can't know if it's a conflict.
     }
   }
@@ -93,9 +76,10 @@ export function reflowDay(activities: Activity[], day: number, startTime: string
   const flexible = dayActivities.filter((a) => !isLocked(a));
 
   // Build timeline: place fixed activities first, then fill in flexible ones around them
+  const SLOT = 60; // fixed slot size for spacing
   const fixedSlots = fixed.map((a) => ({
     start: timeToMinutes(a.time),
-    end: timeToMinutes(a.time) + (a.duration ?? 60),
+    end: timeToMinutes(a.time) + SLOT,
     activity: a,
   }));
 
@@ -106,7 +90,7 @@ export function reflowDay(activities: Activity[], day: number, startTime: string
     // Find next available slot that doesn't overlap with fixed activities
     let slotOk = false;
     while (!slotOk && currentTime < 22 * 60) {
-      const proposedEnd = currentTime + (flexAct.duration ?? 60);
+      const proposedEnd = currentTime + SLOT;
       slotOk = !fixedSlots.some(
         (f) => currentTime < f.end && proposedEnd > f.start
       );
@@ -124,7 +108,7 @@ export function reflowDay(activities: Activity[], day: number, startTime: string
     }
 
     result.push({ ...flexAct, time: minutesToTime(currentTime) });
-    currentTime += (flexAct.duration ?? 60) + 30;
+    currentTime += SLOT + 30;
   }
 
   return [...otherActivities, ...result.sort(compareByTime)];
@@ -227,7 +211,7 @@ export function suggestTimeForActivity(
   if (dayActivities.length === 0) return '09:00';
 
   const lastAct = dayActivities[dayActivities.length - 1];
-  const lastEnd = timeToMinutes(lastAct.time) + (lastAct.duration ?? 60);
+  const lastEnd = timeToMinutes(lastAct.time) + 60;
   const nextStart = lastEnd + 30; // 30 min buffer
 
   if (nextStart >= 22 * 60) return '09:00'; // day full, default to morning
@@ -324,7 +308,7 @@ export function computeChangePreview(
     const proposed = proposedActivities.find((p) => p.id === a.id);
     if (!proposed) {
       removed.push(a);
-    } else if (proposed.time !== a.time || proposed.day !== a.day || proposed.title !== a.title || proposed.type !== a.type || proposed.duration !== a.duration) {
+    } else if (proposed.time !== a.time || proposed.day !== a.day || proposed.title !== a.title || proposed.type !== a.type) {
       modified.push({
         activity: a,
         ...(proposed.time !== a.time ? { oldTime: a.time, newTime: proposed.time } : {}),

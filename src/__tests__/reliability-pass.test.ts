@@ -3,7 +3,7 @@
  * All tests import and exercise actual production code — no copied implementations.
  */
 
-import { parseTextToCommand } from '@/components/ask-travonal';
+import { parseTextToCommand } from '@/components/ask-toveli';
 import { transformTrip, TransformScope } from '@/services/transformation-service';
 import { runTripPulse } from '@/services/trip-pulse';
 import { pulseInputFingerprint } from '@/components/app-pulse-evaluator';
@@ -41,7 +41,7 @@ function makeActivity(overrides: Partial<Activity> & { id: string; day: number; 
   return {
     title: 'Test Activity',
     type: 'activity',
-    duration: 120,
+    
     category: 'culture',
     cost: 'moderate',
     ...overrides,
@@ -492,7 +492,7 @@ describe('Issue 8: runTripPulse — uncapped vs capped', () => {
         day: 1,
         time: '10:00',
         title: `Activity ${i}`,
-        duration: 120,
+        
       }));
     }
     const trip = makeTrip({ id: 't1', activities });
@@ -508,7 +508,7 @@ describe('Issue 8: runTripPulse — uncapped vs capped', () => {
         day: 1,
         time: '10:00',
         title: `Activity ${i}`,
-        duration: 120,
+        
       }));
     }
     const trip = makeTrip({ id: 't1', activities });
@@ -518,11 +518,11 @@ describe('Issue 8: runTripPulse — uncapped vs capped', () => {
   });
 
   test('6+ simultaneous issues: issue #6 not falsely resolved', () => {
-    // Create enough issues to exceed top-5: 6 days with overlapping activities = 6 conflict alerts
+    // Create enough issues to exceed top-5: 6 days with same-time activities = 6 conflict alerts
     const activities: Activity[] = [];
     for (let day = 1; day <= 6; day++) {
-      activities.push(makeActivity({ id: `a${day}a`, day, time: '10:00', title: `Act ${day}A`, duration: 180 }));
-      activities.push(makeActivity({ id: `a${day}b`, day, time: '11:00', title: `Act ${day}B`, duration: 120 }));
+      activities.push(makeActivity({ id: `a${day}a`, day, time: '10:00', title: `Act ${day}A`}));
+      activities.push(makeActivity({ id: `a${day}b`, day, time: '10:00', title: `Act ${day}B`}));
     }
     const trip = makeTrip({ id: 't1', activities, startDate: '2026-09-01', endDate: '2026-09-06' });
 

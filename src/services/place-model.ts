@@ -5,7 +5,7 @@
 
 export type PlaceSource = 'google' | 'sample' | 'osm';
 
-export type TravonalCategory =
+export type ToveliCategory =
   | 'food/restaurant'
   | 'food/cafe'
   | 'food/bakery'
@@ -55,7 +55,8 @@ export interface NormalizedPlace {
 
   // Taxonomy
   googleTypes?: string[];
-  category: TravonalCategory;
+  category: ToveliCategory;
+  primaryTypeLabel?: string;    // Google's human-readable type label (e.g. "Italian Restaurant")
 
   // Quality
   rating?: number;
@@ -85,25 +86,16 @@ export interface NormalizedPlace {
 }
 
 /**
- * Google place type -> Travonal category.
+ * Google place type -> Tripseek category.
  *
  * IMPORTANT: Order matters! Google assigns `point_of_interest` to nearly every
  * place, so specific types (lodging, shopping, entertainment, etc.) MUST be
  * checked BEFORE the tourist_attraction / point_of_interest catch-all.
  */
-export function mapGoogleTypeToCategory(types: string[]): TravonalCategory {
+export function mapGoogleTypeToCategory(types: string[]): ToveliCategory {
   const t = types ?? [];
-  // Food — most specific first
-  if (t.includes('cafe') || t.includes('coffee_shop')) return 'food/cafe';
-  if (t.includes('bakery')) return 'food/bakery';
-  if (t.includes('bar') || t.includes('night_club')) return 'food/bar';
-  if (t.includes('restaurant') || t.includes('food')) return 'food/restaurant';
-  // Stays
-  if (t.includes('lodging') || t.includes('hotel') || t.includes('resort_hotel')
-    || t.includes('extended_stay_hotel')) return 'stay/hotel';
-  if (t.includes('hostel')) return 'stay/hostel';
-  if (t.includes('motel') || t.includes('bed_and_breakfast')
-    || t.includes('guest_house') || t.includes('cottage')) return 'stay/other';
+  // Specific activity types FIRST — these take priority over food types because
+  // many entertainment/sport venues also serve food (e.g. TopGolf = golf_course + restaurant)
   // Museums & galleries
   if (t.includes('museum') || t.includes('art_gallery')) return 'activity/museum';
   // Entertainment — ticketed venues
@@ -112,6 +104,17 @@ export function mapGoogleTypeToCategory(types: string[]): TravonalCategory {
     || t.includes('water_park') || t.includes('casino') || t.includes('concert_hall')) return 'activity/entertainment';
   // Sports & wellness
   if (t.includes('gym') || t.includes('stadium') || t.includes('spa') || t.includes('golf_course')) return 'activity/sport';
+  // Stays
+  if (t.includes('lodging') || t.includes('hotel') || t.includes('resort_hotel')
+    || t.includes('extended_stay_hotel')) return 'stay/hotel';
+  if (t.includes('hostel')) return 'stay/hostel';
+  if (t.includes('motel') || t.includes('bed_and_breakfast')
+    || t.includes('guest_house') || t.includes('cottage')) return 'stay/other';
+  // Food — checked AFTER specific activity types
+  if (t.includes('cafe') || t.includes('coffee_shop')) return 'food/cafe';
+  if (t.includes('bakery')) return 'food/bakery';
+  if (t.includes('bar') || t.includes('night_club')) return 'food/bar';
+  if (t.includes('restaurant') || t.includes('food')) return 'food/restaurant';
   // Shopping
   if (t.includes('shopping_mall') || t.includes('store') || t.includes('clothing_store')) return 'shopping';
   // Parks & nature
@@ -121,9 +124,9 @@ export function mapGoogleTypeToCategory(types: string[]): TravonalCategory {
   return 'activity/other';
 }
 
-/** Map Travonal category to Activity type for trip integration */
+/** Map Tripseek category to Activity type for trip integration */
 export function categoryToActivityType(
-  cat: TravonalCategory,
+  cat: ToveliCategory,
 ): 'activity' | 'food' | 'hotel' | 'flight' {
   if (cat.startsWith('food/')) return 'food';
   if (cat.startsWith('stay/')) return 'hotel';
@@ -131,7 +134,7 @@ export function categoryToActivityType(
 }
 
 /** Price level label — only meaningful for food/stay categories */
-export function priceLevelLabel(level?: number, category?: TravonalCategory): string {
+export function priceLevelLabel(level?: number, category?: ToveliCategory): string {
   if (level == null) return '';
   // Don't show price tier for non-food/stay places (e.g. Eiffel Tower shouldn't show $$)
   if (category && !category.startsWith('food/') && !category.startsWith('stay/')) return '';
@@ -214,7 +217,7 @@ export function formatDistance(metres?: number): string {
 
 // ── OSM tag → category mapping ──
 
-export function mapOSMTagsToCategory(tags: Record<string, string>): TravonalCategory {
+export function mapOSMTagsToCategory(tags: Record<string, string>): ToveliCategory {
   const amenity = tags.amenity ?? '';
   const tourism = tags.tourism ?? '';
   const shop = tags.shop ?? '';
@@ -353,6 +356,14 @@ export function normalizeGooglePlace(raw: Record<string, unknown>): NormalizedPl
   const photos = (raw.photos as Record<string, unknown>[]) ?? [];
   const currentOpeningHours = raw.currentOpeningHours as Record<string, unknown> | undefined;
   const editorialSummary = raw.editorialSummary as Record<string, string> | undefined;
+  const primaryType = raw.primaryTypeDisplayName as Record<string, string> | undefined;
+  const category = mapGoogleTypeToCategory(types);
+  // Use primaryTypeDisplayName unless it conflicts with our category mapping.
+  // e.g. Google says "Restaurant" for TopGolf, but types include golf_course → we know it's sport.
+  const primaryLabel = primaryType?.text;
+  const isGenericFoodLabel = primaryLabel && /^(restaurant|food)$/i.test(primaryLabel.trim());
+  const isCategoryNotFood = category && !category.startsWith('food/');
+  const effectiveLabel = (isGenericFoodLabel && isCategoryNotFood) ? undefined : primaryLabel;
 
   return {
     placeId: raw.id as string | undefined,
@@ -362,7 +373,8 @@ export function normalizeGooglePlace(raw: Record<string, unknown>): NormalizedPl
     lat: location?.latitude,
     lng: location?.longitude,
     googleTypes: types,
-    category: mapGoogleTypeToCategory(types),
+    category,
+    primaryTypeLabel: effectiveLabel,
     rating: raw.rating as number | undefined,
     reviewCount: raw.userRatingCount as number | undefined,
     priceLevel: raw.priceLevel as number | undefined,

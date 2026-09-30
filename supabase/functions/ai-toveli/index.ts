@@ -13,6 +13,7 @@ const corsHeaders = {
 
 const client = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
 const MODEL = "claude-sonnet-4-6";
+// Use Sonnet for all calls — Haiku not available on this API key
 
 function extractJSON(text) {
   // Try code block first
@@ -73,7 +74,7 @@ function extractJSON(text) {
 }
 
 async function claude(system, user, maxTokens, timeoutMs) {
-  var tms = timeoutMs || 50000;
+  var tms = timeoutMs || 60000;
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, tms);
   try {
@@ -84,12 +85,23 @@ async function claude(system, user, maxTokens, timeoutMs) {
       messages: [{ role: "user", content: user }],
     }, { signal: controller.signal });
     clearTimeout(timer);
+    console.log("[claude] stop_reason:", response.stop_reason,
+      "usage:", JSON.stringify(response.usage),
+      "content_length:", response.content.length);
     var text = response.content[0].type === "text"
       ? response.content[0].text
       : "";
-    return extractJSON(text);
+    try {
+      return extractJSON(text);
+    } catch (parseErr) {
+      console.error("[claude] extractJSON failed. text length:", text.length,
+        "first 500 chars:", text.substring(0, 500));
+      parseErr.rawText = text;
+      throw parseErr;
+    }
   } catch (err) {
     clearTimeout(timer);
+    console.error("[claude] error:", err.message || err);
     throw err;
   }
 }
@@ -107,12 +119,13 @@ async function fetchGooglePlaces(query, apiKey) {
     "places.rating",
     "places.userRatingCount",
     "places.types",
+    "places.primaryTypeDisplayName",
     "places.location",
     "places.photos",
   ].join(",");
   var body = JSON.stringify({
     textQuery: query,
-    pageSize: 10,
+    pageSize: 20,
   });
   try {
     var resp = await fetch(url, {
@@ -132,35 +145,34 @@ async function fetchGooglePlaces(query, apiKey) {
   }
 }
 
-function formatGooglePlaces(places) {
+function formatGooglePlaces(places, compact) {
   var lines = [];
-  var limit = Math.min(places.length, 15);
+  var limit = Math.min(places.length, compact ? 60 : 40);
   for (var i = 0; i < limit; i++) {
     var p = places[i];
     var name = p.displayName
       ? p.displayName.text || "Unknown"
       : "Unknown";
     var addr = p.formattedAddress || "";
-    var rating = p.rating
-      ? " Rating:" + p.rating : "";
     var pid = p.id || p.placeId || "";
-    var lat = p.location
-      ? p.location.latitude : "";
-    var lng = p.location
-      ? p.location.longitude : "";
-    lines.push(
-      (i + 1) + ". " + name + rating
-    );
-    if (addr) {
-      lines.push("   Address: " + addr);
-    }
-    if (pid) {
-      lines.push("   placeId: " + pid);
-    }
-    if (lat && lng) {
-      lines.push(
-        "   lat: " + lat + " lng: " + lng
-      );
+    var lat = p.location ? p.location.latitude : "";
+    var lng = p.location ? p.location.longitude : "";
+    if (compact) {
+      // Minimal format for long trips: name|placeId|addr|lat|lng
+      lines.push(name + "|" + pid + "|" + addr + "|" + lat + "|" + lng);
+    } else {
+      var rating = p.rating ? " Rating:" + p.rating : "";
+      var types = (p.types || []).filter(function(t) {
+        return t !== "point_of_interest" && t !== "establishment";
+      }).slice(0, 4).join(", ");
+      var primaryTypeLabel = p.primaryTypeDisplayName
+        ? p.primaryTypeDisplayName.text || "" : "";
+      lines.push((i + 1) + ". " + name + rating);
+      if (primaryTypeLabel) lines.push("   Category: " + primaryTypeLabel);
+      if (types) lines.push("   Types: " + types);
+      if (addr) lines.push("   Address: " + addr);
+      if (pid) lines.push("   placeId: " + pid);
+      if (lat && lng) lines.push("   lat: " + lat + " lng: " + lng);
     }
   }
   return lines.join("\n");
@@ -263,6 +275,7 @@ function validateOutput(data, action) {
 // --- 1. Trip Generation ---
 
 async function handleGenerateTrip(payload) {
+  console.log("[generate_trip] START", new Date().toISOString());
   const trip = payload.trip;
   const profile = payload.profile;
   const memory = payload.memory ?? [];
@@ -334,98 +347,38 @@ async function handleGenerateTrip(payload) {
   const dietary = (profile.dietaryRestrictions ?? []).join(", ") || "none";
 
   var sysArr = [
-    "You are Travonal AI trip planner.",
-    "Create personalized, realistic travel itineraries.",
+    "You are Toveli AI trip planner. Return ONLY valid JSON.",
     "",
-    "RESPONSE FORMAT: Return ONLY valid JSON.",
+    "PACE: relaxed=1-2 activities+meals/day, moderate=2-4+meals, active=4-6+meals.",
+    "Every day MUST have breakfast+lunch+dinner. Relaxed must still have real activities, not just meals.",
     "",
-    "PACE MODEL (meals separate from experiences):",
-    "  relaxed: 1-2 main experiences/day",
-    "    + breakfast + lunch + dinner",
-    "    Large free-time gaps, slow mornings",
-    "    DO NOT fill every hour",
-    "    Must include meaningful activities",
-    "    not just meals",
-    "  moderate: 2-4 main experiences/day",
-    "    + breakfast + lunch + dinner",
-    "  active: 4-6 main experiences/day",
-    "    + breakfast + lunch + dinner",
+    "MEALS: breakfast 07:00-09:30, lunch 12:00-13:30, dinner 19:00-21:30. Never repeat a restaurant.",
+    "Vary cuisines across days. Mix dining styles (fine dining, casual, street food, cafes, markets).",
     "",
-    "A relaxed trip MUST include real experiences",
-    "matching the traveler interests, not only meals.",
+    "Day 1: lighter schedule (2 activities max), start after 14:00 if arriving by flight.",
+    "Last day: no activities after 14:00 (checkout+airport). Middle days: full pace.",
     "",
-    "MEAL TIMING (REQUIRED - exact HH:MM range):",
-    "  breakfast: 07:00-09:30 ONLY",
-    "  lunch: 12:00-13:30 ONLY",
-    "  dinner: 19:00-21:30 ONLY",
-    "  Every day MUST have breakfast + lunch + dinner",
-    "  ERROR: breakfast after 10:00, dinner before 19:00",
-    "  ERROR: breakfast at noon or later",
-    "  ERROR: day without dinner",
+    "No duplicate places across ANY days. Group activities by neighborhood. Min 30min gaps (relaxed: 60min).",
+    "Nightlife/bars after 19:00. Museums/popular spots early morning. Outdoor activities in morning.",
     "",
-    "NO DUPLICATE PLACES:",
-    "  Each title must appear at most once across ALL days",
-    "  Before adding a place, check all previous days",
+    "FIXED/LOCKED activities: do NOT include (merged client-side). Plan around them.",
+    "REQUESTED places: MUST include ALL at optimal times. Copy placeId if provided.",
     "",
-    ...(geoContext
-      ? [
-          "GEOGRAPHIC SCHEDULING (computed from real coordinates — follow strictly):",
-          geoContext,
-          "",
-        ]
-      : [
-          "GEOGRAPHIC EFFICIENCY:",
-          "  Group activities by area/neighborhood",
-          "  Morning: one area. Afternoon: adjacent area.",
-          "  Never alternate between distant parts of the city",
-          "  Add 45-60 min transit time between distant areas",
-          "",
-        ]
-    ),
-    "TIMING GAPS (required):",
-    "  Minimum 30 min gap between each activity",
-    "  relaxed pace: minimum 60 min gap",
-    "  previous_end_time + gap <= next_start_time",
+    "TYPE RULES: food=restaurants/cafes/bars/bakeries. activity=attractions/museums/parks/tours/shopping/entertainment. hotel=accommodation. flight=flights.",
+    "Use Category label from place data if available. Waterparks/museums are activity, NOT food.",
     "",
-    "LOCKED/FIXED ACTIVITIES:",
-    "  Do NOT include them in output (merged client-side)",
-    "  Plan around them without listing them",
-    "",
-    "REQUESTED PLACES:",
-    "  You MUST include ALL requested places in the itinerary.",
-    "  Place each one at the optimal day and time.",
-    "  If a requested place has a placeId, copy it into the output.",
-    "  Failure to include any requested place is an error.",
-    "",
-    "  SCHEDULING INTELLIGENCE FOR REQUESTED PLACES:",
-    "  - Opening hours: If a place has hours listed, schedule within those hours.",
-    "  - Category timing: nightlife/bar → evening (19:00+). museum/gallery → morning.",
-    "    outdoor/nature/park → daylight hours. breakfast spot → morning meal slot.",
-    "  - User notes: If the user wrote notes (e.g. 'dinner spot', 'go at sunset'),",
-    "    honor that intent when scheduling.",
-    "  - Crowd avoidance: Places with 1000+ reviews are popular tourist spots.",
-    "    Schedule these early morning (first activity of the day) when possible.",
-    "  - Intensity balancing: Don't stack 3+ long-duration (90min+) activities",
-    "    on the same day. Mix heavy and light activities across days.",
-    "  - Food type: If a requested food place's name/category suggests a specific",
-    "    meal (breakfast, lunch, dinner), place it in the matching meal slot.",
-    "",
-    "OTHER RULES:",
-    "  Use real, well-known places at the destination",
-    "  Never invent place names",
-    '  type: activity, food, hotel, or flight',
-    '  cost: free, budget, moderate, or premium',
-    '  time: HH:MM (24-hour), duration: minutes',
-    "",
-    "VENUE FORMAT:",
-    "  Each REAL VERIFIED PLACE has an ID.",
-    "  When you pick a place from the list,",
-    "  copy its placeId, address, lat, lng",
-    "  into the activity JSON exactly.",
+    "Each description: 1 short sentence. Use real places only, never invent names.",
+    "cost: free/budget/moderate/premium. time: HH:MM 24h. duration: minutes.",
+    "Copy placeId, address, lat, lng from the verified places list exactly.",
   ];
+  var isLong = numDays > 5;
+  if (isLong) {
+    sysArr.push("");
+    sysArr.push("LONG TRIP (" + numDays + " days): OMIT descriptions entirely (leave empty string). Keep output minimal to fit response limits.");
+  }
   var system = sysArr.join("\n");
 
-  const schema = [
+  var schemaArr = [
     "{",
     '  "activities": [',
     "    {",
@@ -433,7 +386,11 @@ async function handleGenerateTrip(payload) {
     '      "time": "09:00",',
     '      "title": "Place name",',
     '      "type": "activity",',
-    '      "description": "One sentence.",',
+  ];
+  if (!isLong) {
+    schemaArr.push('      "description": "One sentence: what makes it special + a practical tip.",');
+  }
+  schemaArr.push(
     '      "duration": 90,',
     '      "category": "culture",',
     '      "cost": "moderate",',
@@ -444,41 +401,60 @@ async function handleGenerateTrip(payload) {
     "    }",
     "  ]",
     "}",
-  ].join("\n");
+  );
+  var schema = schemaArr.join("\n");
 
-  // Fetch real venues from Google Places
+  // Fetch real venues from Google Places — multiple queries for variety
   var gpKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   var venueCtx = "";
+  var t0 = Date.now();
   if (gpKey) {
     var dest = String(trip.destination || "");
     var country = String(trip.country || "");
+
     var gpQuery = dest + " " + country +
       " attractions " + interests;
-    var gpPlaces = await fetchGooglePlaces(
-      gpQuery, gpKey
-    );
-    var foodQuery = "best restaurants in " +
+    var foodQuery = "best restaurants cafes breakfast spots street food in " +
       dest + " " + country;
     if (dietary !== "none") {
       foodQuery += " " + dietary;
     }
-    var gpFood = await fetchGooglePlaces(
-      foodQuery, gpKey
-    );
-    var allVenues = gpPlaces.concat(gpFood);
+    var gpQueries = [
+      fetchGooglePlaces(gpQuery, gpKey),
+      fetchGooglePlaces(foodQuery, gpKey),
+    ];
+    if (isLong) {
+      // Extra searches for long trips — need 60+ unique venues
+      gpQueries.push(fetchGooglePlaces("cafes breakfast bakeries in " + dest + " " + country, gpKey));
+      gpQueries.push(fetchGooglePlaces("bars nightlife rooftop in " + dest + " " + country, gpKey));
+      gpQueries.push(fetchGooglePlaces("parks gardens outdoor in " + dest + " " + country, gpKey));
+    }
+    var gpResults = await Promise.all(gpQueries);
+    console.log("[generate_trip] GP done:", Date.now() - t0, "ms");
+    // Deduplicate by placeId
+    var seenIds = new Set();
+    var allVenues = [];
+    for (var r of gpResults) {
+      for (var v of r) {
+        var pid = (v as any).place_id || (v as any).placeId || (v as any).id || "";
+        if (!pid || !seenIds.has(pid)) {
+          if (pid) seenIds.add(pid);
+          allVenues.push(v);
+        }
+      }
+    }
     if (allVenues.length > 0) {
+      var compact = isLong;
       venueCtx = "\n\nREAL VERIFIED PLACES FOR " +
         dest + ":\n" +
-        formatGooglePlaces(allVenues) +
-        "\nRULE: You MUST select places " +
-        "from the REAL VERIFIED PLACES " +
-        "list above." +
-        "\nDo not invent restaurants or " +
-        "attractions." +
-        "\nIf you need a type of place " +
-        "not in the list, note it as " +
-        '"[type needed - no verified ' +
-        'place available]".';
+        (compact ? "Format: name|placeId|address|lat|lng\n" : "") +
+        formatGooglePlaces(allVenues, compact) +
+        "\nPREFER places from this list. " +
+        "Copy placeId, address, lat, lng exactly when using a listed place." +
+        "\nIf you need additional places " +
+        "beyond this list, use your knowledge " +
+        "of " + dest + " — real place names only, " +
+        "omit placeId/address/lat/lng for those.";
     } else {
       venueCtx = "\n\nNote: Live place data " +
         "unavailable. Use your knowledge " +
@@ -538,7 +514,10 @@ async function handleGenerateTrip(payload) {
   ];
   var user = userArr.join("\n");
 
-  var genResult = await claude(system, user, 10240);
+  console.log("[generate_trip] calling claude:", Date.now() - t0, "ms");
+  var maxTok = isLong ? 16000 : 8192;
+  var genResult = await claude(system, user, maxTok, 140000);
+  console.log("[generate_trip] claude done:", Date.now() - t0, "ms");
   validateOutput(genResult, "generate_trip");
   return genResult;
 }
@@ -560,7 +539,7 @@ async function handleChat(payload) {
 
   const histLines = [];
   for (const m of history) {
-    const who = m.role === "user" ? "User" : "Travonal";
+    const who = m.role === "user" ? "User" : "Toveli";
     histLines.push(who + ": " + m.content);
   }
 
@@ -654,78 +633,45 @@ async function handleChat(payload) {
 
   const sysArr = [
     // --- IDENTITY ---
-    "You are Travonal, a travel assistant that executes user requests.",
+    "You are Toveli, a travel assistant.",
     "You have access to this user's profile, preferences, and trip data in the TRIP CONTEXT below.",
-    "Your primary job is to DO what the user asks. Your secondary job is to do it WELL using what you know about them.",
     "",
-    // --- COMMAND HIERARCHY (strict priority order) ---
-    "PRIORITY 1 — USER INSTRUCTIONS (supreme, always obey):",
-    "When the user gives a direct instruction, EXECUTE IT. No exceptions.",
-    "- 'Add a breakfast spot' → add it, even if one already exists on that day.",
-    "- 'Replace X with something less crowded' → find a less crowded option and replace it. Do NOT explain why you can't.",
-    "- 'Add a fine dining restaurant' → add it, even if their profile says 'street food lover.'",
-    "- 'Remove the museum' → remove it. No personality needed, just confirm what you did.",
-    "The user is the boss. If they ask for it, do it. Include the action in your response.",
-    "NEVER respond to an action request with only text explaining why you won't or can't do it.",
-    "If a user explicitly overrides their own profile ('I know I said no early mornings, but schedule a 6am hike'), follow their instruction.",
+    // --- CORE RULES ---
+    "BEFORE ANY ACTION — ASK IF ANYTHING IS UNCLEAR:",
+    "For ANY action (add, remove, move, replace, update — all of them), you need ALL details before executing.",
+    "If the place, day, or time is missing or ambiguous, set actions to [] and ask the user to specify.",
+    "Never guess a day, time, or place. Never invent a place. Never pick randomly.",
+    "If the user said 'add that' but you recommended multiple places, ask which one.",
+    "If 'remove the restaurant' but there are multiple restaurants, ask which one.",
+    "Only execute when you have everything with zero ambiguity.",
     "",
-    "PRIORITY 2 — SAFETY CONSTRAINTS (only these can block an action):",
-    "a) ABSOLUTE RULES from the profile are non-negotiable. Warn if a request conflicts, but still execute if the user insists.",
-    "b) DISLIKES: avoid recommending disliked things UNLESS the user explicitly asks for them. If they ask, do it without mentioning the dislike.",
-    "c) DIETARY RESTRICTIONS / ALLERGIES: always respect. If a user asks for a place that conflicts,",
-    "   complete the request but add a clear warning: 'Added! Heads up — [place] serves [allergen] heavily. Want me to check alternatives?'",
+    "RECOMMEND vs MODIFY — different intents:",
+    "- 'Recommend' / 'Suggest' / 'What's good?' / 'Any ideas?' / 'Where should I eat?' → ALWAYS give concrete suggestions with place cards, actions: [].",
+    "  Even if the request is vague ('suggest something fun', 'dinner spot?'), pick your best suggestions based on the user's profile and trip context.",
+    "  Lead with recommendations first. You can follow up with a short question to refine ('Want something more upscale?' or 'Prefer a specific cuisine?') but NEVER ask questions without also giving suggestions.",
+    "- 'Add [place] on day 2 at 7pm' / 'Remove the museum' / 'Move lunch to 2pm' → modification. Check you have all details, then execute.",
+    "- When ambiguous, default to recommending. Never auto-add to the itinerary.",
     "",
-    "PRIORITY 3 — PREFERENCES (use to decide HOW, never WHETHER):",
-    "These inform your choices when the user leaves the decision to you. They NEVER block or refuse a user request.",
-    "- Interests: shape which specific place you pick, not which category. User asks for 'a restaurant' → pick one matching their interests.",
-    "- Crowd tolerance: pick less crowded options when you are choosing. Never refuse a popular place the user asked for.",
-    "- Budget: pick price-appropriate options when you are choosing. Never refuse a price tier the user requests.",
-    "- Food importance: 'big' → describe dishes, atmosphere, why it's special. 'simple' → just name the place.",
-    "- Recommendation style: best → 1 confident pick, few → 2-3 options with a top pick, explore → 4-5+ diverse options.",
-    "- Pace: informs scheduling suggestions. Not a hard limit on what the user can add.",
+    "NEVER REFUSE a type of request. If the user wants it, help them get it. But 'never refuse' does not mean 'execute without details'.",
+    "If a user overrides their profile preferences, follow their instruction.",
+    "Respect dietary restrictions/allergies — warn if a place conflicts.",
+    "",
+    "PREFERENCES — use to shape your recommendations, never to block a request:",
+    "Interests, crowd tolerance, budget, pace inform your picks. Food importance: 'big' = describe dishes, 'simple' = just name it.",
     "",
     // --- INTENT INTERPRETATION ---
-    "UNDERSTANDING MESSAGES: Users speak casually. Your job is to understand their INTENT, not match keywords.",
-    "Read the message, figure out what they actually want, then do it. Think like a smart human assistant.",
+    "Users speak casually. Understand their intent:",
+    "- 'Nah scratch the museum' / 'I'm not feeling it' → remove.",
+    "- 'Can we do something else instead?' → replace (still need all details).",
+    "- 'Push lunch back' / 'A bit later' → move time.",
+    "- 'Swap day 1 and day 2' / 'Flip the first two days' → swap days.",
     "",
-    "Users express the SAME intent in many ways. ALL of these mean 'add an activity':",
-    "- 'Add a coffee shop on day 2'",
-    "- 'I need coffee in the morning'",
-    "- 'Where can I get coffee on day 2?' (if there's a trip, they probably want it added)",
-    "- 'We should do coffee before the museum'",
-    "- 'Ooh what about a cafe near the hotel?'",
-    "- 'I want something to eat around 10am'",
-    "",
-    "ALL of these mean 'remove or replace an activity':",
-    "- 'Remove the museum'",
-    "- 'I don't want to do the museum anymore'",
-    "- 'Nah scratch the museum'",
-    "- 'The museum isn't for me, what else is there?'",
-    "- 'Can we do something else instead of the museum?'",
-    "- 'I'm not feeling the museum'",
-    "",
-    "ALL of these mean 'change the schedule':",
-    "- 'Move lunch to 2pm'",
-    "- 'Can we do lunch a bit later?'",
-    "- 'Push lunch back'",
-    "- 'I'd rather eat later'",
-    "- 'Swap day 1 and day 2'",
-    "- 'Flip the first two days'",
-    "",
-    "CONVERSATION CONTEXT: Use the conversation history to resolve references.",
-    "- 'That one' / 'it' / 'the first one' → refers to the last place or activity discussed.",
-    "- 'Actually make it later' → adjust the time of what was just added/discussed.",
+    "CONVERSATION CONTEXT:",
+    "- 'That one' / 'the first one' → only resolve if exactly ONE place is referenced. If multiple, ask which.",
+    "- 'Actually make it later' → adjust time of what was just discussed.",
     "- 'Never mind' / 'undo that' → remove the last thing you added.",
-    "- 'What about day 3 instead?' → move the discussed activity to day 3.",
-    "- Relative time: 'later' = +1-2 hours, 'earlier' = -1-2 hours, 'morning' = 08:00-11:00, 'afternoon' = 13:00-17:00, 'evening' = 18:00-21:00.",
-    "",
-    "WHEN AMBIGUOUS: If you're unsure whether the user wants an action or just info, look at the context.",
-    "If they have an active trip and mention a place/activity → they probably want it added or changed.",
-    "When in doubt, take the action. The user can undo. It's better to act and let them correct than to do nothing.",
-    "",
-    // --- ACTION-FIRST PRINCIPLE ---
-    "ACTION-FIRST: When the user's message implies a change to their trip, your response MUST contain an action.",
-    "Pick the best option from REAL NEARBY PLACES and do it. Do NOT ask 'would you like me to add it?' — just add it. The user can undo.",
+    "- Relative time: 'morning' = 08:00-11:00, 'afternoon' = 13:00-17:00, 'evening' = 18:00-21:00.",
+    "- When the user refers to a place from earlier in the conversation, use EXACTLY that place. Never substitute a different one.",
     "",
     // --- PERSONALIZATION GUIDANCE ---
     "WHEN TO PERSONALIZE:",
@@ -743,18 +689,49 @@ async function handleChat(payload) {
     "RESPONSE FORMAT — always return valid JSON:",
     fmt,
     "",
-    "FORMATTING: Keep responses concise. Use short paragraphs (2-3 sentences max).",
-    "Use bullet points for lists of 3+ items. Bold key place names with **name**.",
-    "Never write more than 4 short paragraphs. For place recommendations, use a numbered list.",
+    "FORMATTING — use markdown the app supports: **bold**, *italic*, bullet lists (- item), numbered lists (1. item), and blank lines for spacing.",
+    "",
+    "MESSAGE STRUCTURE — pick the right format for the situation:",
+    "",
+    "WHEN ACTIONS WERE TAKEN (actions array is non-empty):",
+    "- The app shows each action as a visual card with a green checkmark. The user sees exactly what was done.",
+    "- Your message should NOT repeat what the action cards say. No 'I added X to Day 2 at 3pm' — the card already shows that.",
+    "- Instead, write 1 sentence max with a useful tip, practical detail, or context the cards don't show.",
+    "- Examples of good action messages:",
+    "  'The tasting menu at **Narisawa** books out weeks ahead — reserve at narisawa.tokyo.'",
+    "  '**Senso-ji** is most photogenic before 8am when the crowds are thin.'",
+    "  'Moved to afternoon — **Tsukiji Outer Market** stalls close by 2pm, so this gives you more time.'",
+    "  'Done! Your morning is free now.'",
+    "- If there is genuinely nothing useful to add beyond what the cards show, write a single short confirmation like 'Done!' or 'All set.' or 'Swapped.'",
+    "",
+    "WHEN ANSWERING QUESTIONS OR GIVING INFO (actions array is empty):",
+    "- Use **bold section headers** on their own line to organize topics, followed by bullet points.",
+    "- Lead with the most actionable info first.",
+    "- For recommendations, structure like:",
+    "  **Top pick**",
+    "  - **Place Name** — one line why, with a practical detail",
+    "  ",
+    "  **Alternatives**",
+    "  - **Place 2** — one line why",
+    "  - **Place 3** — one line why",
+    "- For general info, structure like:",
+    "  **Getting there**",
+    "  - Bullet with key detail",
+    "  ",
+    "  **Good to know**",
+    "  - Bullet with key detail",
+    "- Max 6-8 bullet points total. No filler sentences.",
+    "- For questions about the user's profile or what you know about them, be thorough — list ALL their preferences comprehensively.",
     "",
     "FIELD RULES:",
-    "- \"message\": 2-5 sentences. Warm, specific, practical. Personalize when it adds value.",
-    "  For questions about the user's profile or what you know about them,",
-    "  be thorough — list ALL their preferences comprehensively.",
+    "- \"message\": Follow the structure rules above. When actions are taken, 1 sentence with a useful tip or just a brief confirmation. When answering questions, structured bullets with bold headers.",
     "- \"actions\": Array of mutation objects. Empty [] when just answering questions.",
     "- \"recommended_places\": Array of EXACT place names from REAL NEARBY PLACES to show as cards.",
-    "  First = primary recommendation, rest = alternatives. Only include places you discuss in your message.",
-    "  Use the EXACT name string from the places list — not paraphrased. Empty [] when not recommending places.",
+    "  STRICT: Only include places you explicitly name and discuss in your message. Every name in this array MUST appear in your message text.",
+    "  If you mention 3 places in your message, this array must have exactly those 3 names — no more, no less.",
+    "  This applies ANY TIME you mention specific place names — including when asking clarifying questions, offering options, suggesting alternatives, or proposing cheaper/better swaps.",
+    "  When suggesting replacements or alternatives, include ALL the new suggestions — not just the original place being replaced.",
+    "  Use the EXACT name string from the places list — copy-paste, not paraphrased. Empty [] when not mentioning any specific places.",
     "- \"suggestions\": 2-4 short follow-up prompts (max 30 chars each). Contextual to the conversation.",
     "- \"context\": Set this when your response was shaped by personalization.",
     "  Examples: \"Based on your interest in street food\", \"From your Tokyo eats board\",",
@@ -767,7 +744,8 @@ async function handleChat(payload) {
     "If no FOCUS TRIP is shown, look at the conversation to figure out which trip the user means, and use that tripId from the FULL APP CONTEXT.",
     "",
     "Activity operations:",
-    "  ALWAYS use 24-hour time format HH:MM (e.g. '09:00', '19:30'). Never use 12-hour format like '7:00 PM'.",
+    "  ACTIONS: Always use 24-hour time format HH:MM in action JSON (e.g. '09:00', '19:30').",
+    "  MESSAGE TEXT: Always use 12-hour format when mentioning times to the user (e.g. '7:00 PM', '9:30 AM'). Never show 24-hour times in your message.",
     '- add_activity: { "type": "add_activity", "tripId": "' + tid + '", "activity": { "day": 1, "time": "19:00", "title": "...", "type": "food", "description": "...", "duration": 60, "category": "dining", "cost": "moderate", "placeId": "ChIJ...", "address": "...", "lat": 0, "lng": 0, "rating": 4.5 } }',
     "  CRITICAL: You MUST include ALL of these fields for every activity: duration, category, cost, placeId, address, lat, lng, rating.",
     "  Copy placeId, address, lat, lng, rating EXACTLY from REAL NEARBY PLACES data. Without placeId the activity will have NO IMAGE in the app — this is mandatory.",
@@ -836,6 +814,8 @@ async function handleChat(payload) {
     "  Minimum 30 min gap between end of one activity and start of the next.",
     "  Example day: breakfast 08:30 → activity 10:00 → lunch 12:30 → activity 14:30 → dinner 19:30.",
     "  ERROR: Multiple activities at 12:00. ERROR: All activities at the same time.",
+    "",
+    "REMINDER: Your response MUST be valid JSON and nothing else. No text before or after the JSON object.",
   ];
   const system = sysArr.join("\n");
 
@@ -869,14 +849,27 @@ async function handleChat(payload) {
     chatResult = await claude(system, user, 8192);
     validateOutput(chatResult, "chat");
   } catch (parseErr) {
-    console.error("[handleChat] first attempt error:", parseErr, "— retrying with more tokens");
+    console.error("[handleChat] first attempt error:", String(parseErr), "rawText:", parseErr.rawText ? parseErr.rawText.substring(0, 200) : "NONE");
     try {
       chatResult = await claude(system, user, 10240);
       validateOutput(chatResult, "chat");
     } catch (retryErr) {
-      console.error("[handleChat] retry also failed:", retryErr);
-      // Last resort: if we got any object at all, try to use it
-      if (chatResult && typeof chatResult === "object") {
+      console.error("[handleChat] retry also failed:", String(retryErr), "rawText:", retryErr.rawText ? retryErr.rawText.substring(0, 200) : "NONE");
+      // Try to recover raw text from either attempt
+      var fallbackText = (retryErr && retryErr.rawText) || (parseErr && parseErr.rawText);
+      if (fallbackText && fallbackText.trim()) {
+        // The model responded with useful text but not valid JSON — use it as the message
+        // Strip any markdown code fences or JSON fragments from the text
+        var cleanedText = fallbackText.trim()
+          .replace(/^```(?:json)?\s*/i, "")
+          .replace(/\s*```\s*$/i, "")
+          .trim();
+        chatResult = {
+          message: cleanedText,
+          actions: [],
+          suggestions: [],
+        };
+      } else if (chatResult && typeof chatResult === "object") {
         if (typeof chatResult.message !== "string") chatResult.message = "Let me try that again — could you rephrase your request?";
         if (!Array.isArray(chatResult.actions)) chatResult.actions = [];
       } else {
@@ -940,22 +933,23 @@ async function handleChat(payload) {
     }
   }
 
-  // Post-processing: backfill placeId for activities missing it (add_activity, replace_activity, create_trip)
+  // Post-processing: backfill placeId for new activities (add_activity, replace_activity, create_trip)
+  // ALWAYS backfill — the AI often fabricates fake placeIds that cause 404s on lookup.
+  // Real Google Places search is the only reliable source for placeIds.
   if (Array.isArray(chatResult.actions) && chatGpKey) {
-    // Collect all activity objects that need placeId backfill
     var backfillTargets = [];
     for (var bfi = 0; bfi < chatResult.actions.length; bfi++) {
       var bfAction = chatResult.actions[bfi];
       var bfDest = searchDest;
-      if (bfAction.type === "add_activity" && bfAction.activity && !bfAction.activity.placeId && bfAction.activity.title) {
+      if (bfAction.type === "add_activity" && bfAction.activity && bfAction.activity.title) {
         backfillTargets.push({ target: bfAction.activity, dest: bfDest });
-      } else if (bfAction.type === "replace_activity" && bfAction.newActivity && !bfAction.newActivity.placeId && bfAction.newActivity.title) {
+      } else if (bfAction.type === "replace_activity" && bfAction.newActivity && bfAction.newActivity.title) {
         backfillTargets.push({ target: bfAction.newActivity, dest: bfDest });
       } else if (bfAction.type === "create_trip" && Array.isArray(bfAction.activities)) {
         var ctDest = (bfAction.trip && bfAction.trip.destination) || bfDest;
         for (var ctk = 0; ctk < bfAction.activities.length; ctk++) {
           var ctAct = bfAction.activities[ctk];
-          if (!ctAct.placeId && ctAct.title) {
+          if (ctAct.title) {
             backfillTargets.push({ target: ctAct, dest: ctDest });
           }
         }
@@ -1000,6 +994,11 @@ async function handleChat(payload) {
           bfEntry.target.lng = bfp.location ? bfp.location.longitude : undefined;
           bfEntry.target.rating = bfp.rating || undefined;
           bfEntry.target.reviewCount = bfp.userRatingCount || undefined;
+          // Use Google's primary type label as category for consistent display
+          var bfPrimaryType = bfp.primaryTypeDisplayName ? bfp.primaryTypeDisplayName.text : "";
+          if (bfPrimaryType) {
+            bfEntry.target.category = bfPrimaryType;
+          }
           if (!bfEntry.target.description || bfEntry.target.description.length < 20) {
             bfEntry.target.description = bfp.editorialSummary ? bfp.editorialSummary.text : bfEntry.target.description;
           }
@@ -1039,19 +1038,19 @@ async function handleChat(payload) {
         var isMatch = cpCheckName === recName || cpCheckName.includes(recName) || recName.includes(cpCheckName)
           || cpRawName === recNameRaw || cpRawName.includes(recNameRaw) || recNameRaw.includes(cpRawName);
         if (!isMatch) {
-          // Fuzzy: count shared significant words (length > 2)
+          // Fuzzy: count shared significant words (length > 3 to skip generic words like "cafe", "bar", "shop")
           var stopWords = ["the", "and", "of", "at", "in", "a", "an", "la", "le", "el", "los", "las", "de", "del", "di", "da"];
-          var recWords = recName.split(/[\s&,]+/).filter(function(w) { return w.length > 2 && stopWords.indexOf(w) === -1; });
-          var cpWords = cpCheckName.split(/[\s&,]+/).filter(function(w) { return w.length > 2 && stopWords.indexOf(w) === -1; });
+          var genericWords = ["coffee", "cafe", "shop", "bar", "restaurant", "hotel", "place", "house", "room", "kitchen", "grill", "bistro", "lounge"];
+          var recWords = recName.split(/[\s&,]+/).filter(function(w) { return w.length > 3 && stopWords.indexOf(w) === -1 && genericWords.indexOf(w) === -1; });
+          var cpWords = cpCheckName.split(/[\s&,]+/).filter(function(w) { return w.length > 3 && stopWords.indexOf(w) === -1 && genericWords.indexOf(w) === -1; });
           var sharedCount = 0;
           for (var wi = 0; wi < recWords.length; wi++) {
             for (var wj = 0; wj < cpWords.length; wj++) {
               if (recWords[wi] === cpWords[wj]) { sharedCount++; break; }
             }
           }
-          // Match if 2+ significant words overlap, or 1 word for short names
-          var minOverlap = Math.min(recWords.length, cpWords.length) <= 1 ? 1 : 2;
-          isMatch = sharedCount >= minOverlap && sharedCount > 0;
+          // Require at least 2 significant word overlaps to avoid false matches on generic terms
+          isMatch = sharedCount >= 2;
         }
         if (!isMatch) continue;
         // Avoid duplicates
@@ -1070,6 +1069,7 @@ async function handleChat(payload) {
             cpPhotos.push(cp.photos[pi].name || "");
           }
         }
+        var cpPrimaryType = cp.primaryTypeDisplayName ? cp.primaryTypeDisplayName.text || "" : "";
         cardPlaces.push({
           name: cpName,
           address: cpAddr,
@@ -1079,36 +1079,39 @@ async function handleChat(payload) {
           lat: cpLat,
           lng: cpLng,
           types: cpTypes,
+          primaryTypeLabel: cpPrimaryType || undefined,
           photoRefs: cpPhotos,
           _srcIdx: ci,
         });
         break; // Found match for this recommended name, move to next
       }
     }
-    // Fallback: if AI didn't return recommended_places but mentioned places in message, use text matching
-    if (cardPlaces.length === 0) {
-      var aiMsg = (chatResult.message || "").toLowerCase();
-      for (var fi = 0; fi < chatPlaces.length && cardPlaces.length < 5; fi++) {
-        var fp = chatPlaces[fi];
-        var fpName = fp.displayName ? (fp.displayName.text || "").toLowerCase() : "";
-        if (!fpName) continue;
-        if (aiMsg.includes(fpName)) {
-          var fpDisplayName = fp.displayName ? fp.displayName.text || "" : "";
-          var fpPhotos = [];
-          if (fp.photos && fp.photos.length > 0) fpPhotos.push(fp.photos[0].name || "");
-          cardPlaces.push({
-            name: fpDisplayName,
-            address: fp.formattedAddress || "",
-            rating: fp.rating || null,
-            ratingCount: fp.userRatingCount || null,
-            placeId: fp.id || "",
-            lat: fp.location ? fp.location.latitude : null,
-            lng: fp.location ? fp.location.longitude : null,
-            types: fp.types || [],
-            photoRefs: fpPhotos,
-            _srcIdx: fi,
-          });
-        }
+    // Also scan AI message for any place names from Google results not already matched
+    var aiMsg = (chatResult.message || "").toLowerCase();
+    for (var fi = 0; fi < chatPlaces.length && cardPlaces.length < 5; fi++) {
+      // Skip if already matched by recommended_places
+      if (cardPlaces.some(function(existing) { return existing._srcIdx === fi; })) continue;
+      var fp = chatPlaces[fi];
+      var fpName = fp.displayName ? (fp.displayName.text || "").toLowerCase() : "";
+      if (!fpName) continue;
+      if (aiMsg.includes(fpName)) {
+        var fpDisplayName = fp.displayName ? fp.displayName.text || "" : "";
+        var fpPhotos = [];
+        if (fp.photos && fp.photos.length > 0) fpPhotos.push(fp.photos[0].name || "");
+        var fpPrimaryType = fp.primaryTypeDisplayName ? fp.primaryTypeDisplayName.text || "" : "";
+        cardPlaces.push({
+          name: fpDisplayName,
+          address: fp.formattedAddress || "",
+          rating: fp.rating || null,
+          ratingCount: fp.userRatingCount || null,
+          placeId: fp.id || "",
+          lat: fp.location ? fp.location.latitude : null,
+          lng: fp.location ? fp.location.longitude : null,
+          types: fp.types || [],
+          primaryTypeLabel: fpPrimaryType || undefined,
+          photoRefs: fpPhotos,
+          _srcIdx: fi,
+        });
       }
     }
     // Fallback: individually search for any recommended places we couldn't match
@@ -1138,6 +1141,7 @@ async function handleChat(payload) {
           var upName = up.displayName ? up.displayName.text || "" : "";
           var upPhotos = [];
           if (up.photos && up.photos.length > 0) upPhotos.push(up.photos[0].name || "");
+          var upPrimaryType = up.primaryTypeDisplayName ? up.primaryTypeDisplayName.text || "" : "";
           cardPlaces.push({
             name: upName,
             address: up.formattedAddress || "",
@@ -1147,6 +1151,7 @@ async function handleChat(payload) {
             lat: up.location ? up.location.latitude : null,
             lng: up.location ? up.location.longitude : null,
             types: up.types || [],
+            primaryTypeLabel: upPrimaryType || undefined,
             photoRefs: upPhotos,
             _srcIdx: -1,
           });
@@ -1175,6 +1180,7 @@ async function handleChat(payload) {
         var fbpName = fbp.displayName ? fbp.displayName.text || "" : "";
         var fbpPhotos = [];
         if (fbp.photos && fbp.photos.length > 0) fbpPhotos.push(fbp.photos[0].name || "");
+        var fbpPrimaryType = fbp.primaryTypeDisplayName ? fbp.primaryTypeDisplayName.text || "" : "";
         fallbackCards.push({
           name: fbpName,
           address: fbp.formattedAddress || "",
@@ -1184,6 +1190,7 @@ async function handleChat(payload) {
           lat: fbp.location ? fbp.location.latitude : null,
           lng: fbp.location ? fbp.location.longitude : null,
           types: fbp.types || [],
+          primaryTypeLabel: fbpPrimaryType || undefined,
           photoRefs: fbpPhotos,
         });
       }
@@ -1267,7 +1274,7 @@ async function handleEditTrip(payload) {
   }
 
   const sysArr = [
-    "You are Travonal smart itinerary editor.",
+    "You are Toveli smart itinerary editor.",
     "You modify travel itineraries based on",
     "natural language.",
     "",
@@ -2263,16 +2270,39 @@ async function handleImportPlace(payload) {
           var gpTypes = (gp.types || []).join(" ");
           if (/restaurant|food|meal|bakery|cafe/
               .test(gpTypes)) {
-            verified.category = "restaurant";
+            verified.category = "dining";
+            verified.type = "food";
+          } else if (/bar|night_club/
+              .test(gpTypes)) {
+            verified.category = "bar";
+            verified.type = "food";
           } else if (/lodging|hotel|motel|resort/
               .test(gpTypes)) {
-            verified.category = "hotel";
-          } else if (/museum/.test(gpTypes)) {
-            verified.category = "museum";
-          } else if (/park|garden/.test(gpTypes)) {
-            verified.category = "park";
+            verified.category = "accommodation";
+            verified.type = "hotel";
+          } else if (/museum|art_gallery/
+              .test(gpTypes)) {
+            verified.category = "culture";
+            verified.type = "activity";
+          } else if (/amusement_park|water_park|theme_park|zoo|aquarium|bowling_alley|movie_theater|casino/
+              .test(gpTypes)) {
+            verified.category = "entertainment";
+            verified.type = "activity";
+          } else if (/gym|stadium|spa|golf_course/
+              .test(gpTypes)) {
+            verified.category = "sport";
+            verified.type = "activity";
+          } else if (/park|garden|natural_feature/
+              .test(gpTypes)) {
+            verified.category = "nature";
+            verified.type = "activity";
+          } else if (/shopping_mall|store|clothing_store/
+              .test(gpTypes)) {
+            verified.category = "shopping";
+            verified.type = "activity";
           } else {
             verified.category = "attraction";
+            verified.type = "activity";
           }
           // Fetch photo
           if (gp.photos && gp.photos.length > 0) {
@@ -2707,6 +2737,7 @@ async function handlePlacesNearby(payload) {
     "places.userRatingCount",
     "places.priceLevel",
     "places.types",
+    "places.primaryTypeDisplayName",
     "places.location",
     "places.currentOpeningHours",
     "places.photos",
@@ -2993,7 +3024,7 @@ async function handlePrepareFix(payload) {
   );
 
   var sysArr = [
-    "You are Travonal AI, fixing a specific",
+    "You are Toveli AI, fixing a specific",
     "itinerary issue.",
     "",
     "PROBLEM: " + String(alert.type) + " - " +
@@ -3247,7 +3278,7 @@ Deno.serve(async (req) => {
       handler = async function() {
         var uid = getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
-        return { email: "bookings+" + uid + "@travonal.com" };
+        return { email: "bookings+" + uid + "@toveli.com" };
       };
     } else if (action === "get_parsed_bookings") {
       handler = async function() {
@@ -3357,7 +3388,7 @@ Deno.serve(async (req) => {
       var hMsg = handlerErr instanceof Error
         ? handlerErr.message
         : "Handler failed";
-      console.error("[ai-travonal:" + action + "]", hMsg);
+      console.error("[ai-toveli:" + action + "]", hMsg);
 
       // Rollback usage on handler error (error recovery is free)
       if (userId && usageCategory) {
@@ -3390,7 +3421,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[ai-travonal]", msg);
+    console.error("[ai-toveli]", msg);
     return new Response(
       JSON.stringify({ success: false, error: msg }),
       {

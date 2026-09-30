@@ -4,14 +4,15 @@
  */
 
 import { useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
-const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+export const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
+export const MINUTES_5 = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+const MINUTES = MINUTES_5;
 export const DURATION_PRESETS = [15, 30, 45, 60, 90, 120, 180];
 
 function to24(hour12: number, period: 'AM' | 'PM'): number {
@@ -27,7 +28,7 @@ function from24(hour24: number): { hour12: number; period: 'AM' | 'PM' } {
 }
 
 /** Parse "HH:MM" or "h:MM AM/PM" to { hour12, minute, period }. Returns sensible defaults on bad input. */
-function parseTime(time: string): { hour12: number; minute: number; period: 'AM' | 'PM' } {
+export function parseTime(time: string): { hour12: number; minute: number; period: 'AM' | 'PM' } {
   // 24-hour format (e.g. "09:00", "19:30")
   const match24 = time.match(/^(\d{1,2}):(\d{2})$/);
   if (match24) {
@@ -48,7 +49,7 @@ function parseTime(time: string): { hour12: number; minute: number; period: 'AM'
 }
 
 /** Format back to "HH:MM" 24-hour string for storage. */
-function formatTime(hour12: number, minute: number, period: 'AM' | 'PM'): string {
+export function formatTime(hour12: number, minute: number, period: 'AM' | 'PM'): string {
   const h24 = to24(hour12, period);
   return `${String(h24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
@@ -94,58 +95,31 @@ export function TimePickerModal({
   value,
   onSelect,
   onClose,
-  showDuration,
-  duration,
-  onDurationChange,
 }: {
   visible: boolean;
   value: string;
   onSelect: (time: string) => void;
   onClose: () => void;
-  showDuration?: boolean;
-  duration?: number;
-  onDurationChange?: (mins: number) => void;
 }) {
   const theme = useTheme();
   const parsed = parseTime(value);
   const [hour, setHour] = useState(parsed.hour12);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
-  const [localDuration, setLocalDuration] = useState(duration ?? 60);
-  const [showCustomDuration, setShowCustomDuration] = useState(false);
-  const [customHours, setCustomHours] = useState('');
-  const [customMinutes, setCustomMinutes] = useState('');
-  const [customDurationError, setCustomDurationError] = useState('');
 
   // Snap minute to nearest 5
   const snappedMinute = Math.round(minute / 5) * 5;
 
   function handleConfirm() {
-    let finalDuration = localDuration;
-    if (showCustomDuration) {
-      const h = parseInt(customHours || '0', 10);
-      const m = parseInt(customMinutes || '0', 10);
-      if (!isNaN(h) && !isNaN(m) && h >= 0 && h <= 12 && m >= 0 && m <= 59 && (h * 60 + m) >= 1) {
-        finalDuration = h * 60 + m;
-      } else {
-        setCustomDurationError('Enter valid hours (0\u201312) and minutes (0\u201359), total \u2265 1 min');
-        return;
-      }
-    }
     onSelect(formatTime(hour, snappedMinute, period));
-    if (showDuration && onDurationChange) {
-      onDurationChange(finalDuration);
-    }
     onClose();
   }
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={pickerStyles.kavContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Pressable style={pickerStyles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss">
-        <Pressable style={[pickerStyles.sheet, { backgroundColor: theme.background }]} onPress={(e) => { e.stopPropagation(); Keyboard.dismiss(); }} accessibilityRole="button" accessibilityLabel="Time picker">
+        <Pressable style={[pickerStyles.sheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()} accessibilityRole="button" accessibilityLabel="Time picker">
           <View style={pickerStyles.handle} />
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <ThemedText type="subtitle" style={pickerStyles.title}>Set time</ThemedText>
 
           {/* Hour */}
@@ -202,70 +176,6 @@ export function TimePickerModal({
             {hour}:{String(snappedMinute).padStart(2, '0')} {period}
           </ThemedText>
 
-          {/* Duration */}
-          {showDuration && (
-            <>
-              <ThemedText type="eyebrow" style={[pickerStyles.label, { color: theme.textSecondary }]}>Duration</ThemedText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pickerStyles.chipScroll}>
-                {DURATION_PRESETS.map((d) => (
-                  <Pressable
-                    key={d}
-                    onPress={() => { setLocalDuration(d); setShowCustomDuration(false); setCustomDurationError(''); }}
-                    style={[pickerStyles.chip, { backgroundColor: !showCustomDuration && localDuration === d ? theme.primary : theme.backgroundElement }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${formatDuration(d)} duration`}
-                  >
-                    <ThemedText style={[pickerStyles.chipText, !showCustomDuration && localDuration === d && { color: theme.primaryText }]}>
-                      {formatDuration(d)}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-                <Pressable
-                  onPress={() => {
-                    const h = Math.floor(localDuration / 60);
-                    const m = localDuration % 60;
-                    setCustomHours(String(h));
-                    setCustomMinutes(String(m));
-                    setCustomDurationError('');
-                    setShowCustomDuration(true);
-                  }}
-                  style={[pickerStyles.chip, { backgroundColor: showCustomDuration ? theme.primary : theme.backgroundElement }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Custom duration"
-                >
-                  <ThemedText style={[pickerStyles.chipText, showCustomDuration && { color: theme.primaryText }]}>Custom</ThemedText>
-                </Pressable>
-              </ScrollView>
-              {showCustomDuration && (
-                <View style={pickerStyles.customDurationRow}>
-                  <TextInput
-                    style={[pickerStyles.customDurationInput, { color: theme.text, borderColor: customDurationError ? '#DC2626' : theme.border }]}
-                    value={customHours}
-                    onChangeText={(v) => { setCustomHours(v.replace(/[^0-9]/g, '')); setCustomDurationError(''); }}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={theme.textSecondary}
-                    maxLength={2}
-                  />
-                  <ThemedText style={[pickerStyles.customDurationUnit, { color: theme.textSecondary }]}>h</ThemedText>
-                  <TextInput
-                    style={[pickerStyles.customDurationInput, { color: theme.text, borderColor: customDurationError ? '#DC2626' : theme.border }]}
-                    value={customMinutes}
-                    onChangeText={(v) => { setCustomMinutes(v.replace(/[^0-9]/g, '')); setCustomDurationError(''); }}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={theme.textSecondary}
-                    maxLength={2}
-                  />
-                  <ThemedText style={[pickerStyles.customDurationUnit, { color: theme.textSecondary }]}>m</ThemedText>
-                  {customDurationError ? (
-                    <ThemedText style={pickerStyles.customDurationError}>{customDurationError}</ThemedText>
-                  ) : null}
-                </View>
-              )}
-            </>
-          )}
-
           {/* Actions */}
           <View style={pickerStyles.actions}>
             <Pressable onPress={onClose} style={[pickerStyles.cancelBtn, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel">
@@ -275,10 +185,8 @@ export function TimePickerModal({
               <ThemedText style={{ color: theme.primaryText, fontSize: 15, fontWeight: '700' }}>Set</ThemedText>
             </Pressable>
           </View>
-          </ScrollView>
         </Pressable>
       </Pressable>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -289,16 +197,10 @@ export function TimePickerButton({
   value,
   onChange,
   placeholder,
-  showDuration,
-  duration,
-  onDurationChange,
 }: {
   value: string;
   onChange: (time: string) => void;
   placeholder?: string;
-  showDuration?: boolean;
-  duration?: number;
-  onDurationChange?: (mins: number) => void;
 }) {
   const theme = useTheme();
   const [visible, setVisible] = useState(false);
@@ -314,27 +216,20 @@ export function TimePickerButton({
       >
         <ThemedText style={[pickerStyles.buttonText, { color: value ? theme.text : theme.textSecondary }]}>
           {display}
-          {showDuration && duration ? ` (${formatDuration(duration)})` : ''}
         </ThemedText>
       </Pressable>
       <TimePickerModal
-        key={`${value || '12:00'}-${duration ?? 60}`}
+        key={value || '12:00'}
         visible={visible}
         value={value || '12:00'}
         onSelect={onChange}
         onClose={() => setVisible(false)}
-        showDuration={showDuration}
-        duration={duration}
-        onDurationChange={onDurationChange}
       />
     </>
   );
 }
 
 const pickerStyles = StyleSheet.create({
-  kavContainer: {
-    flex: 1,
-  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -348,7 +243,6 @@ const pickerStyles = StyleSheet.create({
     paddingBottom: 40,
     width: '100%',
     maxWidth: 360,
-    overflow: 'visible' as const,
   },
   handle: {
     width: 36,
@@ -370,7 +264,7 @@ const pickerStyles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   chipText: { fontSize: 15, fontWeight: '600' },
-  periodRow: { flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'center', overflow: 'visible' as const, minHeight: 48 },
+  periodRow: { flexDirection: 'row', gap: 10, marginTop: 12, justifyContent: 'center', minHeight: 48 },
   periodBtn: {
     paddingHorizontal: 28,
     paddingVertical: 14,
@@ -400,15 +294,4 @@ const pickerStyles = StyleSheet.create({
     minWidth: 80,
   },
   buttonText: { fontSize: 15 },
-  customDurationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  customDurationInput: {
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 15,
-    width: 90,
-  },
-  customDurationUnit: { fontSize: 14 },
-  customDurationError: { fontSize: 12, color: '#DC2626', flex: 1 },
 });

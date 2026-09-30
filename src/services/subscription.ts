@@ -1,14 +1,14 @@
 /**
- * Travonal Plus subscription service — wired to expo-iap (StoreKit / Google Play Billing).
+ * Tripseek Plus subscription service — wired to expo-iap (StoreKit / Google Play Billing).
  *
  * CODE-SIDE STATUS: Fully implemented. Purchases, restore, and entitlement checking
  * use real expo-iap StoreKit calls.
  *
  * EXTERNAL SETUP REQUIRED before purchases can succeed:
- *   1. Create a Travonal Plus subscription group in App Store Connect.
+ *   1. Create a Tripseek Plus subscription group in App Store Connect.
  *   2. Create two auto-renewable subscription products with these exact IDs:
- *        Monthly: com.travonal.plus.monthly
- *        Annual:  com.travonal.plus.annual
+ *        Monthly: com.toveli.plus.monthly
+ *        Annual:  com.toveli.plus.annual
  *   3. Set pricing, metadata, and localizations for each product.
  *   4. Complete agreements, tax, and banking in App Store Connect.
  *   5. Configure sandbox testers in App Store Connect for TestFlight testing.
@@ -34,8 +34,8 @@ import {
 } from 'expo-iap';
 
 export const PRODUCT_IDS = {
-  monthly: 'com.travonal.plus.monthly',
-  annual: 'com.travonal.plus.annual',
+  monthly: 'com.toveli.plus.monthly',
+  annual: 'com.toveli.plus.annual',
 } as const;
 
 export type PlanId = keyof typeof PRODUCT_IDS;
@@ -119,7 +119,7 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
 
 /**
  * Restore previously purchased subscriptions.
- * Returns whether the user has an active Travonal Plus subscription.
+ * Returns whether the user has an active Tripseek Plus subscription.
  */
 export async function restorePurchases(): Promise<{ isSubscribed: boolean; error?: string }> {
   try {
@@ -141,7 +141,7 @@ export async function restorePurchases(): Promise<{ isSubscribed: boolean; error
 
 /**
  * Check current subscription entitlement by inspecting available purchases.
- * Returns true if the user has an active Travonal Plus subscription.
+ * Returns true if the user has an active Tripseek Plus subscription.
  */
 export async function verifyEntitlement(): Promise<boolean> {
   try {

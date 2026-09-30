@@ -3,17 +3,16 @@
  * Each test imports and exercises real production functions.
  */
 
-import { parseTextToCommand, extractStartTime } from '@/components/ask-travonal';
+import { parseTextToCommand, extractStartTime } from '@/components/ask-toveli';
 import {
   resolveCountry,
   sortTripsForPicker,
   isPulseDismissed,
   makePulseDismissalKey,
-  findUndoableChange,
 } from '@/services/trip-helpers';
 import { generateItinerary } from '@/services/mock-generator';
 import { loadTripsSafe } from '@/services/storage';
-import { Trip, ChangeRecord, Activity } from '@/context/trips';
+import { Trip, Activity } from '@/context/trips';
 import { TravelProfile } from '@/context/profile';
 import { transformTrip, TransformScope } from '@/services/transformation-service';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -56,7 +55,7 @@ const BASE_PROFILE: TravelProfile = {
 };
 
 // ============================================================
-// 1. parseTextToCommand (ask-travonal.tsx)
+// 1. parseTextToCommand (ask-toveli.tsx)
 // ============================================================
 
 describe('parseTextToCommand — unknown input returns null, not a default command', () => {
@@ -405,75 +404,7 @@ describe('isPulseDismissed — dismissed/undismissed alerts', () => {
 });
 
 // ============================================================
-// 7. findUndoableChange (trip-helpers.ts)
-// ============================================================
-
-describe('findUndoableChange — most recent non-undone change', () => {
-  function makeRecord(id: string, tripId: string, undone?: boolean): ChangeRecord {
-    return {
-      id,
-      tripId,
-      description: `change ${id}`,
-      timestamp: id,
-      previousActivities: [],
-      undone,
-    };
-  }
-
-  test('returns the most recent non-undone change (first in newest-first history)', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('3', 'trip1'),
-      makeRecord('2', 'trip1'),
-      makeRecord('1', 'trip1'),
-    ];
-    const result = findUndoableChange(history, 'trip1');
-    expect(result).toBeDefined();
-    expect(result!.id).toBe('3');
-  });
-
-  test('skips undone changes and returns next non-undone', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('3', 'trip1', true),
-      makeRecord('2', 'trip1'),
-      makeRecord('1', 'trip1'),
-    ];
-    const result = findUndoableChange(history, 'trip1');
-    expect(result!.id).toBe('2');
-  });
-
-  test('returns undefined when all changes are undone', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('2', 'trip1', true),
-      makeRecord('1', 'trip1', true),
-    ];
-    expect(findUndoableChange(history, 'trip1')).toBeUndefined();
-  });
-
-  test('returns undefined when history is empty', () => {
-    expect(findUndoableChange([], 'trip1')).toBeUndefined();
-  });
-
-  test('ignores changes for other trips', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('5', 'trip2'),
-      makeRecord('4', 'trip2'),
-      makeRecord('3', 'trip1'),
-    ];
-    const result = findUndoableChange(history, 'trip1');
-    expect(result!.id).toBe('3');
-  });
-
-  test('returns undefined when no changes exist for the given tripId', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('1', 'trip2'),
-      makeRecord('2', 'trip2'),
-    ];
-    expect(findUndoableChange(history, 'trip1')).toBeUndefined();
-  });
-});
-
-// ============================================================
-// 8. extractStartTime — time parsing from free-text
+// 7. extractStartTime — time parsing from free-text
 // ============================================================
 
 describe('extractStartTime — parses time constraints from text', () => {
@@ -577,7 +508,7 @@ describe('transformTrip — activity-scope handling', () => {
     type: 'activity',
     day: 1,
     time: '10:00',
-    duration: 120,
+    
     category: 'culture',
     cost: 'moderate',
   };
@@ -587,7 +518,7 @@ describe('transformTrip — activity-scope handling', () => {
     type: 'activity',
     day: 1,
     time: '14:00',
-    duration: 90,
+    
     category: 'culture',
     cost: 'budget',
   };
@@ -597,7 +528,7 @@ describe('transformTrip — activity-scope handling', () => {
     type: 'hotel',
     day: 1,
     time: '20:00',
-    duration: 480,
+    
     locked: true,
   };
 

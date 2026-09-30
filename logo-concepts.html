@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flow Away — Logo Concepts</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #f5f5f5;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+      color: #111;
+      min-height: 100vh;
+      padding: 64px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+    }
+
+    header h1 {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #999;
+      margin-bottom: 12px;
+    }
+
+    header p {
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+      color: #111;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 32px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 48px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    .concept-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #bbb;
+      margin-bottom: 40px;
+      align-self: flex-start;
+    }
+
+    .icon-large {
+      width: 160px;
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    .icon-large svg {
+      width: 120px;
+      height: 120px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: #f0f0f0;
+      margin-bottom: 28px;
+    }
+
+    .mockups {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mockup-label {
+      font-size: 10px;
+      color: #ccc;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .app-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .app-icon.light {
+      background: #fff;
+      box-shadow: 0 0 0 1px #e8e8e8, 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    .app-icon.dark {
+      background: #111;
+    }
+
+    .app-icon svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .card-meta {
+      margin-top: 28px;
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.5;
+      max-width: 300px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Flow Away</h1>
+  <p>Logo Concepts</p>
+</header>
+
+<div class="grid">
+
+  <!-- CONCEPT 1: LEAF -->
+  <div class="card">
+    <span class="concept-label">Concept 01</span>
+    <div class="icon-large">
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Leaf shape: smooth pointed oval, slightly tilted -->
+        <path d="M60 18 C85 18 102 35 102 60 C102 82 85 102 60 102 C35 102 18 85 18 60 C18 35 35 18 60 18 Z" fill="none"/>
+        <!-- Leaf: organic teardrop shape rotated 25 deg -->
+        <path d="M62 10 C62 10 98 28 98 62 C98 88 80 108 60 108 C40 108 28 90 32 68 C36 46 62 10 62 10 Z" fill="#111"/>
+        <!-- Center vein -->
+        <path d="M62 10 L52 100" stroke="#f5f5f5" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div>
+        <div class="app-icon light">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path d="M62 10 C62 10 98 28 98 62 C98 88 80 108 60 108 C40 108 28 90 32 68 C36 46 62 10 62 10 Z" fill="#111"/>
+            <path d="M62 10 L52 100" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Light</p>
+      </div>
+      <div>
+        <div class="app-icon dark">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path d="M62 10 C62 10 98 28 98 62 C98 88 80 108 60 108 C40 108 28 90 32 68 C36 46 62 10 62 10 Z" fill="#fff"/>
+            <path d="M62 10 L52 100" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Dark</p>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Leaf</p>
+      <p class="card-desc">Carried by wind without effort. Natural, calm, and completely unexpected in the travel app space.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 2: DANDELION SEED -->
+  <div class="card">
+    <span class="concept-label">Concept 02</span>
+    <div class="icon-large">
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Stem -->
+        <line x1="60" y1="88" x2="60" y2="62" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+        <!-- Seed body (small oval at bottom) -->
+        <ellipse cx="60" cy="92" rx="5" ry="7" fill="#111"/>
+        <!-- Radiating filaments with tips -->
+        <!-- Center top -->
+        <line x1="60" y1="62" x2="60" y2="18" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="60" cy="15" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Upper left 1 -->
+        <line x1="60" y1="62" x2="38" y2="24" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="36" cy="21" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Upper left 2 -->
+        <line x1="60" y1="62" x2="22" y2="40" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="19.5" cy="37.5" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Left -->
+        <line x1="60" y1="62" x2="16" y2="60" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="13" cy="60" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Lower left -->
+        <line x1="60" y1="62" x2="22" y2="78" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="19.5" cy="80" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Upper right 1 -->
+        <line x1="60" y1="62" x2="82" y2="24" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="84" cy="21" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Upper right 2 -->
+        <line x1="60" y1="62" x2="98" y2="40" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="100.5" cy="37.5" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Right -->
+        <line x1="60" y1="62" x2="104" y2="60" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="107" cy="60" rx="3.5" ry="3.5" fill="#111"/>
+        <!-- Lower right -->
+        <line x1="60" y1="62" x2="98" y2="78" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="100.5" cy="80" rx="3.5" ry="3.5" fill="#111"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div>
+        <div class="app-icon light">
+          <svg viewBox="0 0 120 120" fill="none">
+            <line x1="60" y1="88" x2="60" y2="62" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+            <ellipse cx="60" cy="92" rx="5" ry="7" fill="#111"/>
+            <line x1="60" y1="62" x2="60" y2="18" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="60" cy="15" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="38" y2="24" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="36" cy="21" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="22" y2="40" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="19.5" cy="37.5" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="16" y2="60" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="13" cy="60" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="22" y2="78" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="19.5" cy="80" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="82" y2="24" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="84" cy="21" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="98" y2="40" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="100.5" cy="37.5" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="104" y2="60" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="107" cy="60" rx="3.5" ry="3.5" fill="#111"/>
+            <line x1="60" y1="62" x2="98" y2="78" stroke="#111" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="100.5" cy="80" rx="3.5" ry="3.5" fill="#111"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Light</p>
+      </div>
+      <div>
+        <div class="app-icon dark">
+          <svg viewBox="0 0 120 120" fill="none">
+            <line x1="60" y1="88" x2="60" y2="62" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+            <ellipse cx="60" cy="92" rx="5" ry="7" fill="#fff"/>
+            <line x1="60" y1="62" x2="60" y2="18" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="60" cy="15" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="38" y2="24" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="36" cy="21" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="22" y2="40" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="19.5" cy="37.5" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="16" y2="60" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="13" cy="60" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="22" y2="78" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="19.5" cy="80" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="82" y2="24" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="84" cy="21" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="98" y2="40" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="100.5" cy="37.5" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="104" y2="60" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="107" cy="60" rx="3.5" ry="3.5" fill="#fff"/>
+            <line x1="60" y1="62" x2="98" y2="78" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <ellipse cx="100.5" cy="80" rx="3.5" ry="3.5" fill="#fff"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Dark</p>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Dandelion</p>
+      <p class="card-desc">The ultimate symbol of effortless departure. You blow, it flows away. Nobody in tech owns this silhouette.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 3: FEATHER -->
+  <div class="card">
+    <span class="concept-label">Concept 03</span>
+    <div class="icon-large">
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Feather quill -->
+        <path d="M72 12 L44 108" stroke="#111" stroke-width="2" stroke-linecap="round"/>
+        <!-- Feather outline - right side -->
+        <path d="M72 12 C90 20 100 38 96 56 C92 70 80 82 70 90 L48 106" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <!-- Feather outline - left side -->
+        <path d="M72 12 C66 22 62 34 58 46 C54 58 50 72 44 108" stroke="#111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <!-- Fill the feather -->
+        <path d="M72 12 C90 20 100 38 96 56 C92 70 80 82 70 90 L48 106 C54 72 58 58 62 46 C66 34 72 12 72 12 Z" fill="#111"/>
+        <!-- Quill highlight -->
+        <path d="M70 18 L46 100" stroke="#f5f5f5" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div>
+        <div class="app-icon light">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path d="M72 12 C90 20 100 38 96 56 C92 70 80 82 70 90 L48 106 C54 72 58 58 62 46 C66 34 72 12 72 12 Z" fill="#111"/>
+            <path d="M70 18 L46 100" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Light</p>
+      </div>
+      <div>
+        <div class="app-icon dark">
+          <svg viewBox="0 0 120 120" fill="none">
+            <path d="M72 12 C90 20 100 38 96 56 C92 70 80 82 70 90 L48 106 C54 72 58 58 62 46 C66 34 72 12 72 12 Z" fill="#fff"/>
+            <path d="M70 18 L46 100" stroke="#111" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Dark</p>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Feather</p>
+      <p class="card-desc">Pure lightness and zero resistance. Floats wherever the air takes it. Strong, elegant silhouette at any size.</p>
+    </div>
+  </div>
+
+  <!-- CONCEPT 4: BUBBLE -->
+  <div class="card">
+    <span class="concept-label">Concept 04</span>
+    <div class="icon-large">
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Outer ring - main bubble -->
+        <circle cx="60" cy="60" r="44" stroke="#111" stroke-width="5"/>
+        <!-- Inner highlight arc - suggests float and glass -->
+        <path d="M34 38 C38 26 52 20 64 22" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>
+        <!-- Tiny reflection dot -->
+        <circle cx="72" cy="28" r="4" fill="#111"/>
+        <!-- Rising smaller bubble -->
+        <circle cx="88" cy="30" r="10" stroke="#111" stroke-width="3.5"/>
+        <!-- Tiny bubble -->
+        <circle cx="98" cy="52" r="5.5" stroke="#111" stroke-width="3"/>
+      </svg>
+    </div>
+    <div class="divider"></div>
+    <div class="mockups">
+      <div>
+        <div class="app-icon light">
+          <svg viewBox="0 0 120 120" fill="none">
+            <circle cx="54" cy="62" r="36" stroke="#111" stroke-width="5"/>
+            <path d="M32 44 C36 34 46 28 56 30" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>
+            <circle cx="62" cy="32" r="3.5" fill="#111"/>
+            <circle cx="82" cy="28" r="9" stroke="#111" stroke-width="3.5"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Light</p>
+      </div>
+      <div>
+        <div class="app-icon dark">
+          <svg viewBox="0 0 120 120" fill="none">
+            <circle cx="54" cy="62" r="36" stroke="#fff" stroke-width="5"/>
+            <path d="M32 44 C36 34 46 28 56 30" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+            <circle cx="62" cy="32" r="3.5" fill="#fff"/>
+            <circle cx="82" cy="28" r="9" stroke="#fff" stroke-width="3.5"/>
+          </svg>
+        </div>
+        <p class="mockup-label">Dark</p>
+      </div>
+    </div>
+    <div class="card-meta">
+      <p class="card-name">The Bubble</p>
+      <p class="card-desc">Carefree and floating upward. Playful but still minimal. The rising bubbles suggest plural journeys.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

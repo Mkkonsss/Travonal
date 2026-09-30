@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ── CORS (same pattern as ai-travonal) ──────────────────────────────────────
+// ── CORS (same pattern as ai-toveli) ──────────────────────────────────────
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,10 +15,10 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const REDIRECT_URI = "travonal://gmail-callback";
+const REDIRECT_URI = "toveli://gmail-callback";
 const SCOPES = "https://www.googleapis.com/auth/gmail.readonly";
 
-// ── Auth helper (same JWT decode as ai-travonal) ────────────────────────────
+// ── Auth helper (same JWT decode as ai-toveli) ────────────────────────────
 
 function getUserIdFromRequest(req: Request): string | null {
   const auth = req.headers.get("authorization") || "";

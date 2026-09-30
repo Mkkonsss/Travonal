@@ -7,7 +7,7 @@ import { Spacing, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useProfile } from '@/context/profile';
 
-export type TravonalCommand =
+export type ToveliCommand =
   | 'make_relaxed'
   | 'make_adventurous'
   | 'reduce_cost'
@@ -22,7 +22,7 @@ export type TravonalCommand =
   | 'move_earlier';
 
 export interface Command {
-  id: TravonalCommand;
+  id: ToveliCommand;
   label: string;
   icon: string;
   description: string;
@@ -41,10 +41,10 @@ export const COMMANDS: Command[] = [
 ];
 
 /**
- * Parse a free-text query into a TravonalCommand, an extracted day number, or null for unknown.
+ * Parse a free-text query into a ToveliCommand, an extracted day number, or null for unknown.
  */
 export interface ParsedCommand {
-  command: TravonalCommand | null;
+  command: ToveliCommand | null;
   feedback: string;
   extractedDay?: number;
   searchTerms?: string;
@@ -149,10 +149,10 @@ export function parseTextToCommand(text: string): ParsedCommand {
   return { command: null, feedback: "I'm not sure how to do that. Try: More Relaxed, More Adventurous, Reduce Cost, Avoid Crowds, Less Travel Time, or Surprise Me." };
 }
 
-interface AskTravonalProps {
+interface AskToveliProps {
   visible: boolean;
   onClose: () => void;
-  onCommand: (command: TravonalCommand, extractedDay?: number, searchTerms?: string, startAfter?: string) => void;
+  onCommand: (command: ToveliCommand, extractedDay?: number, searchTerms?: string, startAfter?: string) => void;
   onFreeTextEdit?: (instruction: string) => void;
   currentDay?: number;
   totalDays?: number;
@@ -160,7 +160,7 @@ interface AskTravonalProps {
   activityCount?: number;
 }
 
-export function AskTravonal({ visible, onClose, onCommand, onFreeTextEdit, currentDay, totalDays, tripDestination, activityCount }: AskTravonalProps) {
+export function AskToveli({ visible, onClose, onCommand, onFreeTextEdit, currentDay, totalDays, tripDestination, activityCount }: AskToveliProps) {
   const theme = useTheme();
   const { profile } = useProfile();
   const [textQuery, setTextQuery] = useState('');
@@ -206,7 +206,7 @@ export function AskTravonal({ visible, onClose, onCommand, onFreeTextEdit, curre
             accessibilityRole="none"
           >
             <View style={styles.handle} />
-            <ThemedText style={styles.title}>Ask Travonal</ThemedText>
+            <ThemedText style={styles.title}>Ask Tripseek</ThemedText>
             {(currentDay != null || tripDestination) && (
               <ThemedText style={[styles.context, { color: theme.textSecondary }]}>
                 {tripDestination ?? ''}

@@ -24,7 +24,9 @@ export type GatedAction =
   | 'natural_search'
   | 'enhance_profile'
   | 'rank_places'
-  | 'import_place';
+  | 'import_place'
+  | 'export_pdf'
+  | 'invite_member';
 
 export interface GateResult {
   /** Whether the user is currently allowed to perform this action */
@@ -43,12 +45,12 @@ export interface GateResult {
 
 const UPGRADE_MESSAGES: Record<string, { title: string; desc: string }> = {
   generate_trip: {
-    title: 'Unlimited AI trip plans',
-    desc: 'Generate up to 3 AI-powered itineraries every month with Travonal+.',
+    title: 'More AI trip plans',
+    desc: 'Get 5 AI-powered itineraries every month with Tripseek+.',
   },
   chat: {
-    title: 'More AI conversations',
-    desc: 'Get 50 AI messages per month to plan the perfect trip.',
+    title: 'More AI messages',
+    desc: 'Get 100 AI messages per month to plan the perfect trip.',
   },
   edit_trip: {
     title: 'AI trip editing',
@@ -75,8 +77,16 @@ const UPGRADE_MESSAGES: Record<string, { title: string; desc: string }> = {
     desc: 'Get AI-ranked "For You" recommendations based on your taste.',
   },
   import_place: {
-    title: 'More imports',
-    desc: 'Import places from links, text, and screenshots with Travonal+.',
+    title: 'Import more places',
+    desc: 'Add up to 15 places from links & photos every month with Tripseek+.',
+  },
+  export_pdf: {
+    title: 'Export your itinerary',
+    desc: 'Save or print your trip as a PDF with Tripseek+.',
+  },
+  invite_member: {
+    title: 'Invite travel companions',
+    desc: 'Share your trip and plan together with Tripseek+.',
   },
 };
 
@@ -92,7 +102,16 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
 
     const category = getActionCategory(action);
 
-    // Ungated actions
+    // Plus-only actions that are gated by tier but not metered
+    if (action === 'export_pdf' || action === 'invite_member') {
+      if (!isPlus) {
+        const msg = UPGRADE_MESSAGES[action]?.desc ?? 'Upgrade to Tripseek+ to use this feature.';
+        return { allowed: false, remaining: 0, total: 0, reason: msg, isPlus: false };
+      }
+      return { allowed: true, remaining: 99, total: 99, reason: '', isPlus };
+    }
+
+    // Ungated actions (no category, no tier restriction)
     if (category === null) {
       return { allowed: true, remaining: 99, total: 99, reason: '', isPlus };
     }
@@ -105,35 +124,35 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
     // Plus users
     if (isPlus) {
       if (category === 'generation') {
-        const limit = usage.limits.generations ?? 3;
+        const limit = usage.limits.generations ?? 5;
         const remaining = limit - usage.generations_used;
         return {
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve used all 3 AI plans this month.' : '',
+          reason: remaining <= 0 ? 'You\'ve used all 5 AI plans this month.' : '',
           isPlus,
         };
       }
       if (category === 'assistance') {
-        const limit = usage.limits.assistance ?? 50;
+        const limit = usage.limits.assistance ?? 100;
         const remaining = limit - usage.assistance_used;
         return {
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve used all 50 AI actions this month.' : '',
+          reason: remaining <= 0 ? 'You\'ve used all 100 AI messages this month.' : '',
           isPlus,
         };
       }
       if (category === 'import') {
-        const limit = usage.limits.imports ?? 10;
+        const limit = usage.limits.imports ?? 15;
         const remaining = limit - usage.imports_used;
         return {
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve used all 10 imports this month.' : '',
+          reason: remaining <= 0 ? 'You\'ve added all 15 places from links this month.' : '',
           isPlus,
         };
       }
@@ -142,55 +161,44 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
     // Free users
     // Check if this specific action is allowed on free tier
     if (!isFreeActionAllowed(action)) {
-      const msg = UPGRADE_MESSAGES[action]?.desc ?? 'Upgrade to Travonal+ to use this feature.';
+      const msg = UPGRADE_MESSAGES[action]?.desc ?? 'Upgrade to Tripseek+ to use this feature.';
       return { allowed: false, remaining: 0, total: 0, reason: msg, isPlus: false };
     }
 
     if (category === 'generation') {
-      const limit = usage.limits.generations_lifetime ?? 2;
-      const remaining = limit - usage.generations_lifetime;
+      const limit = usage.limits.generations ?? 1;
+      const remaining = limit - usage.generations_used;
       return {
         allowed: remaining > 0,
         remaining: Math.max(0, remaining),
         total: limit,
-        reason: remaining <= 0 ? 'You\'ve used both free AI plans. Upgrade for more.' : '',
+        reason: remaining <= 0 ? 'You\'ve used your free trip plan this month. Upgrade for more.' : '',
         isPlus: false,
       };
     }
 
     if (category === 'assistance') {
-      // Only chat is free (10/month)
-      const limit = usage.limits.assistance ?? 10;
+      // Only chat is free (20/month)
+      const limit = usage.limits.assistance ?? 20;
       const remaining = limit - usage.assistance_used;
       return {
         allowed: remaining > 0,
         remaining: Math.max(0, remaining),
         total: limit,
-        reason: remaining <= 0 ? 'You\'ve used your 10 free messages this month.' : '',
+        reason: remaining <= 0 ? 'You\'ve used your 20 free AI messages this month. Upgrade for 100 per month.' : '',
         isPlus: false,
       };
     }
 
     if (category === 'import') {
-      // Per content-type lifetime limits
-      let limit: number;
-      let used: number;
-      if (contentType === 'image_base64') {
-        limit = usage.limits.imports_image_lifetime ?? 1;
-        used = usage.imports_image_lifetime;
-      } else if (contentType === 'text') {
-        limit = usage.limits.imports_text_lifetime ?? 2;
-        used = usage.imports_text_lifetime;
-      } else {
-        limit = usage.limits.imports_link_lifetime ?? 2;
-        used = usage.imports_link_lifetime;
-      }
-      const remaining = limit - used;
+      // Unified monthly limit across all import types
+      const limit = usage.limits.imports ?? 3;
+      const remaining = limit - usage.imports_used;
       return {
         allowed: remaining > 0,
         remaining: Math.max(0, remaining),
         total: limit,
-        reason: remaining <= 0 ? 'Upgrade to Travonal+ for more imports.' : '',
+        reason: remaining <= 0 ? 'Upgrade to Tripseek+ to import more places from links & photos.' : '',
         isPlus: false,
       };
     }
@@ -199,7 +207,7 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
   }, [action, contentType, isPlus, usage]);
 
   const showUpgrade = useCallback(() => {
-    router.push('/travonal-plus' as any);
+    router.push('/toveli-plus' as any);
   }, [router]);
 
   return { ...result, showUpgrade };

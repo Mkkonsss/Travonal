@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -12,7 +12,7 @@ import { Spacing } from '@/constants/theme';
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, SUPPORT_EMAIL } from '@/constants/legal';
 import { useProfile } from '@/context/profile';
 import { useTrips } from '@/context/trips';
-import { useMemory } from '@/context/memory';
+import { useMemory, type TravelMemoryEntry } from '@/context/memory';
 import { useAuth } from '@/context/auth';
 import { useInbox } from '@/context/inbox';
 import { useTripPulse } from '@/context/trip-pulse';
@@ -21,7 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToast } from '@/context/toast';
 import { TravelStyleCard } from '@/components/travel-style-card';
 
-import { clearOnboardingComplete, resetAllData, loadChatMessages, loadRecentSearches, loadDismissedPulse, loadSeenPulse, loadNotifDismissed, loadTripPulseEnabled, loadLearningEnabled } from '@/services/storage';
+import { clearOnboardingComplete, resetAllData, loadChatMessages, saveChatMessages, saveChatThreads, loadRecentSearches, loadDismissedPulse, loadSeenPulse, loadNotifDismissed, loadTripPulseEnabled, loadLearningEnabled, loadBookingRemindersEnabled, saveBookingRemindersEnabled, loadDepartureReminderEnabled, saveDepartureReminderEnabled, loadDailyBriefingEnabled, saveDailyBriefingEnabled } from '@/services/storage';
 import { hasPermission, requestNotificationPermission, onPermissionChange, openNotificationSettings } from '@/services/notifications';
 import { deleteAccount } from '@/services/supabase';
 import { verifyEntitlement, openSubscriptionManagement } from '@/services/subscription';
@@ -73,6 +73,25 @@ function NavRow({
   );
 }
 
+function InfoRow({
+  label,
+  value,
+  theme,
+}: {
+  label: string;
+  value: string;
+  theme: any;
+}) {
+  return (
+    <View style={[styles.navRow, { borderBottomColor: theme.border }]}>
+      <View style={{ flex: 1 }}>
+        <ThemedText style={[styles.navLabel, { color: theme.textSecondary }]}>{label}</ThemedText>
+        <ThemedText style={[styles.navSublabel, { color: theme.textSecondary }]}>{value}</ThemedText>
+      </View>
+    </View>
+  );
+}
+
 function SettingToggle({
   label,
   sublabel,
@@ -105,6 +124,106 @@ function SettingToggle({
   );
 }
 
+// ─── Memory insight components ───
+
+const CATEGORY_LABELS: Record<string, string> = {
+  crowds: 'crowded places',
+  budget: 'price',
+  food: 'food experiences',
+  preference: 'personal taste',
+  logistics: 'logistics & timing',
+  discovery: 'hidden gems',
+  quality: 'quality',
+  activity_type: 'activity types',
+  destination: 'destinations visited',
+};
+
+function MemoryInsights({ entries, theme }: { entries: TravelMemoryEntry[]; theme: any }) {
+  const active = entries.filter((e) => e.enabled);
+  if (active.length < 2) return null;
+
+  // Count by category + sentiment
+  const negCounts = new Map<string, number>();
+  const posCounts = new Map<string, number>();
+  for (const e of active) {
+    const isNeg = e.sentiment === 'negative' || e.type === 'activity_skipped' || e.type === 'recommendation_rejected';
+    const map = isNeg ? negCounts : posCounts;
+    map.set(e.category, (map.get(e.category) ?? 0) + 1);
+  }
+
+  const insights: string[] = [];
+
+  // Top negative pattern
+  const topNeg = [...negCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (topNeg && topNeg[1] >= 2) {
+    insights.push(`You tend to avoid ${CATEGORY_LABELS[topNeg[0]] ?? topNeg[0]} (${topNeg[1]} signals)`);
+  }
+
+  // Top positive pattern
+  const topPos = [...posCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (topPos && topPos[1] >= 2) {
+    insights.push(`You love ${CATEGORY_LABELS[topPos[0]] ?? topPos[0]} (${topPos[1]} signals)`);
+  }
+
+  // Destination count
+  const destinations = new Set(active.filter((e) => e.destination).map((e) => e.destination));
+  if (destinations.size >= 2) {
+    insights.push(`Learned from ${destinations.size} destinations`);
+  }
+
+  if (insights.length === 0) return null;
+
+  return (
+    <View style={styles.insightsContainer}>
+      {insights.map((text, i) => (
+        <ThemedText key={i} style={[styles.insightText, { color: theme.textSecondary }]}>
+          {text}
+        </ThemedText>
+      ))}
+    </View>
+  );
+}
+
+function MemoryGroup({
+  label,
+  entries,
+  showAll,
+  theme,
+  onDelete,
+}: {
+  label: string;
+  entries: TravelMemoryEntry[];
+  showAll: boolean;
+  theme: any;
+  onDelete: (id: string) => void;
+}) {
+  if (entries.length === 0) return null;
+  const visible = showAll ? [...entries].reverse() : entries.slice(-3).reverse();
+
+  return (
+    <View style={styles.memoryGroupContainer}>
+      <ThemedText style={[styles.memoryGroupLabel, { color: theme.text }]}>
+        {label} ({entries.length})
+      </ThemedText>
+      {visible.map((entry) => (
+        <View key={entry.id} style={[styles.memoryRow, { borderBottomColor: theme.border }]}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <ThemedText style={styles.memoryDetail}>{entry.detail}</ThemedText>
+            {entry.destination && (
+              <ThemedText style={[styles.memoryMeta, { color: theme.textSecondary }]}>
+                {entry.destination}
+              </ThemedText>
+            )}
+          </View>
+          <Pressable onPress={() => onDelete(entry.id)} style={{ padding: 8 }} accessibilityRole="button" accessibilityLabel="Remove">
+            <SymbolView name="xmark" size={12} tintColor={theme.textSecondary} />
+          </Pressable>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -116,13 +235,20 @@ export default function ProfileScreen() {
   const { enabled: tripPulseEnabled, loaded: tripPulseLoaded, setEnabled: setTripPulseEnabled, resetAll: resetTripPulse } = useTripPulse();
   const { resetAll: resetPulseHistory } = usePulseHistory();
   const { resetAll: resetTrips } = useTrips();
-  const { user, signOut } = useAuth();
+  const { user, signOut, resetPassword } = useAuth();
   const { showToast } = useToast();
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(hasPermission());
+  const [bookingRemindersEnabled, setBookingRemindersEnabled] = useState(true);
+  const [departureReminderEnabled, setDepartureReminderEnabled] = useState(true);
+  const [dailyBriefingEnabled, setDailyBriefingEnabled] = useState(true);
   const [showAllMemories, setShowAllMemories] = useState(false);
+  const [chatMessageCount, setChatMessageCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const { isPlus, usage } = useSubscription();
+  const { isPlus, usage, plan } = useSubscription();
+  const planLabel = isPlus
+    ? `Tripseek+ (${plan === 'annual' ? 'Annual' : 'Monthly'})`
+    : 'Free plan';
 
   // Expanded sub-sections
   const [showAccount, setShowAccount] = useState(false);
@@ -132,6 +258,10 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     verifyEntitlement().then(setIsSubscribed).catch(() => {});
+    loadBookingRemindersEnabled().then(setBookingRemindersEnabled);
+    loadDepartureReminderEnabled().then(setDepartureReminderEnabled);
+    loadDailyBriefingEnabled().then(setDailyBriefingEnabled);
+    loadChatMessages<unknown[]>([]).then((msgs) => setChatMessageCount(msgs.length));
   }, []);
 
   useEffect(() => {
@@ -155,7 +285,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             resetProfile();
-            clearAll();
+            resetMemory();
             await clearOnboardingComplete();
             router.replace('/onboarding' as any);
           },
@@ -167,7 +297,7 @@ export default function ProfileScreen() {
   function handleClearMemory() {
     Alert.alert(
       'Clear Travel Memory',
-      'This will remove all learned preferences. Travonal will start learning from scratch.',
+      'This will remove all learned preferences. Tripseek will start learning from scratch.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Clear', style: 'destructive', onPress: clearAll },
@@ -186,6 +316,64 @@ export default function ProfileScreen() {
     );
   }
 
+  function handleClearChat() {
+    Alert.alert(
+      'Clear Chat History',
+      'This will remove all Ask Tripseek conversations. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            await Promise.all([saveChatMessages([]), saveChatThreads([])]);
+            showToast('Chat history cleared', 'success');
+          },
+        },
+      ]
+    );
+  }
+
+  function handleClearMemoryOnly() {
+    Alert.alert(
+      'Clear Trip Memory',
+      'This will remove all learned preferences. Your travel profile and trips are not affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            clearAll();
+            showToast('Trip memory cleared', 'success');
+          },
+        },
+      ]
+    );
+  }
+
+  function handleResetPassword() {
+    if (!user?.email) return;
+    Alert.alert(
+      'Reset Password',
+      `Send a password reset link to ${user.email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send Link',
+          onPress: async () => {
+            const { error } = await resetPassword(user.email!);
+            if (error) {
+              showToast('Could not send reset link. Try again later.', 'error');
+            } else {
+              showToast('Reset link sent to ' + user.email, 'success');
+            }
+          },
+        },
+      ],
+    );
+  }
+
   async function handleExport() {
     const [chatMessages, recentSearches, dismissedPulse, seenPulse, notifDismissed, pulseEnabled, memoryLearning] = await Promise.all([
       loadChatMessages([]),
@@ -198,8 +386,14 @@ export default function ProfileScreen() {
     ]);
 
     const data = {
-      exportVersion: 2,
+      exportVersion: 3,
       exportedAt: new Date().toISOString(),
+      summary: {
+        tripCount: trips.length,
+        memoryCount: entries.length,
+        chatMessageCount: (chatMessages as unknown[]).length,
+        savedPlaceCount: savedPlaces.length,
+      },
       profile,
       trips: trips.map((t) => ({
         ...t,
@@ -217,7 +411,7 @@ export default function ProfileScreen() {
       settings: { notifDismissed, pulseEnabled, memoryLearning },
     };
     try {
-      const result = await Share.share({ message: JSON.stringify(data, null, 2), title: 'Travonal Data Export' });
+      const result = await Share.share({ message: JSON.stringify(data, null, 2), title: 'Tripseek Data Export' });
       if (result.action === Share.sharedAction) {
         showToast('Data exported successfully', 'success');
       }
@@ -262,33 +456,26 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Travonal Plus ── */}
+        {/* ── Tripseek Plus ── */}
         <View style={styles.plusGlow}>
           <Pressable
-            onPress={() => router.push('/travonal-plus' as any)}
-            style={({ pressed }) => [styles.plusOuter, { backgroundColor: theme.background, opacity: pressed ? 0.8 : 1 }]}
+            onPress={() => router.push('/toveli-plus' as any)}
+            style={({ pressed }) => [styles.plusOuter, { backgroundColor: theme.background, opacity: pressed ? 0.85 : 1 }]}
             accessibilityRole="button"
-            accessibilityLabel={isSubscribed ? 'Manage Travonal+' : 'Explore Travonal+'}
+            accessibilityLabel={isSubscribed ? 'Manage Tripseek+' : 'Explore Tripseek+'}
           >
-            <View style={[styles.plusIcon, { backgroundColor: theme.primary }]}>
-              <ThemedText style={[styles.plusIconText, { color: theme.primaryText }]}>T+</ThemedText>
-            </View>
-            <View style={styles.plusContent}>
-              {isSubscribed || isPlus ? (
-                <>
-                  <ThemedText style={[styles.plusTitle, { color: theme.text }]}>Travonal+</ThemedText>
-                  <ThemedText style={[styles.plusSub, { color: theme.textSecondary }]}>
-                    {usage ? `${Math.max(0, (usage.limits.generations ?? 3) - usage.generations_used)} plans, ${Math.max(0, (usage.limits.assistance ?? 50) - usage.assistance_used)} messages left` : 'Your subscription is active.'}
-                  </ThemedText>
-                </>
-              ) : (
-                <>
-                  <ThemedText style={[styles.plusTitle, { color: theme.text }]}>Travonal+</ThemedText>
-                  <ThemedText style={[styles.plusSub, { color: theme.textSecondary }]}>Unlock AI trip editing, analysis & more</ThemedText>
-                </>
-              )}
-            </View>
-            <ThemedText style={[styles.plusChevron, { color: theme.textSecondary }]}>{'\u203A'}</ThemedText>
+            <Image
+              source={theme.background === '#FFFFFF'
+                ? require('@/assets/images/tripseek-plus-dark.png')
+                : require('@/assets/images/tripseek-plus-light.png')}
+              style={styles.plusLogo}
+              resizeMode="contain"
+            />
+            <ThemedText style={[styles.plusSub, { color: theme.textSecondary }]}>
+              {isSubscribed || isPlus
+                ? (usage ? `${Math.max(0, (usage.limits.generations ?? 3) - usage.generations_used)} plans, ${Math.max(0, (usage.limits.assistance ?? 50) - usage.assistance_used)} messages left` : 'Your subscription is active.')
+                : 'Unlock AI trip editing, analysis & more'}
+            </ThemedText>
           </Pressable>
         </View>
 
@@ -302,8 +489,8 @@ export default function ProfileScreen() {
 
         <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
 
-        {/* ── Your Travonal ── */}
-        <ThemedText style={[styles.sectionLabel, { color: theme.text, marginTop: 0 }]}>Your Travonal</ThemedText>
+        {/* ── Your Tripseek ── */}
+        <ThemedText style={[styles.sectionLabel, { color: theme.text, marginTop: 0 }]}>Your Tripseek</ThemedText>
 
         <View style={styles.sectionGroup}>
           <NavRow
@@ -323,32 +510,45 @@ export default function ProfileScreen() {
               <ThemedText style={[styles.navSublabel, { color: theme.textSecondary }]}>
                 {entries.length > 0
                   ? `${entries.length} ${entries.length === 1 ? 'thing' : 'things'} learned`
-                  : 'What Travonal has learned'}
+                  : 'What Tripseek has learned'}
               </ThemedText>
             </View>
             <ThemedText style={[styles.navChevron, { color: theme.textSecondary }]}>{showMemory ? '\u2212' : '\u203A'}</ThemedText>
           </Pressable>
         </View>
 
-        {/* Memory entries (expandable) */}
+        {/* Memory entries (expandable — grouped by sentiment) */}
         {showMemory && (
           <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
             <View style={styles.memoryPanel}>
               {entries.length > 0 ? (
                 <>
-                  {(showAllMemories ? [...entries].reverse() : entries.slice(-5).reverse()).map((entry) => (
-                    <View key={entry.id} style={[styles.memoryRow, { borderBottomColor: theme.border }]}>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <ThemedText style={[styles.memoryType, { color: theme.textSecondary }]}>
-                          {entry.type.replace(/_/g, ' ')}{entry.isGlobal ? ' \u00B7 Global' : ''}
-                        </ThemedText>
-                        <ThemedText style={styles.memoryDetail}>{entry.detail}</ThemedText>
-                      </View>
-                      <Pressable onPress={() => handleDeleteMemoryEntry(entry.id)} style={{ padding: 8 }} accessibilityRole="button" accessibilityLabel="Remove">
-                        <SymbolView name="xmark" size={12} tintColor={theme.textSecondary} />
-                      </Pressable>
-                    </View>
-                  ))}
+                  {/* Insights summary */}
+                  <MemoryInsights entries={entries} theme={theme} />
+
+                  {/* Grouped sections */}
+                  <MemoryGroup
+                    label="What you love"
+                    entries={entries.filter((e) => e.sentiment === 'positive' || e.type === 'recommendation_accepted' || e.type === 'preference_saved')}
+                    showAll={showAllMemories}
+                    theme={theme}
+                    onDelete={handleDeleteMemoryEntry}
+                  />
+                  <MemoryGroup
+                    label="What to avoid"
+                    entries={entries.filter((e) => e.sentiment === 'negative' || e.type === 'activity_skipped' || e.type === 'recommendation_rejected')}
+                    showAll={showAllMemories}
+                    theme={theme}
+                    onDelete={handleDeleteMemoryEntry}
+                  />
+                  <MemoryGroup
+                    label="Choices made"
+                    entries={entries.filter((e) => e.type === 'activity_replaced')}
+                    showAll={showAllMemories}
+                    theme={theme}
+                    onDelete={handleDeleteMemoryEntry}
+                  />
+
                   {entries.length > 5 && (
                     <Pressable onPress={() => setShowAllMemories(!showAllMemories)} style={styles.clearBtn} accessibilityRole="button" accessibilityLabel={showAllMemories ? 'Show less' : 'View all memories'}>
                       <ThemedText style={[styles.clearBtnText, { color: theme.primary }]}>
@@ -362,7 +562,7 @@ export default function ProfileScreen() {
                 </>
               ) : (
                 <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  No memories yet. As you use Travonal, it will learn from your choices to give better recommendations.
+                  No memories yet. As you use Tripseek, it will learn from your choices to give better recommendations.
                 </ThemedText>
               )}
             </View>
@@ -398,7 +598,7 @@ export default function ProfileScreen() {
                     if (val) {
                       const granted = await requestNotificationPermission();
                       if (!granted) {
-                        Alert.alert('Enable Notifications', 'Notifications are blocked. Open Settings to allow Travonal to send notifications.', [
+                        Alert.alert('Enable Notifications', 'Notifications are blocked. Open Settings to allow Tripseek to send notifications.', [
                           { text: 'Cancel', style: 'cancel' },
                           { text: 'Open Settings', onPress: openNotificationSettings },
                         ]);
@@ -412,11 +612,33 @@ export default function ProfileScreen() {
                 />
                 <SettingToggle
                   label="Trip alerts"
-                  sublabel="Smart alerts about your itinerary"
+                  sublabel="Smart alerts about conflicts and suggestions"
                   value={tripPulseLoaded ? tripPulseEnabled : false}
                   onToggle={tripPulseLoaded ? setTripPulseEnabled : () => {}}
                   theme={theme}
                 />
+                <SettingToggle
+                  label="Booking reminders"
+                  sublabel="Remind about unbooked hotels and flights"
+                  value={bookingRemindersEnabled}
+                  onToggle={(val) => { setBookingRemindersEnabled(val); saveBookingRemindersEnabled(val); }}
+                  theme={theme}
+                />
+                <SettingToggle
+                  label="Trip countdown"
+                  sublabel="Reminder the day before your trip starts"
+                  value={departureReminderEnabled}
+                  onToggle={(val) => { setDepartureReminderEnabled(val); saveDepartureReminderEnabled(val); }}
+                  theme={theme}
+                />
+                <SettingToggle
+                  label="Daily briefing"
+                  sublabel="Morning summary of today's activities"
+                  value={dailyBriefingEnabled}
+                  onToggle={(val) => { setDailyBriefingEnabled(val); saveDailyBriefingEnabled(val); }}
+                  theme={theme}
+                />
+
               </View>
             </Animated.View>
           )}
@@ -438,16 +660,33 @@ export default function ProfileScreen() {
               <View style={styles.subSection}>
                 <SettingToggle
                   label="Personalization"
-                  sublabel="Learn from your choices to improve suggestions"
+                  sublabel={learningEnabled ? 'Learn from your choices to improve suggestions' : 'Paused — existing memories are kept'}
                   value={learningEnabled}
                   onToggle={setLearningEnabled}
                   theme={theme}
                 />
+                <ThemedText style={{ fontSize: 12, color: theme.textSecondary, marginTop: 12, marginBottom: 4, paddingHorizontal: 4 }}>
+                  {trips.length} trip{trips.length !== 1 ? 's' : ''} · {entries.length} memor{entries.length !== 1 ? 'ies' : 'y'} · {chatMessageCount} chat message{chatMessageCount !== 1 ? 's' : ''}
+                </ThemedText>
                 <NavRow
                   label="Export my data"
-                  sublabel="Share your trips and preferences"
+                  sublabel="Share your trips and preferences as JSON"
                   onPress={handleExport}
                   theme={theme}
+                />
+                <NavRow
+                  label="Clear chat history"
+                  sublabel="Remove all Ask Tripseek conversations"
+                  onPress={handleClearChat}
+                  theme={theme}
+                  destructive
+                />
+                <NavRow
+                  label="Clear trip memory"
+                  sublabel="Remove all learned preferences"
+                  onPress={handleClearMemoryOnly}
+                  theme={theme}
+                  destructive
                 />
                 <NavRow
                   label="Reset preferences"
@@ -477,6 +716,23 @@ export default function ProfileScreen() {
               <View style={styles.subSection}>
                 {user ? (
                   <>
+                    <InfoRow label="Email" value={user.email ?? 'Unknown'} theme={theme} />
+                    {isPlus ? (
+                      <NavRow
+                        label="Plan"
+                        sublabel={planLabel}
+                        onPress={() => openSubscriptionManagement()}
+                        theme={theme}
+                      />
+                    ) : (
+                      <InfoRow label="Plan" value={planLabel} theme={theme} />
+                    )}
+                    <NavRow
+                      label="Reset password"
+                      sublabel="Send a reset link to your email"
+                      onPress={handleResetPassword}
+                      theme={theme}
+                    />
                     <NavRow
                       label="Sign out"
                       onPress={() => {
@@ -528,12 +784,20 @@ export default function ProfileScreen() {
                     />
                   </>
                 ) : (
-                  <NavRow
-                    label="Sign in"
-                    sublabel="Sync your trips across devices"
-                    onPress={() => router.push('/sign-in' as any)}
-                    theme={theme}
-                  />
+                  <>
+                    <NavRow
+                      label="Sign in"
+                      sublabel="Sync your trips and preferences across devices"
+                      onPress={() => router.push('/sign-in' as any)}
+                      theme={theme}
+                    />
+                    <NavRow
+                      label="Create account"
+                      sublabel="Free — keeps your trips backed up"
+                      onPress={() => router.push('/sign-up' as any)}
+                      theme={theme}
+                    />
+                  </>
                 )}
               </View>
             </Animated.View>
@@ -550,7 +814,7 @@ export default function ProfileScreen() {
           )}
           <NavRow
             label="Leave a review"
-            sublabel="Enjoying Travonal? Let us know!"
+            sublabel="Enjoying Tripseek? Let us know!"
             onPress={async () => {
               if (await StoreReview.hasAction()) {
                 await StoreReview.requestReview();
@@ -585,7 +849,7 @@ export default function ProfileScreen() {
         </View>
 
         <ThemedText style={[styles.versionText, { color: theme.textSecondary, textAlign: 'center', marginTop: 20, marginBottom: 8 }]}>
-          Travonal v{Constants.expoConfig?.version ?? '1.0.0'}
+          Tripseek v{Constants.expoConfig?.version ?? '1.0.0'}
         </ThemedText>
       </ScrollView>
     </ThemedView>
@@ -691,6 +955,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  memoryMeta: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  memoryGroupContainer: {
+    marginBottom: 12,
+  },
+  memoryGroupLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  insightsContainer: {
+    marginBottom: 14,
+    gap: 3,
+  },
+  insightText: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+  },
   clearBtn: {
     alignItems: 'center',
     paddingVertical: 12,
@@ -705,52 +990,32 @@ const styles = StyleSheet.create({
     padding: 4,
   },
 
-  // Travonal Plus card
+  // Tripseek Plus card
   plusGlow: {
     marginTop: 30,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.30,
-    shadowRadius: 21,
-    elevation: 11,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
   },
   plusOuter: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: '#1a1a1a',
-    padding: 14,
-    gap: 14,
-  },
-  plusIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    borderColor: 'rgba(128,128,128,0.15)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
   },
-  plusIconText: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  plusContent: {
-    flex: 1,
-    gap: 2,
-  },
-  plusTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+  plusLogo: {
+    height: 36,
+    width: 144,
   },
   plusSub: {
     fontSize: 13,
+    textAlign: 'center',
     lineHeight: 18,
-  },
-  plusChevron: {
-    fontSize: 24,
-    fontWeight: '300',
-    marginLeft: 4,
   },
 
   // About

@@ -3,7 +3,7 @@
  * Every test imports and exercises real production functions.
  */
 
-import { Activity, Trip, ChangeRecord } from '@/context/trips';
+import { Activity, Trip } from '@/context/trips';
 import { TravelProfile } from '@/context/profile';
 
 import { checkConflicts, computeChangePreview, formatModifiedDescription, getTripDayCount, minutesToTime, timeToMinutes } from '@/services/itinerary-engine';
@@ -23,7 +23,6 @@ import {
 import { shouldRunTripPulse } from '@/context/trip-pulse';
 import {
   createTripRecord,
-  findUndoableChange,
   makePulseDismissalKey,
   isPulseDismissed,
   serializeProfile,
@@ -31,14 +30,11 @@ import {
   sortTripsForPicker,
 } from '@/services/trip-helpers';
 import { generateItinerary, validateAndRepairItinerary } from '@/services/mock-generator';
-import { isOwnedMediaUri, loadTripsSafe, loadProfileSafe, loadMemorySafe, loadChangeHistorySafe, loadInboxSafe, loadSavedPlacesSafe } from '@/services/storage';
+import { isOwnedMediaUri, loadTripsSafe, loadProfileSafe, loadMemorySafe, loadInboxSafe, loadSavedPlacesSafe } from '@/services/storage';
 import { daysInMonth, formatDisplayDate } from '@/components/date-picker-modal';
 import {
   formatTimeDisplay,
-  formatDuration,
   defaultTimeForType,
-  defaultDurationForType,
-  DURATION_PRESETS,
 } from '@/components/time-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -47,7 +43,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 function makeActivity(
   overrides: Partial<Activity> & { id: string; title: string; day: number; time: string },
 ): Activity {
-  return { type: 'activity', duration: 60, ...overrides };
+  return { type: 'activity', ...overrides };
 }
 
 function makeTrip(activities: Activity[], overrides?: Partial<Trip>): Trip {
@@ -197,66 +193,7 @@ describe('Smart Replace inserts exact displayed option', () => {
 });
 
 // ============================================================
-// 5. Smart Replace undo — uses exported findUndoableChange
-// ============================================================
-
-describe('Smart Replace undo persists across reload', () => {
-  test('ChangeRecord round-trips through JSON (simulating AsyncStorage)', () => {
-    const previousActivities: Activity[] = [
-      makeActivity({ id: '1', title: 'Original', day: 1, time: '10:00' }),
-    ];
-    const record: ChangeRecord = {
-      id: '123456',
-      tripId: 'trip1',
-      description: 'Replaced "Original" with "Replacement"',
-      timestamp: '2026-06-01T12:00:00.000Z',
-      previousActivities,
-    };
-
-    const serialized = JSON.stringify([record]);
-    const restored: ChangeRecord[] = JSON.parse(serialized);
-
-    expect(restored.length).toBe(1);
-    expect(restored[0].tripId).toBe('trip1');
-    expect(restored[0].previousActivities.length).toBe(1);
-    expect(restored[0].previousActivities[0].title).toBe('Original');
-    expect(restored[0].undone).toBeUndefined();
-  });
-
-  test('undone flag persists through serialization', () => {
-    const record: ChangeRecord = {
-      id: '123',
-      tripId: 'trip1',
-      description: 'test',
-      timestamp: '2026-06-01T12:00:00.000Z',
-      previousActivities: [],
-      undone: true,
-    };
-    const restored: ChangeRecord = JSON.parse(JSON.stringify(record));
-    expect(restored.undone).toBe(true);
-  });
-
-  test('findUndoableChange skips undone records', () => {
-    const history: ChangeRecord[] = [
-      { id: '3', tripId: 'trip1', description: 'c3', timestamp: '3', previousActivities: [], undone: true },
-      { id: '2', tripId: 'trip1', description: 'c2', timestamp: '2', previousActivities: [] },
-      { id: '1', tripId: 'trip1', description: 'c1', timestamp: '1', previousActivities: [] },
-    ];
-    const undoable = findUndoableChange(history, 'trip1');
-    expect(undoable).toBeDefined();
-    expect(undoable!.id).toBe('2');
-  });
-
-  test('findUndoableChange returns undefined when all undone', () => {
-    const history: ChangeRecord[] = [
-      { id: '1', tripId: 'trip1', description: 'c1', timestamp: '1', previousActivities: [], undone: true },
-    ];
-    expect(findUndoableChange(history, 'trip1')).toBeUndefined();
-  });
-});
-
-// ============================================================
-// 6. Trip Pulse — uses exported shouldRunTripPulse
+// 5. Trip Pulse — uses exported shouldRunTripPulse
 // ============================================================
 
 describe('Trip Pulse disabled/loading behavior', () => {
@@ -274,8 +211,8 @@ describe('Trip Pulse disabled/loading behavior', () => {
 
   test('pulse returns alerts when shouldRunTripPulse is true', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00'}),
     ];
     const trip = makeTrip(activities);
     const run = shouldRunTripPulse(true, true);
@@ -285,8 +222,8 @@ describe('Trip Pulse disabled/loading behavior', () => {
 
   test('pulse returns empty when shouldRunTripPulse is false', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00'}),
     ];
     const trip = makeTrip(activities);
     const run = shouldRunTripPulse(true, false);
@@ -573,8 +510,7 @@ describe('Change preview 5 categories', () => {
 });
 
 // ============================================================
-// 13. Time utilities (Fix #5) — formatTimeDisplay, formatDuration,
-//     defaultTimeForType, defaultDurationForType
+// 13. Time utilities — formatTimeDisplay, defaultTimeForType
 // ============================================================
 
 describe('formatTimeDisplay', () => {
@@ -599,24 +535,6 @@ describe('formatTimeDisplay', () => {
   });
 });
 
-describe('formatDuration', () => {
-  test('shows minutes for < 60', () => {
-    expect(formatDuration(45)).toBe('45m');
-  });
-
-  test('shows whole hours', () => {
-    expect(formatDuration(120)).toBe('2h');
-  });
-
-  test('shows hours and minutes', () => {
-    expect(formatDuration(90)).toBe('1h 30m');
-  });
-
-  test('shows 60 as 1h', () => {
-    expect(formatDuration(60)).toBe('1h');
-  });
-});
-
 describe('defaultTimeForType', () => {
   test('food defaults to 12:00', () => {
     expect(defaultTimeForType('food')).toBe('12:00');
@@ -636,24 +554,6 @@ describe('defaultTimeForType', () => {
 
   test('unknown type defaults to 10:00', () => {
     expect(defaultTimeForType('unknown')).toBe('10:00');
-  });
-});
-
-describe('defaultDurationForType', () => {
-  test('food defaults to 60 minutes', () => {
-    expect(defaultDurationForType('food')).toBe(60);
-  });
-
-  test('hotel defaults to 480 minutes', () => {
-    expect(defaultDurationForType('hotel')).toBe(480);
-  });
-
-  test('flight defaults to 180 minutes', () => {
-    expect(defaultDurationForType('flight')).toBe(180);
-  });
-
-  test('activity defaults to 60 minutes', () => {
-    expect(defaultDurationForType('activity')).toBe(60);
   });
 });
 
@@ -726,28 +626,38 @@ describe('getTripDayCount', () => {
 describe('checkConflicts — Fix #6 re-run on edited times', () => {
   test('no overlap conflicts when activities do not overlap', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '11:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '11:00'}),
     ];
     const conflicts = checkConflicts(activities, 1);
     const overlaps = conflicts.filter((c) => c.type === 'overlap');
     expect(overlaps.length).toBe(0);
   });
 
-  test('detects overlap when B starts before A ends', () => {
+  test('detects overlap when B starts at same time as A', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }), // starts during A
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00'}), // same start time
     ];
     const conflicts = checkConflicts(activities, 1);
     const overlaps = conflicts.filter((c) => c.type === 'overlap');
     expect(overlaps.length).toBeGreaterThan(0);
   });
 
+  test('no overlap when activities have different start times', () => {
+    const activities: Activity[] = [
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00'}),
+    ];
+    const conflicts = checkConflicts(activities, 1);
+    const overlaps = conflicts.filter((c) => c.type === 'overlap');
+    expect(overlaps.length).toBe(0);
+  });
+
   test('no overlap conflict for activities on different days', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 2, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 2, time: '10:00'}),
     ];
     // Use totalDays=2 so both days are considered occupied
     const conflicts = checkConflicts(activities, 2);
@@ -755,10 +665,10 @@ describe('checkConflicts — Fix #6 re-run on edited times', () => {
     expect(overlaps.length).toBe(0);
   });
 
-  test('locked activities are still flagged for overlap', () => {
+  test('locked activities are still flagged for overlap at same time', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120, locked: true }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60, locked: true }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', locked: true }),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00', locked: true }),
     ];
     const conflicts = checkConflicts(activities, 1);
     const overlaps = conflicts.filter((c) => c.type === 'overlap');
@@ -877,8 +787,8 @@ describe('validateAndRepairItinerary — Fix #1 safe repair', () => {
 
   test('resolves overlapping times and reports warning', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '09:30', duration: 60 }), // overlaps A
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:30'}), // overlaps A
     ];
     const trip = makeTripForRepair();
     const { activities: repaired, warnings } = validateAndRepairItinerary(activities, trip, REPAIR_PROFILE);
@@ -886,7 +796,7 @@ describe('validateAndRepairItinerary — Fix #1 safe repair', () => {
     // After repair, B should be moved past A
     if (day1.length >= 2) {
       const [first, second] = day1;
-      expect(timeToMinutes(second.time)).toBeGreaterThanOrEqual(timeToMinutes(first.time) + (first.duration ?? 60));
+      expect(timeToMinutes(second.time)).toBeGreaterThanOrEqual(timeToMinutes(first.time) + 60);
     }
     expect(Array.isArray(warnings)).toBe(true);
   });
@@ -894,59 +804,16 @@ describe('validateAndRepairItinerary — Fix #1 safe repair', () => {
   test('fills empty days with placeholder activities', () => {
     // A 3-day trip with only day 1 covered — repair fills days 2 and 3.
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Morning Walk', day: 1, time: '08:00', duration: 60 }),
-      makeActivity({ id: '2', title: 'Lunch', day: 1, time: '12:00', duration: 60, type: 'food' }),
-      makeActivity({ id: '3', title: 'Coffee', day: 2, time: '09:00', duration: 30 }),
-      makeActivity({ id: '4', title: 'Museum', day: 3, time: '10:00', duration: 120 }),
+      makeActivity({ id: '1', title: 'Morning Walk', day: 1, time: '08:00'}),
+      makeActivity({ id: '2', title: 'Lunch', day: 1, time: '12:00', type: 'food' }),
+      makeActivity({ id: '3', title: 'Coffee', day: 2, time: '09:00'}),
+      makeActivity({ id: '4', title: 'Museum', day: 3, time: '10:00'}),
     ];
     const trip = makeTripForRepair(); // 3-day trip
     const { activities: repaired, warnings } = validateAndRepairItinerary(activities, trip, REPAIR_PROFILE);
     // All days covered, no unfillable days expected
     expect(repaired.length).toBeGreaterThanOrEqual(activities.length);
     expect(Array.isArray(warnings)).toBe(true);
-  });
-});
-
-// ============================================================
-// 18. findUndoableChange edge cases (Fix #2)
-// ============================================================
-
-describe('findUndoableChange — additional edge cases', () => {
-  test('returns undefined for empty history', () => {
-    expect(findUndoableChange([], 'trip1')).toBeUndefined();
-  });
-
-  test('returns the only record when it is not undone', () => {
-    const history: ChangeRecord[] = [
-      { id: '1', tripId: 'trip1', description: 'change', timestamp: '1', previousActivities: [] },
-    ];
-    expect(findUndoableChange(history, 'trip1')?.id).toBe('1');
-  });
-
-  test('skips undone records and returns the next', () => {
-    const history: ChangeRecord[] = [
-      { id: '3', tripId: 'trip1', description: 'c3', timestamp: '3', previousActivities: [], undone: true },
-      { id: '2', tripId: 'trip1', description: 'c2', timestamp: '2', previousActivities: [] },
-      { id: '1', tripId: 'trip1', description: 'c1', timestamp: '1', previousActivities: [] },
-    ];
-    expect(findUndoableChange(history, 'trip1')?.id).toBe('2');
-  });
-
-  test('ignores records from other trips', () => {
-    const history: ChangeRecord[] = [
-      { id: '1', tripId: 'trip2', description: 'other', timestamp: '1', previousActivities: [] },
-    ];
-    expect(findUndoableChange(history, 'trip1')).toBeUndefined();
-  });
-
-  test('finds correct trip when history has multiple trips', () => {
-    const history: ChangeRecord[] = [
-      { id: 'b2', tripId: 'tripB', description: 'b2', timestamp: '2', previousActivities: [] },
-      { id: 'a1', tripId: 'tripA', description: 'a1', timestamp: '1', previousActivities: [] },
-      { id: 'b1', tripId: 'tripB', description: 'b1', timestamp: '0', previousActivities: [] },
-    ];
-    expect(findUndoableChange(history, 'tripA')?.id).toBe('a1');
-    expect(findUndoableChange(history, 'tripB')?.id).toBe('b2');
   });
 });
 
@@ -959,8 +826,8 @@ describe('findUndoableChange — additional edge cases', () => {
 describe('Bug 1: Trip Pulse day override — via real transformTrip', () => {
   test('transformTrip with day=2 produces activities on day 2', () => {
     const trip = makeTrip([
-      makeActivity({ id: 'a1', title: 'Arrival', day: 1, time: '14:00', duration: 60 }),
-      makeActivity({ id: 'a2', title: 'Hotel', day: 2, time: '09:00', duration: 480 }),
+      makeActivity({ id: 'a1', title: 'Arrival', day: 1, time: '14:00'}),
+      makeActivity({ id: 'a2', title: 'Hotel', day: 2, time: '09:00'}),
     ], { startDate: '2026-09-01', endDate: '2026-09-03' });
 
     const result = transformTrip(trip, 'reflow_day', { type: 'day', day: 2 }, DEFAULT_PROFILE, []);
@@ -972,9 +839,9 @@ describe('Bug 1: Trip Pulse day override — via real transformTrip', () => {
   });
 
   test('transformTrip with day=1 does not restructure day 2 activities', () => {
-    const locked2 = makeActivity({ id: 'locked', title: 'Locked Day 2', day: 2, time: '10:00', duration: 60, locked: true });
+    const locked2 = makeActivity({ id: 'locked', title: 'Locked Day 2', day: 2, time: '10:00', locked: true });
     const trip = makeTrip(
-      [makeActivity({ id: 'a1', title: 'Morning', day: 1, time: '09:00', duration: 60 }), locked2],
+      [makeActivity({ id: 'a1', title: 'Morning', day: 1, time: '09:00'}), locked2],
       { startDate: '2026-09-01', endDate: '2026-09-02' },
     );
 
@@ -992,66 +859,6 @@ describe('Bug 1: Trip Pulse day override — via real transformTrip', () => {
     const selectedDay = 1;
     const day = dayOverride ?? selectedDay ?? 1;
     expect(day).toBe(3);
-  });
-});
-
-// ============================================================
-// Bug 2: Non-destructive Undo — appliedActivities validation
-// ============================================================
-
-describe('Bug 2: Non-destructive undo with appliedActivities', () => {
-  function makeRecord(
-    id: string,
-    prev: Activity[],
-    applied?: Activity[],
-    undone?: boolean,
-  ): ChangeRecord {
-    return { id, tripId: 'trip1', description: 'd', timestamp: '1', previousActivities: prev, appliedActivities: applied, undone };
-  }
-
-  test('legacy record without appliedActivities is non-undoable (findUndoableChange returns it but getUndoableChange-like check rejects it)', () => {
-    const record = makeRecord('1', [], undefined);
-    // findUndoableChange returns the record (it doesn't check appliedActivities)
-    const found = findUndoableChange([record], 'trip1');
-    expect(found?.id).toBe('1');
-    // The appliedActivities guard in getUndoableChange rejects it
-    expect(found?.appliedActivities).toBeUndefined();
-  });
-
-  test('record with appliedActivities is recognized as undoable', () => {
-    const prev = [makeActivity({ id: 'a1', title: 'A', day: 1, time: '09:00' })];
-    const applied = [makeActivity({ id: 'a2', title: 'B', day: 1, time: '10:00' })];
-    const record = makeRecord('1', prev, applied);
-    expect(record.appliedActivities).toBeDefined();
-    expect(findUndoableChange([record], 'trip1')?.id).toBe('1');
-  });
-
-  test('current state matching appliedActivities allows undo', () => {
-    const act = makeActivity({ id: 'x', title: 'X', day: 1, time: '09:00' });
-    const applied = [act];
-    const normalize = (acts: Activity[]) =>
-      JSON.stringify([...acts].sort((a, b) => a.id.localeCompare(b.id)));
-    // Current state (same as applied) — undo is allowed
-    expect(normalize(applied)).toBe(normalize([act]));
-  });
-
-  test('current state NOT matching appliedActivities blocks undo', () => {
-    const applied = [makeActivity({ id: 'x', title: 'X', day: 1, time: '09:00' })];
-    const current = [makeActivity({ id: 'y', title: 'Y', day: 1, time: '10:00' })];
-    const normalize = (acts: Activity[]) =>
-      JSON.stringify([...acts].sort((a, b) => a.id.localeCompare(b.id)));
-    expect(normalize(current)).not.toBe(normalize(applied));
-  });
-
-  test('undo does not surface older stale records — findUndoableChange skips undone', () => {
-    const history: ChangeRecord[] = [
-      makeRecord('2', [], [], true),  // most recent, already undone
-      makeRecord('1', [], []),         // older — should NOT auto-surface
-    ];
-    // After record 2 is marked undone, record 1 becomes findable but
-    // only the most-recent-undoable is used by getUndoableChange
-    const found = findUndoableChange(history, 'trip1');
-    expect(found?.id).toBe('1'); // skips undone '2', returns '1'
   });
 });
 
@@ -1109,12 +916,6 @@ describe('Bug 3: Storage load failure — safe load functions', () => {
     AsyncStorage.getItem = jest.fn().mockResolvedValue(null);
     const result = await loadMemorySafe([]);
     expect(result.ok).toBe(true);
-  });
-
-  test('loadChangeHistorySafe parse error is unsafe', async () => {
-    AsyncStorage.getItem = jest.fn().mockResolvedValue('[bad');
-    const result = await loadChangeHistorySafe([]);
-    expect(result.ok).toBe(false);
   });
 
   test('loadInboxSafe missing key is safe', async () => {
@@ -1185,8 +986,8 @@ describe('Bug 3: Storage error retry — failed retry re-queues operation', () =
 describe('Bug 4: Transformation conflict validation — blocking types only', () => {
   test('overlap conflict is blocking', () => {
     const acts = [
-      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: 'b', title: 'B', day: 1, time: '10:00', duration: 60 }), // overlaps A which ends 11:00
+      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: 'b', title: 'B', day: 1, time: '09:00'}), // same start time
     ];
     const conflicts = checkConflicts(acts, 1);
     const blocking = conflicts.filter((c) => c.type === 'overlap' || c.type === 'locked_conflict');
@@ -1195,32 +996,32 @@ describe('Bug 4: Transformation conflict validation — blocking types only', ()
 
   test('many non-overlapping activities produce no conflicts', () => {
     const acts = Array.from({ length: 7 }, (_, i) =>
-      makeActivity({ id: `a${i}`, title: `A${i}`, day: 1, time: `${(9 + i * 1).toString().padStart(2, '0')}:00`, duration: 30 }),
+      makeActivity({ id: `a${i}`, title: `A${i}`, day: 1, time: `${(9 + i * 1).toString().padStart(2, '0')}:00`}),
     );
     const conflicts = checkConflicts(acts, 1);
     expect(conflicts.length).toBe(0);
   });
 
   test('empty days produce no conflicts', () => {
-    const acts = [makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00', duration: 60 })];
+    const acts = [makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00'})];
     const conflicts = checkConflicts(acts, 2);
     expect(conflicts.length).toBe(0);
   });
 
   test('fixing an overlap makes the blocking conflicts list empty', () => {
     const actsWithOverlap = [
-      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: 'b', title: 'B', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: 'b', title: 'B', day: 1, time: '09:00'}),
     ];
     const before = checkConflicts(actsWithOverlap, 1).filter(
       (c) => c.type === 'overlap' || c.type === 'locked_conflict',
     );
     expect(before.length).toBeGreaterThan(0);
 
-    // Fix: move B to after A ends (11:00)
+    // Fix: move B to a different time
     const actsFixed = [
-      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: 'b', title: 'B', day: 1, time: '11:00', duration: 60 }),
+      makeActivity({ id: 'a', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: 'b', title: 'B', day: 1, time: '10:00'}),
     ];
     const after = checkConflicts(actsFixed, 1).filter(
       (c) => c.type === 'overlap' || c.type === 'locked_conflict',
@@ -1229,61 +1030,6 @@ describe('Bug 4: Transformation conflict validation — blocking types only', ()
   });
 });
 
-// ============================================================
-// Bug 5: TimePickerModal state sync via key prop
-// The fix: key=`${value}-${duration}` so changing duration alone
-// forces a remount and fresh useState(duration ?? 60).
-// ============================================================
-
-describe('Bug 5: TimePickerModal duration key — DURATION_PRESETS coverage', () => {
-  test('DURATION_PRESETS contains flight-typical 180m and food-typical 60m', () => {
-    // flight (180m) and food (60m) defaults are selectable in the picker
-    expect(DURATION_PRESETS).toContain(defaultDurationForType('flight'));   // 180
-    expect(DURATION_PRESETS).toContain(defaultDurationForType('food'));     // 60
-    // Hotel uses 480m (8h) which is an internal default, not a picker preset
-    expect(DURATION_PRESETS).not.toContain(defaultDurationForType('hotel')); // 480 not in presets
-  });
-
-  test('formatDuration formats every preset correctly', () => {
-    // Each preset must round-trip through the formatter without throwing
-    for (const d of DURATION_PRESETS) {
-      const display = formatDuration(d);
-      expect(typeof display).toBe('string');
-      expect(display.length).toBeGreaterThan(0);
-    }
-    // Spot-check known values
-    expect(formatDuration(30)).toBe('30m');
-    expect(formatDuration(60)).toBe('1h');
-    expect(formatDuration(90)).toBe('1h 30m');
-    expect(formatDuration(180)).toBe('3h');
-  });
-
-  test('switching activity type changes both defaultDurationForType and defaultTimeForType', () => {
-    // When the user changes from food (60m, 12:00) to flight (180m, 10:00),
-    // the new key `${time}-${duration}` differs → remount with fresh duration state.
-    const foodDur = defaultDurationForType('food');
-    const flightDur = defaultDurationForType('flight');
-    const foodTime = defaultTimeForType('food');
-    const flightTime = defaultTimeForType('flight');
-
-    const foodKey = `${foodTime}-${foodDur}`;
-    const flightKey = `${flightTime}-${flightDur}`;
-    expect(foodKey).not.toBe(flightKey);  // different → remount
-  });
-
-  test('same time, different duration → key changes → duration state resets', () => {
-    // Core regression: time stays "10:00", duration changes 60→180.
-    // Old key was just value ("10:00" === "10:00") → no remount → stale duration.
-    // New key includes duration: "10:00-60" !== "10:00-180".
-    const time = '10:00';
-    const keyBefore = `${time}-${60}`;
-    const keyAfter  = `${time}-${180}`;
-    expect(keyBefore).not.toBe(keyAfter);
-    // Both durations are valid presets
-    expect(DURATION_PRESETS).toContain(60);
-    expect(DURATION_PRESETS).toContain(180);
-  });
-});
 
 // ============================================================
 // Bug 6: DST-safe date counting
@@ -1504,29 +1250,6 @@ describe('Bug 1 (extended): Provider autosave gating — ok=false must block wri
     expect(sorted[0].id).toBe('tokyo');
   });
 
-  test('history load failure does not affect trips autosave (separate flags)', async () => {
-    // Simulate: trips load ok, history load fails
-    (AsyncStorage.getItem as jest.Mock)
-      .mockResolvedValueOnce(JSON.stringify([{ id: 'trip1' }]))  // trips
-      .mockRejectedValueOnce(new Error('history corrupt'));       // history
-
-    const tripsResult = await loadTripsSafe([]);
-    const historyResult = await loadChangeHistorySafe([]);
-
-    expect(tripsResult.ok).toBe(true);
-    expect(historyResult.ok).toBe(false);
-
-    // trips autosave should proceed; history autosave must not
-    (AsyncStorage.setItem as jest.Mock) = jest.fn();
-    const tripsLoadError = !tripsResult.ok;
-    const historyLoadError = !historyResult.ok;
-
-    if (!tripsLoadError) { await AsyncStorage.setItem('trips', 'data'); }
-    if (!historyLoadError) { await AsyncStorage.setItem('change_history', 'data'); }
-
-    expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith('trips', 'data');
-  });
 });
 
 // ============================================================
@@ -1555,11 +1278,11 @@ describe('Issue 7: generateItinerary / validateAndRepairItinerary', () => {
       endDate: '2026-09-03',
     });
     const activities: Activity[] = [
-      makeActivity({ id: 'a1', title: 'Museum Visit', day: 1, time: '10:00', type: 'activity', duration: 90 }),
-      makeActivity({ id: 'a2', title: 'Park Walk', day: 1, time: '14:00', type: 'activity', duration: 60 }),
-      makeActivity({ id: 'a3', title: 'Tour', day: 1, time: '16:00', type: 'activity', duration: 60 }),
-      makeActivity({ id: 'a4', title: 'Lunch', day: 2, time: '12:00', type: 'food', duration: 60 }),
-      makeActivity({ id: 'a5', title: 'Gallery', day: 3, time: '10:00', type: 'activity', duration: 90 }),
+      makeActivity({ id: 'a1', title: 'Museum Visit', day: 1, time: '10:00', type: 'activity'}),
+      makeActivity({ id: 'a2', title: 'Park Walk', day: 1, time: '14:00', type: 'activity'}),
+      makeActivity({ id: 'a3', title: 'Tour', day: 1, time: '16:00', type: 'activity'}),
+      makeActivity({ id: 'a4', title: 'Lunch', day: 2, time: '12:00', type: 'food'}),
+      makeActivity({ id: 'a5', title: 'Gallery', day: 3, time: '10:00', type: 'activity'}),
     ];
     const { activities: repaired } = validateAndRepairItinerary(activities, trip, PROFILE);
     const day1Food = repaired.filter((a) => a.day === 1 && a.type === 'food');
@@ -1573,12 +1296,12 @@ describe('Issue 7: generateItinerary / validateAndRepairItinerary', () => {
       endDate: '2026-09-03',
     });
     const activities: Activity[] = [
-      makeActivity({ id: 'a1', title: 'Lunch Day1', day: 1, time: '12:00', type: 'food', duration: 60 }),
-      makeActivity({ id: 'a2', title: 'Lunch Day2', day: 2, time: '12:00', type: 'food', duration: 60 }),
+      makeActivity({ id: 'a1', title: 'Lunch Day1', day: 1, time: '12:00', type: 'food'}),
+      makeActivity({ id: 'a2', title: 'Lunch Day2', day: 2, time: '12:00', type: 'food'}),
       // day 3 has 3 activities but no food
-      makeActivity({ id: 'a3', title: 'Museum', day: 3, time: '09:00', type: 'activity', duration: 90 }),
-      makeActivity({ id: 'a4', title: 'Park', day: 3, time: '11:30', type: 'activity', duration: 60 }),
-      makeActivity({ id: 'a5', title: 'Market', day: 3, time: '14:00', type: 'activity', duration: 60 }),
+      makeActivity({ id: 'a3', title: 'Museum', day: 3, time: '09:00', type: 'activity'}),
+      makeActivity({ id: 'a4', title: 'Park', day: 3, time: '11:30', type: 'activity'}),
+      makeActivity({ id: 'a5', title: 'Market', day: 3, time: '14:00', type: 'activity'}),
     ];
     const { activities: repaired } = validateAndRepairItinerary(activities, trip, PROFILE);
     const day3Food = repaired.filter((a) => a.day === 3 && a.type === 'food');
@@ -1754,7 +1477,7 @@ describe('Issue 2: generateItinerary fills all days', () => {
 
   test('Montreal 4-day with fixed reservation on day 2 — fixed preserved, every day filled', () => {
     const fixed: Activity[] = [
-      makeActivity({ id: 'fixed-1', title: 'Fixed Dinner Reservation', day: 2, time: '19:00', type: 'food', duration: 90, fixed: true }),
+      makeActivity({ id: 'fixed-1', title: 'Fixed Dinner Reservation', day: 2, time: '19:00', type: 'food', fixed: true }),
     ];
     const { activities } = genTrip('Montreal', 4, 'moderate', fixed);
     // Fixed activity must be preserved
@@ -1900,19 +1623,18 @@ describe('resetAllData', () => {
   test('ALL_STORAGE_KEYS includes all known keys', async () => {
     const { ALL_STORAGE_KEYS } = await import('@/services/storage');
     const expected = [
-      '@travonal/trips',
-      '@travonal/profile',
-      '@travonal/memory',
-      '@travonal/saved_places',
-      '@travonal/onboarding_complete',
-      '@travonal/change_history',
-      '@travonal/inbox',
-      '@travonal/dismissed_pulse',
-      '@travonal/chat_messages',
-      '@travonal/recent_searches',
-      '@travonal/notif_dismissed',
-      '@travonal/trip_pulse_enabled',
-      '@travonal/learning_enabled',
+      '@toveli/trips',
+      '@toveli/profile',
+      '@toveli/memory',
+      '@toveli/saved_places',
+      '@toveli/onboarding_complete',
+      '@toveli/inbox',
+      '@toveli/dismissed_pulse',
+      '@toveli/chat_messages',
+      '@toveli/recent_searches',
+      '@toveli/notif_dismissed',
+      '@toveli/trip_pulse_enabled',
+      '@toveli/learning_enabled',
     ];
     for (const key of expected) {
       expect(ALL_STORAGE_KEYS).toContain(key);

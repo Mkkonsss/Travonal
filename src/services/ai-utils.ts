@@ -35,6 +35,49 @@ export function normalizeTimeTo24(raw: string, fallback = '09:00'): string {
 const VALID_TYPES = new Set(['activity', 'food', 'hotel', 'flight']);
 const VALID_COSTS = new Set(['free', 'budget', 'moderate', 'premium']);
 
+/** Categories that MUST map to type='food' */
+const FOOD_CATEGORIES = new Set([
+  'dining', 'restaurant', 'cafe', 'bar', 'bakery', 'food',
+  'food/restaurant', 'food/cafe', 'food/bar', 'food/bakery', 'food/other',
+  'breakfast', 'lunch', 'dinner', 'brunch',
+]);
+
+/** Categories that MUST map to type='activity' */
+const ACTIVITY_CATEGORIES = new Set([
+  'culture', 'museum', 'gallery', 'nature', 'park', 'garden', 'beach',
+  'entertainment', 'waterpark', 'theme_park', 'zoo', 'aquarium',
+  'adventure', 'sport', 'wellness', 'spa', 'shopping', 'market',
+  'nightlife', 'attraction', 'tour', 'sightseeing', 'landmark',
+  'activity/museum', 'activity/park', 'activity/attraction',
+  'activity/entertainment', 'activity/sport', 'activity/other',
+]);
+
+/** Categories that MUST map to type='hotel' */
+const HOTEL_CATEGORIES = new Set([
+  'accommodation', 'hotel', 'hostel', 'resort',
+  'stay/hotel', 'stay/hostel', 'stay/other',
+]);
+
+/** Infer the correct type from a category string. Returns null if unknown. */
+function inferTypeFromCategory(category: string): Activity['type'] | null {
+  const cat = category.toLowerCase().trim();
+  if (FOOD_CATEGORIES.has(cat)) return 'food';
+  if (ACTIVITY_CATEGORIES.has(cat)) return 'activity';
+  if (HOTEL_CATEGORIES.has(cat)) return 'hotel';
+  return null;
+}
+
+/** Infer the correct type from an activity title (heuristic fallback). */
+function inferTypeFromTitle(title: string): Activity['type'] | null {
+  const t = title.toLowerCase();
+  // Clearly food-related titles
+  if (/\b(restaurant|cafe|café|bistro|pizzeria|trattoria|brasserie|diner|eatery|bakery|patisserie|creperie|ramen|sushi bar)\b/.test(t)) return 'food';
+  if (/\b(breakfast|lunch|dinner|brunch)\b/.test(t) && !/\b(cruise|show|tour)\b/.test(t)) return 'food';
+  // Clearly activity-related titles
+  if (/\b(museum|gallery|park|garden|zoo|aquarium|waterpark|water park|theme park|amusement|stadium|arena|temple|cathedral|castle|palace|tower|monument|beach|trail|hike|tour|cruise|safari|spa|wellness)\b/.test(t)) return 'activity';
+  return null;
+}
+
 // ─── ID Generation ───────────────────────────────────────────────────────────
 
 /**
@@ -74,16 +117,30 @@ export function normalizeActivity(
   let type = typeof raw.type === 'string' ? raw.type.trim().toLowerCase() : '';
   if (!VALID_TYPES.has(type)) type = 'activity';
 
+  // Cross-validate type against category — category is more reliable than AI-assigned type
+  const rawCategory = typeof raw.category === 'string' ? raw.category.trim() : '';
+  if (rawCategory) {
+    const inferredType = inferTypeFromCategory(rawCategory);
+    if (inferredType && inferredType !== type) {
+      type = inferredType;
+    }
+  }
+  // Fallback: use title heuristics if type still seems wrong
+  // (e.g. AI said type='food' for "Tidal Cove Waterpark")
+  if (type === 'food') {
+    const titleType = inferTypeFromTitle(title);
+    if (titleType === 'activity') type = 'activity';
+  } else if (type === 'activity') {
+    const titleType = inferTypeFromTitle(title);
+    if (titleType === 'food') type = 'food';
+  }
+
   let cost = typeof raw.cost === 'string' ? raw.cost.trim().toLowerCase() : '';
   if (!VALID_COSTS.has(cost)) cost = 'moderate';
 
   const description = typeof raw.description === 'string'
     ? raw.description.trim()
     : undefined;
-
-  const duration = typeof raw.duration === 'number' && raw.duration > 0
-    ? raw.duration
-    : 60;
 
   const category = typeof raw.category === 'string'
     ? raw.category.trim()
@@ -98,7 +155,6 @@ export function normalizeActivity(
     time,
     type: type as Activity['type'],
     cost: cost as Activity['cost'],
-    duration,
   };
   if (rawId) result.id = rawId;
   if (description) result.description = description;
@@ -258,7 +314,7 @@ export function ensureRequestedActivities(
     let insertTime = '10:00';
     if (dayActs.length > 0) {
       const last = dayActs[dayActs.length - 1];
-      const lastEndMins = timeToMins(last.time) + ((last as Activity).duration ?? 60) + 30;
+      const lastEndMins = timeToMins(last.time) + 60 + 30;
       if (lastEndMins < 21 * 60) {
         const h = Math.floor(lastEndMins / 60);
         const m = lastEndMins % 60;
@@ -476,7 +532,7 @@ export function validateGeneratedActivities(
     for (let i = 0; i < sorted.length - 1; i++) {
       const curr = sorted[i];
       const next = sorted[i + 1];
-      const currEndMins = timeToMins(curr.time) + (curr.duration ?? 60);
+      const currEndMins = timeToMins(curr.time) + 60;
       const nextStartMins = timeToMins(next.time);
       if (currEndMins > nextStartMins) {
         issues.push({
@@ -573,7 +629,7 @@ export function repairActivities(
       const curr = sorted[i];
       const next = sorted[i + 1];
       if (idsToRemove.has(curr.id)) continue;
-      const currEnd = timeToMins(curr.time) + (curr.duration ?? 60);
+      const currEnd = timeToMins(curr.time) + 60;
       const nextStart = timeToMins(next.time);
       if (currEnd > nextStart) {
         const currProtected = curr.locked || curr.fixed || curr.requested;
@@ -592,10 +648,8 @@ export function repairActivities(
         } else if (currProtected) {
           idsToRemove.add(next.id);
         } else {
-          // Remove shorter duration
-          const currDur = curr.duration ?? 60;
-          const nextDur = next.duration ?? 60;
-          idsToRemove.add(currDur <= nextDur ? curr.id : next.id);
+          // Remove the later one
+          idsToRemove.add(next.id);
         }
       }
     }

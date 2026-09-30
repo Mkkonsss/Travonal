@@ -6,9 +6,10 @@ import {
   TabTriggerSlotProps,
   TabListProps,
 } from 'expo-router/ui';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Image, Pressable, View, StyleSheet } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
+import { useTheme } from '@/hooks/use-theme';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 
@@ -45,12 +46,17 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
 }
 
 export function CustomTabList(props: TabListProps) {
+  const theme = useTheme();
   return (
     <View {...props} style={styles.tabListContainer}>
       <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Travonal
-        </ThemedText>
+        <Image
+          source={theme.background === '#FFFFFF'
+            ? require('@/assets/images/logo-dark.png')
+            : require('@/assets/images/logo-light.png')}
+          style={styles.brandLogo}
+          resizeMode="contain"
+        />
 
         {props.children}
       </ThemedView>
@@ -77,7 +83,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     maxWidth: MaxContentWidth,
   },
-  brandText: {
+  brandLogo: {
+    height: 28,
+    width: 84,
     marginRight: 'auto',
   },
   pressed: {

@@ -83,7 +83,7 @@ export default function SignInScreen() {
           </View>
         </Pressable>
 
-        <Text style={styles.wordmark}>✦  TRAVONAL</Text>
+        <Text style={styles.wordmark}>✦  TOVELI</Text>
 
         <View style={styles.hero}>
           <SymbolView name="hand.wave.fill" size={36} tintColor="#111827" style={styles.heroEmoji} />

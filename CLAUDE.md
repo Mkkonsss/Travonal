@@ -18,7 +18,7 @@ npm test -- --testPathPattern=<file>  # Run a single test file
 
 ## Architecture
 
-**Travonal** is an AI-powered travel planning app built with Expo SDK 57 / React 19.
+**Toveli** is an AI-powered travel planning app built with Expo SDK 57 / React 19.
 
 ### Routing
 

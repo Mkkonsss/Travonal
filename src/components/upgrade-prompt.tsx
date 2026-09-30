@@ -45,7 +45,7 @@ export function UpgradePrompt({
 
   function handleUpgrade() {
     onClose();
-    router.push('/travonal-plus' as any);
+    router.push('/toveli-plus' as any);
   }
 
   return (
@@ -82,10 +82,11 @@ export function UpgradePrompt({
 
             {/* Plus benefits */}
             <View style={[styles.benefitsCard, { backgroundColor: theme.backgroundElement }]}>
-              <Row icon="sparkles" text="AI trip plans — 3 per month" theme={theme} />
-              <Row icon="bubble.left.fill" text="AI chat — 50 messages per month" theme={theme} />
-              <Row icon="camera.fill" text="Screenshot import" theme={theme} />
-              <Row icon="bolt.fill" text="Smart trip fixes with one tap" theme={theme} />
+              <Row icon="sparkles" text="5 AI trip plans every month" theme={theme} />
+              <Row icon="bubble.left.fill" text="100 AI chat messages per month" theme={theme} />
+              <Row icon="square.and.arrow.down" text="Import 15 places from links & photos" theme={theme} />
+              <Row icon="doc.text.fill" text="Export trips as PDF" theme={theme} />
+              <Row icon="person.2.fill" text="Invite companions to co-plan" theme={theme} />
             </View>
 
             {/* CTA */}
@@ -97,10 +98,10 @@ export function UpgradePrompt({
               ]}
             >
               <ThemedText style={[styles.ctaText, { color: theme.background }]}>
-                Upgrade to Travonal+
+                Upgrade to Tripseek+
               </ThemedText>
               <ThemedText style={[styles.ctaPrice, { color: theme.background }]}>
-                $39.99/year
+                $4.99/month
               </ThemedText>
             </Pressable>
 

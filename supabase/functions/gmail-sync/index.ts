@@ -1,7 +1,7 @@
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ── CORS (same pattern as ai-travonal) ──────────────────────────────────────
+// ── CORS (same pattern as ai-toveli) ──────────────────────────────────────
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,7 +23,7 @@ const MODEL = "claude-sonnet-4-6";
 // Max emails to process per sync run
 const MAX_EMAILS_PER_SYNC = 20;
 
-// ── Auth helper (same JWT decode as ai-travonal) ────────────────────────────
+// ── Auth helper (same JWT decode as ai-toveli) ────────────────────────────
 
 function getUserIdFromRequest(req: Request): string | null {
   const auth = req.headers.get("authorization") || "";
@@ -56,7 +56,7 @@ function errorResponse(message: string, status = 400) {
   return jsonResponse({ success: false, error: message }, status);
 }
 
-// ── JSON extraction (same as ai-travonal) ───────────────────────────────────
+// ── JSON extraction (same as ai-toveli) ───────────────────────────────────
 
 function extractJSON(text: string) {
   const block = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -329,7 +329,7 @@ async function fetchEmailContent(
   return { subject, from, body };
 }
 
-// ── Claude booking extraction (same prompt/schema as ai-travonal) ───────────
+// ── Claude booking extraction (same prompt/schema as ai-toveli) ───────────
 
 const BOOKING_SCHEMA = [
   "{",

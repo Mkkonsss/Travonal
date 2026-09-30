@@ -28,21 +28,27 @@ function isUpcomingOrActive(trip: Trip): boolean {
  */
 export function pulseInputFingerprint(
   trips: Trip[],
-  _profile: { pace: string; dislikes: string[] },
+  profile: { pace: string; dislikes: string[] },
 ): string {
   let hash = '';
   for (const t of trips) {
-    hash += `${t.id}|${t.startDate}|${t.endDate}|${t.itineraryRevision ?? 0}|`;
+    hash += `${t.id}|${t.startDate}|${t.endDate}|${t.itineraryRevision ?? 0}|${t.budget ?? ''}|`;
     for (const a of t.activities) {
       hash += `${a.id},${a.day},${a.time},${a.duration ?? 0},${a.type};`;
     }
+    if (t.reservations) {
+      for (const r of t.reservations) {
+        hash += `R:${r.id},${r.time ?? ''};`;
+      }
+    }
     hash += '|';
   }
+  hash += `P:${profile.pace}|D:${profile.dislikes.join(',')}`;
   return hash;
 }
 
 /**
- * App-level Trip Pulse evaluator.
+ * App-level Trip Alerts evaluator.
  * Runs pulse checks across all upcoming/active trips and manages the
  * occurrence-based lifecycle via the centralized PulseHistoryContext.
  *
@@ -113,6 +119,8 @@ export function AppPulseEvaluator() {
       const alerts = runTripPulse(trip, currentProfile, currentMemory, Infinity, weatherForecast);
       const activeAlertIds = new Set<string>();
 
+      let importantNotifiedThisCycle = false;
+
       for (const alert of alerts) {
         activeAlertIds.add(alert.id);
 
@@ -124,15 +132,22 @@ export function AppPulseEvaluator() {
           severity: alert.severity,
         });
 
-        // Schedule notification for urgent alerts whose occurrence hasn't been notified
-        if (alert.severity === 'urgent' && !history.isOccurrenceNotified(trip.id, alert.id)) {
+        // Schedule notification for alerts whose occurrence hasn't been notified
+        // Urgent: always notify. Important: throttle to 1 per trip per evaluation cycle.
+        const shouldNotify =
+          alert.severity === 'urgent' ||
+          (alert.severity === 'important' && !importantNotifiedThisCycle);
+
+        if (shouldNotify && !history.isOccurrenceNotified(trip.id, alert.id)) {
           const scheduled = await scheduleLocalNotification(
             `Trip Alerts: ${trip.destination}`,
             alert.message,
-            { tripId: trip.id, alertId: alert.id },
+            { tripId: trip.id, alertId: alert.id, openPulse: 'true' },
+            'pulse_alert',
           );
           if (scheduled) {
             history.markNotified(occurrenceId);
+            if (alert.severity === 'important') importantNotifiedThisCycle = true;
           }
         }
       }

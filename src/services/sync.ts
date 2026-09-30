@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { Trip } from '@/context/trips';
 import type { TravelProfile } from '@/context/profile';
+import type { TravelMemoryEntry } from '@/context/memory';
 
 // ─── Trips ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,26 @@ export async function deleteRemoteTrip(tripId: string): Promise<void> {
   if (error) console.warn('[sync] deleteRemoteTrip failed:', error.message);
 }
 
+/**
+ * Find a trip by its invite code.
+ * Searches across all trips (relies on Supabase RLS allowing code-based access).
+ */
+export async function findTripByInviteCode(inviteCode: string): Promise<Trip | null> {
+  const code = inviteCode.toUpperCase().trim();
+  // JSONB contains query: find trips whose invitations array has an entry with this code
+  const { data, error } = await supabase
+    .from('trips')
+    .select('data')
+    .filter('data->invitations', 'cs', JSON.stringify([{ inviteCode: code }]))
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) {
+    console.warn('[sync] findTripByInviteCode failed:', error?.message);
+    return null;
+  }
+  return data.data as Trip;
+}
+
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 export async function pushProfile(userId: string, profile: TravelProfile): Promise<boolean> {
@@ -60,4 +81,31 @@ export async function pullProfile(userId: string): Promise<{ profile: TravelProf
     .single();
   if (error || !data) return null;
   return { profile: data.travel_profile as TravelProfile, updatedAt: data.updated_at as string };
+}
+
+// ─── Memory ─────────────────────────────────────────────────────────────────
+
+export async function pushMemory(userId: string, entries: TravelMemoryEntry[]): Promise<boolean> {
+  console.log(`[sync] pushing ${entries.length} memory entries for user ${userId}`);
+  const { error } = await supabase.from('memory').upsert({
+    id: userId,
+    entries,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) {
+    console.warn('[sync] pushMemory failed:', error.message);
+    return false;
+  }
+  console.log('[sync] pushMemory ok');
+  return true;
+}
+
+export async function pullMemory(userId: string): Promise<TravelMemoryEntry[] | null> {
+  const { data, error } = await supabase
+    .from('memory')
+    .select('entries')
+    .eq('id', userId)
+    .single();
+  if (error || !data) return null;
+  return (data.entries as TravelMemoryEntry[]) ?? [];
 }

@@ -17,7 +17,7 @@ const DEFAULT_PROFILE: TravelProfile = {
 };
 
 function makeActivity(overrides: Partial<Activity> & { id: string; title: string; day: number; time: string }): Activity {
-  return { type: 'activity', duration: 60, ...overrides };
+  return { type: 'activity', ...overrides };
 }
 
 function makeTrip(activities: Activity[], overrides?: Partial<Trip>): Trip {
@@ -37,29 +37,28 @@ function makeTrip(activities: Activity[], overrides?: Partial<Trip>): Trip {
 describe('runTripPulse', () => {
   test('detects hard schedule conflicts (same start time)', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '09:00'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, []);
     expect(alerts.some((a) => a.type === 'conflict')).toBe(true);
   });
 
-  test('detects hard schedule conflicts (explicit duration overlap)', () => {
+  test('no conflict when activities have different times', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00', duration: 120 }),
-      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00', duration: 60 }),
+      makeActivity({ id: '1', title: 'A', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'B', day: 1, time: '10:00'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, []);
-    expect(alerts.some((a) => a.type === 'conflict')).toBe(true);
+    expect(alerts.some((a) => a.type === 'conflict')).toBe(false);
   });
 
-  test('does not flag soft overlaps from default durations', () => {
-    // Dinner at 19:00 with no explicit duration, walk at 19:45 — should NOT conflict
+  test('no conflict when activities are well spaced', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Dinner', day: 1, time: '19:00', duration: undefined as any }),
-      makeActivity({ id: '2', title: 'Walk', day: 1, time: '19:45', duration: 30 }),
+      makeActivity({ id: '1', title: 'Dinner', day: 1, time: '19:00' }),
+      makeActivity({ id: '2', title: 'Walk', day: 1, time: '19:45'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);
@@ -87,9 +86,9 @@ describe('runTripPulse', () => {
 
   test('no longer flags meal gaps', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Morning visit', day: 1, time: '09:00', duration: 90 }),
-      makeActivity({ id: '2', title: 'Afternoon tour', day: 1, time: '14:00', duration: 120 }),
-      makeActivity({ id: '3', title: 'Evening show', day: 1, time: '18:00', duration: 90 }),
+      makeActivity({ id: '1', title: 'Morning visit', day: 1, time: '09:00'}),
+      makeActivity({ id: '2', title: 'Afternoon tour', day: 1, time: '14:00'}),
+      makeActivity({ id: '3', title: 'Evening show', day: 1, time: '18:00'}),
       makeActivity({ id: '4', title: 'Day 2', day: 2, time: '10:00' }),
       makeActivity({ id: '5', title: 'Day 3', day: 3, time: '10:00' }),
     ];
@@ -101,7 +100,7 @@ describe('runTripPulse', () => {
 
   test('limits alerts to 5', () => {
     const activities: Activity[] = Array.from({ length: 8 }, (_, i) =>
-      makeActivity({ id: String(i), title: `Overlap${i}`, day: 1, time: '09:00', duration: 60 })
+      makeActivity({ id: String(i), title: `Overlap${i}`, day: 1, time: '09:00'})
     );
     const trip = makeTrip(activities, { endDate: '2026-06-07' });
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, []);
@@ -110,12 +109,12 @@ describe('runTripPulse', () => {
 
   test('returns empty for a clean trip', () => {
     const activities: Activity[] = [
-      makeActivity({ id: '1', title: 'Morning', day: 1, time: '09:00', type: 'food', duration: 60 }),
-      makeActivity({ id: '2', title: 'Visit', day: 1, time: '11:00', duration: 90 }),
-      makeActivity({ id: '3', title: 'Day2A', day: 2, time: '10:00', type: 'food', duration: 60 }),
-      makeActivity({ id: '4', title: 'Day2B', day: 2, time: '13:00', duration: 90 }),
-      makeActivity({ id: '5', title: 'Day3A', day: 3, time: '10:00', type: 'food', duration: 60 }),
-      makeActivity({ id: '6', title: 'Day3B', day: 3, time: '13:00', duration: 90 }),
+      makeActivity({ id: '1', title: 'Morning', day: 1, time: '09:00', type: 'food'}),
+      makeActivity({ id: '2', title: 'Visit', day: 1, time: '11:00'}),
+      makeActivity({ id: '3', title: 'Day2A', day: 2, time: '10:00', type: 'food'}),
+      makeActivity({ id: '4', title: 'Day2B', day: 2, time: '13:00'}),
+      makeActivity({ id: '5', title: 'Day3A', day: 3, time: '10:00', type: 'food'}),
+      makeActivity({ id: '6', title: 'Day3B', day: 3, time: '13:00'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, []);
@@ -126,7 +125,7 @@ describe('runTripPulse', () => {
     // Activity scheduled on Tuesday, but hours say it is closed on Tuesdays
     // 2026-06-01 is a Monday, so day 2 (2026-06-02) is a Tuesday
     const activities: Activity[] = [
-      makeActivity({ id: 'museum', title: 'Museum', day: 2, time: '10:00', duration: 120 }),
+      makeActivity({ id: 'museum', title: 'Museum', day: 2, time: '10:00'}),
       makeActivity({ id: '2', title: 'Day 1', day: 1, time: '10:00' }),
       makeActivity({ id: '3', title: 'Day 3', day: 3, time: '10:00' }),
     ];
@@ -186,8 +185,8 @@ describe('runTripPulse', () => {
 describe('flight conflict detection', () => {
   test('flags activity too close after arrival', () => {
     const activities: Activity[] = [
-      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '14:00', duration: 0, type: 'flight' }),
-      makeActivity({ id: 'act', title: 'City Tour', day: 1, time: '14:30', duration: 120 }),
+      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '14:00', type: 'flight' }),
+      makeActivity({ id: 'act', title: 'City Tour', day: 1, time: '14:30'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);
@@ -197,8 +196,8 @@ describe('flight conflict detection', () => {
 
   test('flags activity too close before departure', () => {
     const activities: Activity[] = [
-      makeActivity({ id: 'act', title: 'Last Lunch', day: 3, time: '12:00', duration: 90 }),
-      makeActivity({ id: 'flight', title: 'Depart Tokyo', day: 3, time: '14:00', duration: 0, type: 'flight' }),
+      makeActivity({ id: 'act', title: 'Last Lunch', day: 3, time: '12:30'}),
+      makeActivity({ id: 'flight', title: 'Depart Tokyo', day: 3, time: '14:00', type: 'flight' }),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);
@@ -207,8 +206,8 @@ describe('flight conflict detection', () => {
 
   test('no alert when activity is well after arrival', () => {
     const activities: Activity[] = [
-      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '10:00', duration: 0, type: 'flight' }),
-      makeActivity({ id: 'act', title: 'Dinner', day: 1, time: '19:00', duration: 90 }),
+      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '10:00', type: 'flight' }),
+      makeActivity({ id: 'act', title: 'Dinner', day: 1, time: '19:00'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);
@@ -217,8 +216,8 @@ describe('flight conflict detection', () => {
 
   test('no alert when activity is well before departure', () => {
     const activities: Activity[] = [
-      makeActivity({ id: 'act', title: 'Morning walk', day: 3, time: '08:00', duration: 60 }),
-      makeActivity({ id: 'flight', title: 'Depart Tokyo', day: 3, time: '18:00', duration: 0, type: 'flight' }),
+      makeActivity({ id: 'act', title: 'Morning walk', day: 3, time: '08:00'}),
+      makeActivity({ id: 'flight', title: 'Depart Tokyo', day: 3, time: '18:00', type: 'flight' }),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);
@@ -227,8 +226,8 @@ describe('flight conflict detection', () => {
 
   test('does not flag flights against activities on different days', () => {
     const activities: Activity[] = [
-      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '22:00', duration: 0, type: 'flight' }),
-      makeActivity({ id: 'act', title: 'Breakfast', day: 2, time: '08:00', duration: 60 }),
+      makeActivity({ id: 'flight', title: 'Arrive Tokyo', day: 1, time: '22:00', type: 'flight' }),
+      makeActivity({ id: 'act', title: 'Breakfast', day: 2, time: '08:00'}),
     ];
     const trip = makeTrip(activities);
     const alerts = runTripPulse(trip, DEFAULT_PROFILE, [], Infinity);

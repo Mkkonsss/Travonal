@@ -10,7 +10,8 @@ export type PulseSeverity = 'urgent' | 'important';
 
 export type PulseAlertType =
   | 'conflict' | 'closure' | 'weather'
-  | 'flight_conflict' | 'sunset_mismatch' | 'duplicate';
+  | 'flight_conflict' | 'sunset_mismatch' | 'duplicate'
+  | 'preference_mismatch';
 
 export interface PulseAlert {
   id: string;
@@ -21,11 +22,6 @@ export interface PulseAlert {
   day?: number;
   activityId?: string;
   actionLabel: string;
-  command?: string;
-  preparedSolution?: {
-    activities: Activity[];
-    summary: string;
-  };
 }
 
 /** Opening hours data attached to an activity for closure detection. */
@@ -46,6 +42,7 @@ function severityForType(type: PulseAlert['type']): PulseSeverity {
     case 'weather':
     case 'sunset_mismatch':
     case 'duplicate':
+    case 'preference_mismatch':
     default:
       return 'important';
   }
@@ -104,15 +101,15 @@ export function runTripPulse(
   // 1. Hard schedule conflicts (only true overlaps — same time or impossible overlap)
   for (const conflict of conflicts) {
     if (conflict.type === 'overlap') {
+      const label = formatDayLabel(conflict.day, trip.startDate, trip.datesKnown);
       alerts.push({
         id: `conflict-${conflict.day}-${conflict.activityIds?.join('-')}`,
         type: 'conflict',
         severity: severityForType('conflict'),
-        title: 'Schedule conflict',
+        title: `Schedule conflict on ${label}`,
         message: conflict.message,
         day: conflict.day,
-        actionLabel: 'Fix timing',
-        command: 'reflow_day',
+        actionLabel: 'View',
       });
     }
   }
@@ -134,16 +131,16 @@ export function runTripPulse(
 
       if (openStatus === false) {
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const label = formatDayLabel(activity.day, trip.startDate, trip.datesKnown);
         alerts.push({
           id: `closure-${activity.id}`,
           type: 'closure',
           severity: severityForType('closure'),
-          title: 'Possible closure',
-          message: `"${activity.title}" appears to be closed on ${dayNames[dayOfWeek]}s at ${activity.time}. Travonal has prepared a fix.`,
+          title: `Possible closure on ${label}`,
+          message: `"${activity.title}" appears to be closed on ${dayNames[dayOfWeek]}s at ${activity.time}. Consider rescheduling.`,
           day: activity.day,
           activityId: activity.id,
-          actionLabel: 'Review fix',
-          command: 'fix_my_day',
+          actionLabel: 'View',
         });
       }
     }
@@ -177,10 +174,9 @@ export function runTripPulse(
         type: 'weather',
         severity: severityForType('weather'),
         title: `Rain expected on ${label}`,
-        message: `${outdoorNames}${moreCount} may be affected. Travonal prepared a rain-friendly version.`,
+        message: `${outdoorNames}${moreCount} may be affected. Consider indoor alternatives.`,
         day,
-        actionLabel: 'Review changes',
-        command: 'fix_my_day',
+        actionLabel: 'View',
       });
     }
   }
@@ -192,49 +188,45 @@ export function runTripPulse(
 
     for (const flight of flights) {
       const flightStart = timeToMinutes(flight.time);
-      const flightEnd = flightStart + (flight.duration ?? 120);
       const isArrival = /\b(arriv|land|get in)\b/i.test(flight.title);
       const isDeparture = /\b(depart|take.?off|leav|fly out)\b/i.test(flight.title);
 
       for (const act of nonFlights) {
         if (act.day !== flight.day) continue;
         const actStart = timeToMinutes(act.time);
-        const actEnd = actStart + (act.duration ?? 60);
 
-        // Arrival: flag activities that end less than 90 min after flight lands
+        // Arrival: flag activities within 2 hours after flight time
         // (user still needs to deplane, get luggage, transit to city)
         if (isArrival || !isDeparture) {
-          if (actStart < flightEnd + 90 && actEnd > flightStart) {
+          if (actStart >= flightStart && actStart < flightStart + 120) {
             const label = formatDayLabel(flight.day, trip.startDate, trip.datesKnown);
             alerts.push({
               id: `flight-arrival-${flight.id}-${act.id}`,
               type: 'flight_conflict',
               severity: severityForType('flight_conflict'),
               title: `Tight after landing on ${label}`,
-              message: `"${act.title}" starts at ${act.time}, but "${flight.title}" doesn't land until ${minutesToTime(flightEnd)}. You may need time for luggage and transit.`,
+              message: `"${act.title}" starts at ${act.time}, close to "${flight.title}" at ${flight.time}. You may need time for luggage and transit.`,
               day: flight.day,
               activityId: act.id,
-              actionLabel: 'Fix timing',
-              command: 'reflow_day',
+              actionLabel: 'View',
             });
           }
         }
 
-        // Departure: flag activities that end less than 120 min before flight
+        // Departure: flag activities within 2 hours before flight
         // (user needs to get to airport, check in, go through security)
         if (isDeparture || !isArrival) {
-          if (actEnd > flightStart - 120 && actStart < flightStart) {
+          if (actStart < flightStart && actStart > flightStart - 120) {
             const label = formatDayLabel(flight.day, trip.startDate, trip.datesKnown);
             alerts.push({
               id: `flight-depart-${flight.id}-${act.id}`,
               type: 'flight_conflict',
               severity: severityForType('flight_conflict'),
               title: `Tight before flight on ${label}`,
-              message: `"${act.title}" ends around ${minutesToTime(actEnd)}, but "${flight.title}" departs at ${flight.time}. Allow time for airport transit and check-in.`,
+              message: `"${act.title}" is at ${act.time}, but "${flight.title}" departs at ${flight.time}. Allow time for airport transit and check-in.`,
               day: flight.day,
               activityId: act.id,
-              actionLabel: 'Fix timing',
-              command: 'reflow_day',
+              actionLabel: 'View',
             });
           }
         }
@@ -279,11 +271,10 @@ export function runTripPulse(
             type: 'sunset_mismatch',
             severity: severityForType('sunset_mismatch'),
             title: `Sunset timing on ${label}`,
-            message: `"${activity.title}" is at ${activity.time}, but sunset is approximately around ${approxTime} that day.`,
+            message: `"${activity.title}" is at ${activity.time}, but sunset is around ${approxTime}.`,
             day: activity.day,
             activityId: activity.id,
-            actionLabel: 'Adjust time',
-            command: 'reflow_day',
+            actionLabel: 'View',
           });
         }
       }
@@ -297,11 +288,10 @@ export function runTripPulse(
             type: 'sunset_mismatch',
             severity: severityForType('sunset_mismatch'),
             title: `Sunrise timing on ${label}`,
-            message: `"${activity.title}" is at ${activity.time}, but sunrise is approximately around ${approxTime} that day.`,
+            message: `"${activity.title}" is at ${activity.time}, but sunrise is around ${approxTime}.`,
             day: activity.day,
             activityId: activity.id,
-            actionLabel: 'Adjust time',
-            command: 'reflow_day',
+            actionLabel: 'View',
           });
         }
       }
@@ -340,13 +330,65 @@ export function runTripPulse(
               type: 'duplicate',
               severity: severityForType('duplicate'),
               title: `Duplicate on ${label}`,
-              message: `"${a.title}" appears twice on the same day.`,
+              message: `"${a.title}" appears twice.`,
               day,
               activityId: b.id,
-              actionLabel: 'Review',
-              command: 'fix_my_day',
+              actionLabel: 'View',
             });
           }
+        }
+      }
+    }
+  }
+
+  // 7. Preference mismatch — flag activities that clash with strong learned preferences
+  if (totalActivities > 0 && memory.length > 0) {
+    const activeMemory = memory.filter((m) => m.enabled);
+    // Count negative signals by category
+    const negativeCounts = new Map<string, number>();
+    for (const m of activeMemory) {
+      if (m.sentiment === 'negative' || m.type === 'activity_skipped' || m.type === 'recommendation_rejected') {
+        negativeCounts.set(m.category, (negativeCounts.get(m.category) ?? 0) + 1);
+      }
+    }
+
+    // Only flag when there's a strong pattern (3+ signals in a category)
+    const strongCategories = new Set<string>();
+    for (const [cat, count] of negativeCounts) {
+      if (count >= 3) strongCategories.add(cat);
+    }
+
+    if (strongCategories.size > 0) {
+      // Collect activity titles the user has explicitly rejected
+      const rejectedTitles = new Set(
+        activeMemory
+          .filter((m) => m.type === 'activity_skipped' || m.type === 'recommendation_rejected')
+          .map((m) => {
+            const match = m.detail.match(/"([^"]+)"/);
+            return match?.[1]?.toLowerCase();
+          })
+          .filter(Boolean) as string[],
+      );
+
+      for (const activity of trip.activities) {
+        // Skip flights and hotels — not relevant for preference checks
+        if (activity.type === 'flight' || activity.type === 'hotel') continue;
+
+        const titleLower = activity.title.toLowerCase();
+
+        // Check if this exact activity was previously rejected
+        if (rejectedTitles.has(titleLower)) {
+          const label = formatDayLabel(activity.day, trip.startDate, trip.datesKnown);
+          alerts.push({
+            id: `pref-rejected-${activity.id}`,
+            type: 'preference_mismatch',
+            severity: severityForType('preference_mismatch'),
+            title: `Previously disliked on ${label}`,
+            message: `You've previously indicated you didn't enjoy "${activity.title}". Consider replacing it.`,
+            day: activity.day,
+            activityId: activity.id,
+            actionLabel: 'View',
+          });
         }
       }
     }

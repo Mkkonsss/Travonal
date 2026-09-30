@@ -3,27 +3,31 @@ import { Paths, File } from 'expo-file-system';
 import { withRetry, reportStorageError } from '@/services/storage-errors';
 
 const KEYS = {
-  TRIPS: '@travonal/trips',
-  PROFILE: '@travonal/profile',
-  MEMORY: '@travonal/memory',
-  SAVED_PLACES: '@travonal/saved_places',
-  ONBOARDING_COMPLETE: '@travonal/onboarding_complete',
-  CHANGE_HISTORY: '@travonal/change_history',
-  INBOX: '@travonal/inbox',
-  DISMISSED_PULSE: '@travonal/dismissed_pulse',
-  CHAT_MESSAGES: '@travonal/chat_messages',
-  CHAT_THREADS: '@travonal/chat_threads',
-  RECENT_SEARCHES: '@travonal/recent_searches',
-  NOTIF_DISMISSED: '@travonal/notif_dismissed',
-  TRIP_PULSE_ENABLED: '@travonal/trip_pulse_enabled',
-  LEARNING_ENABLED: '@travonal/learning_enabled',
-  SEEN_PULSE: '@travonal/seen_pulse',
-  PULSE_HISTORY: '@travonal/pulse_history',
-  PULSE_NOTIFIED: '@travonal/pulse_notified',
-  DISCOVERY_SEEN: '@travonal/discovery_seen',
-  DISCOVERY_DISMISSED: '@travonal/discovery_dismissed',
-  DISCOVERY_INTERACTIONS: '@travonal/discovery_interactions',
-  BOARDS: '@travonal/boards',
+  TRIPS: '@toveli/trips',
+  PROFILE: '@toveli/profile',
+  MEMORY: '@toveli/memory',
+  SAVED_PLACES: '@toveli/saved_places',
+  ONBOARDING_COMPLETE: '@toveli/onboarding_complete',
+  INBOX: '@toveli/inbox',
+  DISMISSED_PULSE: '@toveli/dismissed_pulse',
+  CHAT_MESSAGES: '@toveli/chat_messages',
+  CHAT_THREADS: '@toveli/chat_threads',
+  RECENT_SEARCHES: '@toveli/recent_searches',
+  NOTIF_DISMISSED: '@toveli/notif_dismissed',
+  TRIP_PULSE_ENABLED: '@toveli/trip_pulse_enabled',
+  LEARNING_ENABLED: '@toveli/learning_enabled',
+  SEEN_PULSE: '@toveli/seen_pulse',
+  PULSE_HISTORY: '@toveli/pulse_history',
+  DISCOVERY_SEEN: '@toveli/discovery_seen',
+  DISCOVERY_DISMISSED: '@toveli/discovery_dismissed',
+  DISCOVERY_INTERACTIONS: '@toveli/discovery_interactions',
+  BOARDS: '@toveli/boards',
+  MEMORY_FIRST_SEEN: '@toveli/memory_first_seen',
+  TRIP_EDIT_CHAT: '@toveli/trip_edit_chat_',
+  TRIP_EDIT_THREADS: '@toveli/trip_edit_threads_',
+  BOOKING_REMINDERS_ENABLED: '@toveli/booking_reminders_enabled',
+  DEPARTURE_REMINDER_ENABLED: '@toveli/departure_reminder_enabled',
+  DAILY_BRIEFING_ENABLED: '@toveli/daily_briefing_enabled',
 } as const;
 
 /**
@@ -179,31 +183,6 @@ export async function clearOnboardingComplete(): Promise<void> {
   }
 }
 
-export async function loadChangeHistory<T>(fallback: T): Promise<T> {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.CHANGE_HISTORY);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export function loadChangeHistorySafe<T>(fallback: T): Promise<StorageLoadResult<T>> {
-  return safeLoad(KEYS.CHANGE_HISTORY, fallback);
-}
-
-export async function saveChangeHistory<T>(history: T): Promise<boolean> {
-  const data = JSON.stringify(history);
-  try {
-    await withRetry(() => rawSetItem(KEYS.CHANGE_HISTORY, data));
-    return true;
-  } catch (e) {
-    console.warn('Failed to save change history:', e);
-    reportStorageError('change history', () => rawSetItem(KEYS.CHANGE_HISTORY, data));
-    return false;
-  }
-}
-
 export async function loadInbox<T>(fallback: T): Promise<T> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.INBOX);
@@ -296,6 +275,40 @@ export async function saveChatThreads<T>(threads: T): Promise<void> {
   }
 }
 
+export async function loadTripEditChat<T>(tripId: string, fallback: T): Promise<T> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.TRIP_EDIT_CHAT + tripId);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function saveTripEditChat<T>(tripId: string, messages: T): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.TRIP_EDIT_CHAT + tripId, JSON.stringify(messages));
+  } catch (e) {
+    console.warn('Failed to save trip edit chat:', e);
+  }
+}
+
+export async function loadTripEditThreads<T>(tripId: string, fallback: T): Promise<T> {
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.TRIP_EDIT_THREADS + tripId);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function saveTripEditThreads<T>(tripId: string, threads: T): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.TRIP_EDIT_THREADS + tripId, JSON.stringify(threads));
+  } catch (e) {
+    console.warn('Failed to save trip edit threads:', e);
+  }
+}
+
 export async function loadRecentSearches(): Promise<string[]> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.RECENT_SEARCHES);
@@ -364,6 +377,76 @@ export async function saveLearningEnabled(enabled: boolean): Promise<void> {
   }
 }
 
+export async function loadMemoryFirstSeen(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.MEMORY_FIRST_SEEN);
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveMemoryFirstSeen(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.MEMORY_FIRST_SEEN, 'true');
+  } catch {
+    // Non-critical — worst case the toast shows again
+  }
+}
+
+// ─── Notification setting toggles ─────────────────────────────────
+
+export async function loadBookingRemindersEnabled(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.BOOKING_REMINDERS_ENABLED);
+    return val !== 'false'; // default true
+  } catch {
+    return true;
+  }
+}
+
+export async function saveBookingRemindersEnabled(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.BOOKING_REMINDERS_ENABLED, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.warn('Failed to save booking reminders setting:', e);
+  }
+}
+
+export async function loadDepartureReminderEnabled(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.DEPARTURE_REMINDER_ENABLED);
+    return val !== 'false'; // default true
+  } catch {
+    return true;
+  }
+}
+
+export async function saveDepartureReminderEnabled(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.DEPARTURE_REMINDER_ENABLED, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.warn('Failed to save departure reminder setting:', e);
+  }
+}
+
+export async function loadDailyBriefingEnabled(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.DAILY_BRIEFING_ENABLED);
+    return val !== 'false'; // default true
+  } catch {
+    return true;
+  }
+}
+
+export async function saveDailyBriefingEnabled(enabled: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.DAILY_BRIEFING_ENABLED, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.warn('Failed to save daily briefing setting:', e);
+  }
+}
+
 export async function loadSeenPulse(): Promise<string[]> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.SEEN_PULSE);
@@ -417,31 +500,13 @@ export async function savePulseHistory(entries: PulseHistoryEntry[]): Promise<vo
   }
 }
 
-// Track which pulse alerts have already triggered a notification (to avoid duplicates)
-export async function loadPulseNotified(): Promise<string[]> {
-  try {
-    const raw = await AsyncStorage.getItem(KEYS.PULSE_NOTIFIED);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export async function savePulseNotified(ids: string[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(KEYS.PULSE_NOTIFIED, JSON.stringify(ids));
-  } catch (e) {
-    console.warn('Failed to save pulse notified:', e);
-  }
-}
-
 /**
- * All AsyncStorage keys used by Travonal.
+ * All AsyncStorage keys used by Tripseek.
  */
 export const ALL_STORAGE_KEYS = Object.values(KEYS);
 
 /**
- * Clears ALL persisted Travonal data from AsyncStorage.
+ * Clears ALL persisted Tripseek data from AsyncStorage.
  * Call context reset functions separately to clear in-memory state.
  */
 export async function resetAllData(): Promise<void> {

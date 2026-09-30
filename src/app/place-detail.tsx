@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import WebView from 'react-native-webview';
 import { Image as ExpoImage } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import NativeMap from '@/components/native-map';
 import { DEFAULT_PATH_DATA } from '@/constants/map-icons';
+import { BoardsIcon } from '@/components/icons';
 import { TimePickerButton } from '@/components/time-picker';
 import { SelectionSheet, SelectionOption } from '@/components/selection-sheet';
 import { ThemedText } from '@/components/themed-text';
@@ -22,12 +23,11 @@ import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { searchAllPlaces } from '@/services/places-data';
 import { sortTripsForPicker, formatDayLabel } from '@/services/trip-helpers';
-import { categoryToActivityType, priceLevelLabel } from '@/services/place-model';
+import { categoryToActivityType, priceLevelLabel, mapGoogleTypeToCategory } from '@/services/place-model';
 import { getPlacePhoto } from '@/services/free-photos';
 import { fetchPlaceDetails, getCachedPlaceDetails, searchExplorePlaces } from '@/services/explore-service';
 import { normalizeGooglePlace } from '@/services/place-model';
 import { getPlaceBookingLinks, getPlaceBookingSectionTitle, openBookingLink, isBookablePlace, getBookableCTA } from '@/services/booking-links';
-import { generateDescriptionAI } from '@/services/ai';
 
 const costLabels: Record<string, string> = {
   free: 'Free',
@@ -148,6 +148,7 @@ export default function PlaceDetailScreen() {
     website?: string; phone?: string; hours?: string;
     priceLevel?: string; googleMapsUri?: string; openNow?: string;
     photoRef?: string; imageUrl?: string; notes?: string;
+    fromStaySearch?: string;
   }>();
   const {
     title: paramTitle, destination: paramDest, tripId: paramTripId, day: paramDay,
@@ -166,7 +167,7 @@ export default function PlaceDetailScreen() {
   const { trips, addActivity } = useTrips();
   const { profile } = useProfile();
   const { savedPlaces, savePlace, unsavePlace, isSaved } = useInbox();
-  const { addItemToBoard } = useBoards();
+  const { boards, addItemToBoard } = useBoards();
   const [boardPickerVisible, setBoardPickerVisible] = useState(false);
   const [showAllHours, setShowAllHours] = useState(false);
   const [showAllReviews, setShowAllReviews] = useState(false);
@@ -176,7 +177,6 @@ export default function PlaceDetailScreen() {
     tripId: string;
     day: number;
     time: string;
-    duration: number;
   } | null>(null);
   const [sheetState, setSheetState] = useState<{
     title: string;
@@ -209,61 +209,57 @@ export default function PlaceDetailScreen() {
   } | null>(null);
   const resolveAttempted = useRef(false);
   const [resolveFinished, setResolveFinished] = useState(!!paramPlaceId);
-  const [aiDescription, setAiDescription] = useState<string | null>(null);
-  const [aiDescLoading, setAiDescLoading] = useState(false);
-  const aiDescAttempted = useRef(false);
 
   // The effective placeId — from URL params or from our own resolution
   const effectivePlaceId = paramPlaceId ?? resolvedPlace?.placeId;
 
-  // When no placeId was provided, resolve via explore search.
-  // Phase 1: search → sets basic info (address, rating, openNow) immediately
-  // Phase 2: fetchPlaceDetails → adds reviews, summaries, hours
+  // Resolve place by name search — used when no placeId is provided or when placeId lookup fails
+  const resolveByName = useCallback(async () => {
+    if (resolveAttempted.current || !title) return;
+    resolveAttempted.current = true;
+    try {
+      const hasCoords = paramLat != null && paramLng != null;
+      const searchLocation = hasCoords
+        ? { type: 'current' as const, lat: parseFloat(paramLat!), lng: parseFloat(paramLng!), label: destination || '' }
+        : { type: 'custom' as const, query: destination || 'world', label: destination || '' };
+
+      const results = await searchExplorePlaces(title, searchLocation);
+      if (results.length > 0 && results[0].placeId) {
+        const match = results[0];
+        setResolvedPlace({
+          placeId: match.placeId,
+          address: match.address,
+          rating: match.rating,
+          reviewCount: match.reviewCount,
+          lat: match.lat ?? undefined,
+          lng: match.lng ?? undefined,
+          website: match.website,
+          phone: match.phone,
+          openingHours: match.openingHours,
+          priceLevel: match.priceLevel,
+          googleMapsUri: match.googleMapsUri,
+          openNow: match.openNow,
+          category: match.category,
+        });
+        setResolveFinished(true);
+
+        const details = await fetchPlaceDetails(match.placeId!);
+        if (details) {
+          setGoogleDetails(details);
+        }
+      }
+    } catch (err) {
+      console.log('[PLACE-DETAIL] Self-resolution error:', err);
+    } finally {
+      setResolveFinished(true);
+    }
+  }, [title, destination, paramLat, paramLng]);
+
+  // When no placeId was provided, resolve via explore search
   useEffect(() => {
     if (paramPlaceId || resolveAttempted.current || !title) return;
-    resolveAttempted.current = true;
-    (async () => {
-      try {
-        // Use lat/lng from URL params to skip geocoding when available
-        const hasCoords = paramLat != null && paramLng != null;
-        const searchLocation = hasCoords
-          ? { type: 'current' as const, lat: parseFloat(paramLat!), lng: parseFloat(paramLng!), label: destination || '' }
-          : { type: 'custom' as const, query: destination || 'world', label: destination || '' };
-
-        const results = await searchExplorePlaces(title, searchLocation);
-        if (results.length > 0 && results[0].placeId) {
-          const match = results[0];
-          // Phase 1: show basic data immediately from search results
-          setResolvedPlace({
-            placeId: match.placeId,
-            address: match.address,
-            rating: match.rating,
-            reviewCount: match.reviewCount,
-            lat: match.lat ?? undefined,
-            lng: match.lng ?? undefined,
-            website: match.website,
-            phone: match.phone,
-            openingHours: match.openingHours,
-            priceLevel: match.priceLevel,
-            googleMapsUri: match.googleMapsUri,
-            openNow: match.openNow,
-            category: match.category,
-          });
-          setResolveFinished(true);
-
-          // Phase 2: fetch full details for reviews/summaries (non-blocking)
-          const details = await fetchPlaceDetails(match.placeId!);
-          if (details) {
-            setGoogleDetails(details);
-          }
-        }
-      } catch (err) {
-        console.log('[PLACE-DETAIL] Self-resolution error:', err);
-      } finally {
-        setResolveFinished(true);
-      }
-    })();
-  }, [paramPlaceId, title, destination]);
+    resolveByName();
+  }, [paramPlaceId, title, resolveByName]);
 
   // Extract photo reference from Google details
   const googlePhotoRef = (() => {
@@ -301,11 +297,23 @@ export default function PlaceDetailScreen() {
     let cancelled = false;
 
     fetchPlaceDetails(effectivePlaceId).then((details) => {
-      if (!cancelled && details) setGoogleDetails(details);
-    }).catch(() => {});
+      if (cancelled) return;
+      if (details) {
+        setGoogleDetails(details);
+      } else if (paramPlaceId && !resolveAttempted.current) {
+        // PlaceId lookup returned null (404) — likely a fabricated ID from AI.
+        // Fall back to name-based search to find the real place.
+        resolveByName();
+      }
+    }).catch(() => {
+      // PlaceId lookup failed — fall back to name-based search
+      if (!cancelled && paramPlaceId && !resolveAttempted.current) {
+        resolveByName();
+      }
+    });
 
     return () => { cancelled = true; };
-  }, [effectivePlaceId]);
+  }, [effectivePlaceId, resolveByName]);
 
   // Real data flag — true if we have or resolved a placeId
   const isGooglePlace = !!effectivePlaceId;
@@ -338,11 +346,10 @@ export default function PlaceDetailScreen() {
     title,
     destination,
     placeId: effectivePlaceId,
-    type: 'activity',
+    type: categoryToActivityType((paramCategory ?? resolvedPlace?.category ?? 'attraction') as any),
     category: paramCategory ?? resolvedPlace?.category ?? 'attraction',
     cost: priceLevelToCost(parsedPriceLevel),
     priceLevel: parsedPriceLevel,
-    duration: 60,
     description: paramDescription ?? '',
     tags: [],
     rating: paramRating ? parseFloat(paramRating) : resolvedPlace?.rating,
@@ -431,9 +438,26 @@ export default function PlaceDetailScreen() {
     }
 
     // Primary type display name (e.g. "Italian Restaurant")
+    // Don't use generic "Restaurant" label for non-food places (e.g. TopGolf = golf_course + restaurant)
     const primaryType = googleDetails.primaryTypeDisplayName as Record<string, string> | undefined;
+    const gTypes = (googleDetails.types as string[]) ?? [];
     if (primaryType?.text) {
-      place.primaryTypeLabel = primaryType.text;
+      const isGenericFoodLabel = /^(restaurant|food)$/i.test(primaryType.text.trim());
+      const mappedCategory = gTypes.length > 0 ? mapGoogleTypeToCategory(gTypes) : null;
+      const isCategoryNotFood = mappedCategory && !mappedCategory.startsWith('food/');
+      if (isGenericFoodLabel && isCategoryNotFood) {
+        // Use the mapped category label instead (e.g. "Sport", "Entertainment")
+        const betterLabel = mappedCategory!.split('/').pop() ?? '';
+        place.primaryTypeLabel = betterLabel.charAt(0).toUpperCase() + betterLabel.slice(1);
+        place.category = mappedCategory!;
+        place.type = categoryToActivityType(mappedCategory!);
+      } else {
+        place.primaryTypeLabel = primaryType.text;
+        if (mappedCategory) {
+          place.category = mappedCategory;
+          place.type = categoryToActivityType(mappedCategory);
+        }
+      }
     }
 
     // Business status warnings
@@ -525,34 +549,6 @@ export default function PlaceDetailScreen() {
     }
   }
 
-  // If we have an AI-generated description, use it
-  if (place && aiDescription) {
-    place.description = aiDescription;
-  }
-
-  // Determine if we need to generate a description
-  const needsAiDescription = !!place && (!place.description || place.description.length < 10) && !aiDescription && !aiDescLoading;
-
-  // Generate AI description when no real one is available
-  useEffect(() => {
-    if (!needsAiDescription || aiDescAttempted.current) return;
-    aiDescAttempted.current = true;
-    setAiDescLoading(true);
-    generateDescriptionAI({
-      name: place!.title ?? title,
-      location: place!.destination ?? place!.address ?? destination,
-      category: place!.category,
-      type: place!.type,
-    }).then((result) => {
-      if (result.description) {
-        setAiDescription(result.description);
-      }
-    }).catch(() => {
-      // Silent fail — About section just won't show
-    }).finally(() => {
-      setAiDescLoading(false);
-    });
-  }, [needsAiDescription]);
 
   if (!place) {
     return (
@@ -643,6 +639,14 @@ export default function PlaceDetailScreen() {
     }
   }
 
+  function handleOpenBoardPicker() {
+    if (boards.length === 0) {
+      Alert.alert("No boards yet", "Create a board first to save places to it.");
+      return;
+    }
+    setBoardPickerVisible(true);
+  }
+
   function handleSaveToBoard(boardId: string) {
     if (!place) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -652,7 +656,6 @@ export default function PlaceDetailScreen() {
       type: place.type as 'activity' | 'food' | 'hotel' | 'flight',
       category: place.category,
       cost: place.cost,
-      duration: place.duration,
       description: place.description,
       sourceType: 'explore',
       placeId: params.placeId,
@@ -674,7 +677,7 @@ export default function PlaceDetailScreen() {
     }
 
     if (trips.length === 0) {
-      showToast('Plan a trip first, then you can add activities', 'info');
+      Alert.alert("No trips yet", "Plan a trip first, then you can add activities to it.");
       return;
     }
 
@@ -732,20 +735,50 @@ export default function PlaceDetailScreen() {
       tripId,
       day,
       time: place!.bestTime ?? '10:00',
-      duration: place!.duration ?? 60,
     });
   }
 
-  function confirmPendingAdd() {
-    if (!pendingAdd || !place) return;
-    const { tripId, day, time, duration } = pendingAdd;
+  function handleAddToStays() {
+    if (!place) return;
+
+    // If launched with explicit tripId, add directly
+    if (paramTripId) {
+      addStayToTrip(paramTripId);
+      return;
+    }
+
+    if (trips.length === 0) {
+      Alert.alert("No trips yet", "Plan a trip first, then you can add stays to it.");
+      return;
+    }
+
+    const sorted = sortTripsForPicker(trips, place.destination);
+
+    if (sorted.length === 1) {
+      addStayToTrip(sorted[0].id);
+      return;
+    }
+
+    setSheetState({
+      title: 'Add stay to which trip?',
+      subtitle: `Select a trip for "${place.title}"`,
+      options: sorted.map((trip) => ({ label: trip.destination, value: trip.id })),
+      onSelect: (tid) => {
+        setSheetState(null);
+        addStayToTrip(tid);
+      },
+    });
+  }
+
+  function addStayToTrip(tripId: string) {
+    if (!place) return;
     const trip = trips.find((t) => t.id === tripId);
+    if (!trip) return;
     addActivity(tripId, {
       title: place.title,
-      day,
-      time,
-      type: place.type,
-      duration,
+      day: 1,
+      time: '15:00',
+      type: 'hotel',
       category: place.category,
       cost: place.cost,
       description: place.description,
@@ -754,6 +787,30 @@ export default function PlaceDetailScreen() {
       lat: place.lat,
       lng: place.lng,
       rating: place.rating,
+      fixed: true,
+    });
+    showToast(`"${place.title}" added to stays`, 'success');
+  }
+
+  function confirmPendingAdd() {
+    if (!pendingAdd || !place) return;
+    const { tripId, day, time } = pendingAdd;
+    const trip = trips.find((t) => t.id === tripId);
+    const isHotel = place.type === 'hotel';
+    addActivity(tripId, {
+      title: place.title,
+      day,
+      time: isHotel ? '15:00' : time,
+      type: place.type,
+      category: place.category,
+      cost: place.cost,
+      description: place.description,
+      placeId: place.placeId,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      ...(isHotel ? { fixed: true } : {}),
     });
     setPendingAdd(null);
     showToast(`"${place.title}" added to ${trip?.destination ?? 'trip'} (Day ${day})`, 'success');
@@ -781,7 +838,7 @@ export default function PlaceDetailScreen() {
             const desc = place.description ? place.description.slice(0, 120) + (place.description.length > 120 ? '...' : '') : '';
             const link = place.googleMapsUri
               ?? (place.placeId ? `https://www.google.com/maps/place/?q=place_id:${place.placeId}` : '');
-            const message = [place.title, addr, ratingStr, desc, link, '', 'Shared from Travonal'].filter(Boolean).join('\n');
+            const message = [place.title, addr, ratingStr, desc, link, '', 'Shared from Tripseek'].filter(Boolean).join('\n');
             await Share.share({ message });
           }}
           hitSlop={12}
@@ -911,7 +968,7 @@ export default function PlaceDetailScreen() {
                 <ThemedText style={styles.pillText}>Best at {place.bestTime}</ThemedText>
               </View>
             )}
-            {place.mealService && place.mealService.map((meal: string) => (
+            {place.type === 'food' && place.mealService && place.mealService.map((meal: string) => (
               <View key={meal} style={[styles.pill, { backgroundColor: theme.backgroundElement }]}>
                 <ThemedText style={styles.pillText}>{meal}</ThemedText>
               </View>
@@ -921,24 +978,28 @@ export default function PlaceDetailScreen() {
         {/* Action buttons */}
           <View style={styles.actionBtnContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -Spacing.four }} contentContainerStyle={styles.actionBtnRow}>
-            <Pressable
-              onPress={handleAddToTrip}
-              style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Add to trip"
-            >
-              <SymbolView name="plus.circle" size={18} tintColor={theme.primary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Add to trip</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={() => setBoardPickerVisible(true)}
-              style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel="Save to a board"
-            >
-              <SymbolView name="bookmark" size={18} tintColor={theme.primary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Save</ThemedText>
-            </Pressable>
+            {(placeBookable || (place.category ?? '').startsWith('stay')) && (
+              <>
+                <Pressable
+                  onPress={handleAddToTrip}
+                  style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add to trip"
+                >
+                  <SymbolView name="plus.circle" size={18} tintColor={theme.primary} />
+                  <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Add to trip</ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleOpenBoardPicker()}
+                  style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save to a board"
+                >
+                  <BoardsIcon size={18} color={theme.primary} />
+                  <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Save to board</ThemedText>
+                </Pressable>
+              </>
+            )}
             <Pressable
               onPress={async () => {
                 const name = encodeURIComponent(place.title + (place.destination ? ', ' + place.destination : ''));
@@ -1116,39 +1177,29 @@ export default function PlaceDetailScreen() {
                           {place.shortFormattedAddress ?? place.address}
                         </ThemedText>
                       )}
-                      <View style={styles.fullMapCardActions}>
-                        {placeBookable ? (
+                      {(placeBookable || (place.category ?? '').startsWith('stay')) && (
+                        <View style={styles.fullMapCardActions}>
                           <Pressable
                             onPress={() => {
-                              const links = getPlaceBookingLinks(place.title, place.category ?? '', place.destination ?? '');
-                              if (links[0]) openBookingLink(links[0].url);
+                              setMapFullScreen(false);
+                              (place.category ?? '').startsWith('stay') ? handleAddToStays() : handleAddToTrip();
                             }}
                             style={[styles.fullMapCardBtn, { backgroundColor: '#fff' }]}
                             accessibilityRole="button"
+                            accessibilityLabel="Add to trip"
                           >
-                            <ThemedText style={[styles.fullMapCardBtnText, { color: '#000' }]}>{getBookableCTA(place.category ?? '')}</ThemedText>
+                            <ThemedText style={[styles.fullMapCardBtnText, { color: '#000' }]}>Add to trip</ThemedText>
                           </Pressable>
-                        ) : (
-                          <>
-                            <Pressable
-                              onPress={() => { setMapFullScreen(false); handleAddToTrip(); }}
-                              style={[styles.fullMapCardBtn, { backgroundColor: '#fff' }]}
-                              accessibilityRole="button"
-                              accessibilityLabel="Add to trip"
-                            >
-                              <ThemedText style={[styles.fullMapCardBtnText, { color: '#000' }]}>Add to trip</ThemedText>
-                            </Pressable>
-                            <Pressable
-                              onPress={() => { setMapFullScreen(false); setBoardPickerVisible(true); }}
-                              hitSlop={8}
-                              accessibilityRole="button"
-                              accessibilityLabel="Save to board"
-                            >
-                              <SymbolView name="bookmark" size={18} tintColor="#aaa" />
-                            </Pressable>
-                          </>
-                        )}
-                      </View>
+                          <Pressable
+                            onPress={() => { setMapFullScreen(false); handleOpenBoardPicker(); }}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Save to board"
+                          >
+                            <SymbolView name="bookmark" size={18} tintColor="#aaa" />
+                          </Pressable>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>
@@ -1232,13 +1283,6 @@ export default function PlaceDetailScreen() {
                   </ThemedText>
                 </Pressable>
               )}
-            </View>
-          </View>
-        ) : aiDescLoading ? (
-          <View>
-            <View style={[styles.section, { borderColor: theme.border }]}>
-              <ThemedText type="sectionTitle" style={{ color: theme.textSecondary }}>About</ThemedText>
-              <ActivityIndicator size="small" color={theme.textSecondary} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
             </View>
           </View>
         ) : null}
@@ -1557,7 +1601,7 @@ export default function PlaceDetailScreen() {
         )}
         {placeBookable && (
           <ThemedText style={[styles.affiliateDisclosure, { color: theme.textSecondary }]}>
-            Booking links may earn Travonal a small commission at no extra cost to you.
+            Booking links may earn Tripseek a small commission at no extra cost to you.
           </ThemedText>
         )}
       </ScrollView>
@@ -1586,9 +1630,6 @@ export default function PlaceDetailScreen() {
               <TimePickerButton
                 value={pendingAdd.time}
                 onChange={(t) => setPendingAdd((p) => p ? { ...p, time: t } : p)}
-                showDuration
-                duration={pendingAdd.duration}
-                onDurationChange={(d) => setPendingAdd((p) => p ? { ...p, duration: d } : p)}
               />
               <View style={styles.addModalBtns}>
                 <Pressable onPress={() => setPendingAdd(null)} style={[styles.addModalCancel, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel">
@@ -1607,11 +1648,35 @@ export default function PlaceDetailScreen() {
       {(() => {
         const cat = (place.category ?? '') as string;
         const bookable = placeBookable;
+        const isStay = cat.startsWith('stay');
+
+        // Hotels/stays: single "Book" CTA
+        if (isStay) {
+          const bookingLinks = getPlaceBookingLinks(place.title, cat, place.destination ?? '');
+          const primaryLink = bookingLinks[0];
+          return (
+            <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
+              <View style={styles.bottomBarContent}>
+                {primaryLink && (
+                  <Pressable
+                    onPress={() => openBookingLink(primaryLink.url)}
+                    style={({ pressed }) => [styles.addButton, { backgroundColor: theme.primary, opacity: pressed ? 0.85 : 1 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Book"
+                  >
+                    <ThemedText style={[styles.addButtonText, { color: theme.primaryText }]}>Book</ThemedText>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          );
+        }
+
         if (bookable) {
           const bookingLinks = getPlaceBookingLinks(place.title, cat, place.destination ?? '');
           const primaryLink = bookingLinks[0];
           const label = getBookableCTA(cat) ?? getPlaceBookingSectionTitle(cat);
-          const icon = cat.startsWith('stay') ? 'bed.double.fill' : cat.startsWith('food') ? 'fork.knife' : 'star';
+          const icon = cat.startsWith('food') ? 'fork.knife' : 'star';
           return (
             <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
               <View style={styles.bottomBarContent}>
@@ -1624,10 +1689,7 @@ export default function PlaceDetailScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={primaryLink?.label ?? label}
                 >
-                  <View style={styles.bottomBarBtnInner}>
-                    <SymbolView name={icon} size={18} tintColor={theme.primaryText} />
-                    <ThemedText style={[styles.addButtonText, { color: theme.primaryText }]}>{label}</ThemedText>
-                  </View>
+                  <ThemedText style={[styles.addButtonText, { color: theme.primaryText }]}>{label}</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -1645,13 +1707,10 @@ export default function PlaceDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Add to trip"
               >
-                <View style={styles.bottomBarBtnInner}>
-                  <SymbolView name="plus.circle.fill" size={18} tintColor="#fff" />
-                  <ThemedText style={[styles.addButtonText, { color: '#fff' }]}>Add to trip</ThemedText>
-                </View>
+                <ThemedText style={[styles.addButtonText, { color: '#fff' }]}>Add to trip</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => setBoardPickerVisible(true)}
+                onPress={() => handleOpenBoardPicker()}
                 style={({ pressed }) => [
                   styles.addButton,
                   { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d1d5db', opacity: pressed ? 0.85 : 1 },
@@ -1659,10 +1718,7 @@ export default function PlaceDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Save to board"
               >
-                <View style={styles.bottomBarBtnInner}>
-                  <SymbolView name="bookmark" size={18} tintColor="#000" />
-                  <ThemedText style={[styles.addButtonText, { color: '#000' }]}>Save to board</ThemedText>
-                </View>
+                <ThemedText style={[styles.addButtonText, { color: '#000' }]}>Save to board</ThemedText>
               </Pressable>
             </View>
           </View>
@@ -1739,7 +1795,7 @@ const styles = StyleSheet.create({
   // Action buttons row
   actionBtnContainer: { position: 'relative', marginBottom: Spacing.three },
   actionBtnRow: { flexDirection: 'row', gap: 10, paddingLeft: Spacing.four, paddingRight: 0 },
-  actionBtn: { width: 74, borderRadius: Radius.md, borderWidth: 1, paddingVertical: 10, alignItems: 'center', gap: 4 },
+  actionBtn: { width: 86, borderRadius: Radius.md, borderWidth: 1, paddingVertical: 10, alignItems: 'center', gap: 4 },
   actionBtnIcon: { fontSize: 18, lineHeight: 24 },
   actionBtnLabel: { fontSize: 12, fontWeight: '600' },
   affiliateDisclosure: { fontSize: 11, marginTop: 6, lineHeight: 15, textAlign: 'center' as const },
