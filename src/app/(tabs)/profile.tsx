@@ -1009,8 +1009,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   plusLogo: {
-    height: 36,
-    width: 144,
+    height: 32,
+    width: 128,
   },
   plusSub: {
     fontSize: 13,

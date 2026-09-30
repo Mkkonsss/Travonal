@@ -86,7 +86,6 @@ export function UpgradePrompt({
               <Row icon="bubble.left.fill" text="100 AI chat messages per month" theme={theme} />
               <Row icon="square.and.arrow.down" text="Import 15 places from links & photos" theme={theme} />
               <Row icon="doc.text.fill" text="Export trips as PDF" theme={theme} />
-              <Row icon="person.2.fill" text="Invite companions to co-plan" theme={theme} />
             </View>
 
             {/* CTA */}

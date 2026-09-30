@@ -46,7 +46,6 @@ function NewTripIcon() {
 
 const PLUS_ACTIONS = [
   { key: 'trip', Icon: SuitcaseIcon, label: 'Plan a new trip', desc: 'Start planning your next adventure', route: '/add-trip' },
-  { key: 'join', Icon: JoinTripIcon, label: 'Join a trip', desc: 'Enter an invite code to join someone\'s trip', route: '/join-trip' },
   { key: 'board', Icon: BoardsIcon, label: 'Create a board', desc: 'Save and organize your travel inspiration', route: '/inbox' },
   { key: 'bookings', Icon: BookingsIcon, label: 'My Bookings', desc: 'View and manage your trip bookings', route: '/bookings' },
 ] as const;

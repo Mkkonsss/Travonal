@@ -103,7 +103,7 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
     const category = getActionCategory(action);
 
     // Plus-only actions that are gated by tier but not metered
-    if (action === 'export_pdf' || action === 'invite_member') {
+    if (action === 'export_pdf') {
       if (!isPlus) {
         const msg = UPGRADE_MESSAGES[action]?.desc ?? 'Upgrade to Tripseek+ to use this feature.';
         return { allowed: false, remaining: 0, total: 0, reason: msg, isPlus: false };

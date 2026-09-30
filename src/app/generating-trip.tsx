@@ -591,14 +591,6 @@ export default function GeneratingTripScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.centered, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 40 }]}>
 
-        {/* Wordmark */}
-        <Image
-          source={theme.background === '#FFFFFF'
-            ? require('@/assets/images/logo-dark.png')
-            : require('@/assets/images/logo-light.png')}
-          style={styles.genLogo}
-          resizeMode="contain"
-        />
 
         {/* Pulsing pin with ripple rings */}
         <View style={styles.pinContainer}>
@@ -656,7 +648,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  genLogo: { height: 36, width: 108, marginBottom: 8 },
 
   // Generating — pulsing pin
   pinContainer: {

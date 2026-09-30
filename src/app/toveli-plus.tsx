@@ -32,7 +32,6 @@ const FEATURES = [
   { icon: 'bubble.left.and.bubble.right', title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
   { icon: 'square.and.arrow.down', title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere — Tripseek finds the place' },
   { icon: 'doc.text', title: 'PDF export', desc: 'Save or print your itinerary as a formatted PDF' },
-  { icon: 'person.2', title: 'Trip collaboration', desc: 'Invite companions to view or co-edit your itinerary together' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {
