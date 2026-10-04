@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { loadInboxSafe, saveInbox, deleteOwnedMedia } from '@/services/storage';
+import { useAuth } from '@/context/auth';
+import { pushSavedPlaces, pullSavedPlaces } from '@/services/sync';
 
 export interface InboxItem {
   id: string;
@@ -63,6 +65,8 @@ export function InboxProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadInboxSafe<InboxItem[]>([]).then((result) => {
@@ -72,12 +76,38 @@ export function InboxProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Pull remote saved places on sign-in, merge with local
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pullSavedPlaces(user.id).then((remote) => {
+      if (!remote || remote.length === 0) return;
+      setItems((local) => {
+        const localIds = new Set(local.map((i) => i.id));
+        const newFromRemote = remote.filter((i) => !localIds.has(i.id));
+        return newFromRemote.length > 0 ? [...local, ...newFromRemote] : local;
+      });
+    });
+  }, [loaded, user?.id]);
+
   // Only autosave when the initial load succeeded — prevents overwriting real data.
   useEffect(() => {
     if (loaded && !loadError) {
       saveInbox(items);
     }
   }, [items, loaded, loadError]);
+
+  // Push to Supabase (debounced)
+  useEffect(() => {
+    if (!loaded || loadError || !user?.id) return;
+    const userId = user.id;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      pushSavedPlaces(userId, items);
+    }, 1500);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [items, loaded, loadError, user?.id]);
 
   function retryLoad() {
     loadInboxSafe<InboxItem[]>([]).then((result) => {

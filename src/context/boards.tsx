@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { loadBoardsSafe, saveBoards, deleteOwnedMedia } from '@/services/storage';
 import { generateId } from '@/services/itinerary-engine';
+import { useAuth } from '@/context/auth';
+import { pushBoards, pullBoards } from '@/services/sync';
 
 export interface BoardItem {
   id: string;
@@ -69,6 +71,8 @@ export function BoardsProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const hasChanged = useRef(false);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadBoardsSafe<Board[]>([]).then((result) => {
@@ -77,6 +81,19 @@ export function BoardsProvider({ children }: { children: ReactNode }) {
       setLoaded(true);
     });
   }, []);
+
+  // Pull remote boards on sign-in, merge with local
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pullBoards(user.id).then((remote) => {
+      if (!remote || remote.length === 0) return;
+      setBoards((local) => {
+        const localIds = new Set(local.map((b) => b.id));
+        const newFromRemote = remote.filter((b) => !localIds.has(b.id));
+        return newFromRemote.length > 0 ? [...local, ...newFromRemote] : local;
+      });
+    });
+  }, [loaded, user?.id]);
 
   // Only autosave after a real mutation (skip the initial load write-back)
   useEffect(() => {
@@ -87,6 +104,19 @@ export function BoardsProvider({ children }: { children: ReactNode }) {
     }
     saveBoards(boards);
   }, [boards, loaded, loadError]);
+
+  // Push to Supabase (debounced)
+  useEffect(() => {
+    if (!loaded || loadError || !user?.id) return;
+    const userId = user.id;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      pushBoards(userId, boards);
+    }, 1500);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [boards, loaded, loadError, user?.id]);
 
   function retryLoad() {
     hasChanged.current = false;

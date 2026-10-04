@@ -246,7 +246,12 @@ export default function BoardsScreen() {
 
         {boards.length === 0 && !showCreate ? (
           <Animated.View entering={FadeIn.duration(400)} style={styles.emptyState}>
-            <BoardsIcon size={48} color={theme.textSecondary} />
+            <ExpoImage
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              source={require('@/assets/images/icon-boards-empty.png')}
+              style={{ width: 140, height: 140, marginBottom: 4 }}
+              contentFit="contain"
+            />
             <ThemedText type="headline">No boards yet</ThemedText>
             <ThemedText style={[styles.emptyDesc, { color: theme.textSecondary }]}>
 {"Create a board to collect and organize your travel inspiration — places you want to visit, ideas, and anything that catches your eye."}

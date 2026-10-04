@@ -19,7 +19,7 @@ import {
   getPlacePhoto,
 } from '@/services/free-photos';
 import { getPlaceDetailsAI } from '@/services/ai';
-import { searchExplorePlaces, fetchPlaceDetails } from '@/services/explore-service';
+import { searchExplorePlaces, searchPlaceByName, fetchPlaceDetails } from '@/services/explore-service';
 
 /** Optional activity metadata for fallback name-based resolution */
 export interface ActivityPhotoHint {
@@ -40,18 +40,26 @@ export function useActivityPhotos(
   placeIds: string[],
   hints?: ActivityPhotoHint[],
   nameOnlyHints?: ActivityNameHint[],
-): Map<string, string> {
+): { photos: Map<string, string>; loading: boolean } {
+  const [loading, setLoading] = useState(true);
   const [photos, setPhotos] = useState<Map<string, string>>(() => {
     const map = new Map<string, string>();
     for (const id of placeIds) {
       const url = getCachedPhotoUrl(id);
       if (url) map.set(id, url);
     }
+    // Also seed from cache for name-only hints (instant on repeat visits)
+    if (nameOnlyHints) {
+      for (const hint of nameOnlyHints) {
+        const url = getCachedPhotoUrl(hint.key);
+        if (url) map.set(hint.key, url);
+      }
+    }
     return map;
   });
 
   useEffect(() => {
-    if (placeIds.length === 0) return;
+    if (placeIds.length === 0 && (!nameOnlyHints || nameOnlyHints.length === 0)) { setLoading(false); return; }
     let cancelled = false;
 
     // Build a lookup from placeId → hint for fallback resolution
@@ -151,22 +159,36 @@ export function useActivityPhotos(
           await Promise.allSettled(
             nbatch.map(async (hint) => {
               if (cancelled) return;
+              // Skip if already in memory cache
+              const cached = getCachedPhotoUrl(hint.key);
+              if (cached) {
+                map.set(hint.key, cached);
+                return;
+              }
               try {
-                const searchLoc = hint.destination
-                  ? { type: 'custom' as const, query: hint.destination, label: hint.destination }
-                  : { type: 'custom' as const, query: 'world', label: '' };
-                const results = await searchExplorePlaces(hint.name, searchLoc);
+                // Use global text search (no location restriction) so we reliably
+                // find named places regardless of how specific the destination string is
+                const results = await searchPlaceByName(hint.name, hint.destination);
                 if (cancelled) return;
-                if (results.length > 0 && results[0].placeId) {
-                  const resolvedDetails = await fetchPlaceDetails(results[0].placeId);
+                if (results.length === 0) return;
+
+                const topResult = results[0];
+
+                // Use photo ref from search result directly (included in Text Search response)
+                let photoRef: string | undefined = topResult.photos?.[0]?.reference;
+
+                // Fallback: fetch place details if search result had no photos
+                if (!photoRef && topResult.placeId) {
+                  const resolvedDetails = await fetchPlaceDetails(topResult.placeId);
                   if (cancelled) return;
-                  const resolvedPhotos = resolvedDetails?.photos as { name?: string }[] | undefined;
-                  const photoRef = resolvedPhotos?.[0]?.name;
-                  if (photoRef) {
-                    const result = await getPlacePhoto({ cacheKey: hint.key, photoRef });
-                    if (result?.url && !cancelled) {
-                      map.set(hint.key, result.url);
-                    }
+                  const rawPhotos = resolvedDetails?.photos as { name?: string }[] | undefined;
+                  photoRef = rawPhotos?.[0]?.name;
+                }
+
+                if (photoRef) {
+                  const result = await getPlacePhoto({ cacheKey: hint.key, photoRef });
+                  if (result?.url && !cancelled) {
+                    map.set(hint.key, result.url);
                   }
                 }
               } catch { /* name resolution failed, skip */ }
@@ -178,10 +200,10 @@ export function useActivityPhotos(
       }
     }
 
-    run();
+    run().finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placeIds.join(','), (nameOnlyHints ?? []).map((h) => h.key).join(',')]);
 
-  return photos;
+  return { photos, loading };
 }

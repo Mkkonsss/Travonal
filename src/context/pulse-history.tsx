@@ -1,9 +1,11 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import {
   PulseHistoryEntry,
   loadPulseHistory,
   savePulseHistory,
 } from '@/services/storage';
+import { useAuth } from '@/context/auth';
+import { pushPulseHistory, pullPulseHistory } from '@/services/sync';
 import {
   recordAlert as recordAlertOp,
   markSeen as markSeenOp,
@@ -40,6 +42,8 @@ const PulseHistoryContext = createContext<PulseHistoryContextType | null>(null);
 export function PulseHistoryProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<PulseHistoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadPulseHistory().then((stored) => {
@@ -48,6 +52,19 @@ export function PulseHistoryProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Pull remote pulse history on sign-in, merge by occurrenceId
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pullPulseHistory(user.id).then((remote) => {
+      if (!remote || remote.length === 0) return;
+      setEntries((prev) => {
+        const localIds = new Set(prev.map((e) => e.occurrenceId));
+        const newRemote = remote.filter((e) => !localIds.has(e.occurrenceId));
+        return newRemote.length > 0 ? [...prev, ...newRemote] : prev;
+      });
+    });
+  }, [loaded, user?.id]);
+
   // Persist whenever entries change (after initial load)
   const loadedForSave = loaded;
   useEffect(() => {
@@ -55,6 +72,19 @@ export function PulseHistoryProvider({ children }: { children: ReactNode }) {
       savePulseHistory(entries);
     }
   }, [entries, loadedForSave]);
+
+  // Push to Supabase (debounced)
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    const userId = user.id;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      pushPulseHistory(userId, entries);
+    }, 2000);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [entries, loaded, user?.id]);
 
   function recordAlert(tripId: string, alertId: string, meta: AlertMeta): string {
     let occurrenceId = '';

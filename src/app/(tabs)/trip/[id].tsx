@@ -23,7 +23,7 @@ import { TransformationReveal, SmartReplacePicker } from '@/components/transform
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
-import { Activity, PrepItem, Reservation, ReservationType, useTrips, setLastViewedTripId } from '@/context/trips';
+import { Activity, PrepItem, Reservation, ReservationType, Trip, useTrips, setLastViewedTripId } from '@/context/trips';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
 import { useMemory, type MemoryEntryType, type MemoryCategory } from '@/context/memory';
@@ -40,6 +40,7 @@ import { categoryToActivityType, type NormalizedPlace } from '@/services/place-m
 import { hasDestinationData } from '@/services/alternatives-pool';
 import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getBookingEmailAI, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI } from '@/services/ai';
 import { AddBookingModal, TYPE_SYMBOLS, TYPE_LABELS, formatBookingDate } from '@/components/add-booking-modal';
+import { ConfirmedBookingSheet } from '@/components/confirmed-booking-sheet';
 import { ChatPlaceCard, placeStyles as chatPlaceStyles } from '@/components/chat-place-card';
 import { ChatMarkdown } from '@/components/chat-markdown';
 import { useGate } from '@/hooks/use-gate';
@@ -49,6 +50,7 @@ import { normalizeActivity, mergeDayScopedActivities, generateActivityId, valida
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
 import { useTripPulse, shouldRunTripPulse } from '@/context/trip-pulse';
 import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads } from '@/services/storage';
+import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats } from '@/services/sync';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
 import { type StayBlock, type StaysData } from '@/components/stays-section';
 import { StaysStrip } from '@/components/stays-strip';
@@ -442,7 +444,7 @@ export default function TripWorkspace() {
   const { id, openEdit, day: dayParam, addActivity: addActivityParam, applyCommand, applyDay, applySearch, applyStartAfter, openPulse: openPulseParam, fromStaySearch } = useLocalSearchParams<{ id: string; openEdit?: string; day?: string; addActivity?: string; applyCommand?: string; applyDay?: string; applySearch?: string; applyStartAfter?: string; openPulse?: string; fromStaySearch?: string }>();
   const { trips, getTrip, loaded: tripsLoaded, toggleLock, setTripActivities, addActivity, removeActivity, moveActivity, replaceActivity, updateActivity, updateTrip, updateTripPrepItems, updateTripBudget, updateTripExpenses, addReservation, attachReservation, updateReservation, removeReservation } = useTrips();
   const { profile } = useProfile();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const { entries: memoryEntries, addEntry: addMemoryEntry } = useMemory();
   const theme = useTheme();
   const { showToast } = useToast();
@@ -481,6 +483,8 @@ export default function TripWorkspace() {
   const [editChatKeyboardVisible, setEditChatKeyboardVisible] = useState(false);
   const [editChatSuggestions, setEditChatSuggestions] = useState<string[]>([]);
   const editChatLoadedRef = useRef<string | null>(null);
+  const editChatSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pulseSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Thread management
   const [editThreads, setEditThreads] = useState<EditChatThread[]>([]);
   const [editActiveThreadId, setEditActiveThreadId] = useState<string | null>(null);
@@ -592,6 +596,27 @@ export default function TripWorkspace() {
     loadSeenPulse().then((ids) => {
       if (ids.length > 0) setSeenPulse(new Set(ids));
     });
+    // Pull from cloud and merge
+    if (user?.id) {
+      pullUserSettings(user.id).then((remote) => {
+        if (!remote) return;
+        if (Array.isArray(remote.dismissedPulse) && (remote.dismissedPulse as string[]).length > 0) {
+          setDismissedPulse((prev) => {
+            const merged = new Set([...prev, ...(remote.dismissedPulse as string[])]);
+            saveDismissedPulse([...merged]);
+            return merged;
+          });
+        }
+        if (Array.isArray(remote.seenPulse) && (remote.seenPulse as string[]).length > 0) {
+          setSeenPulse((prev) => {
+            const merged = new Set([...prev, ...(remote.seenPulse as string[])]);
+            saveSeenPulse([...merged]);
+            return merged;
+          });
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Trip editing
@@ -622,6 +647,9 @@ export default function TripWorkspace() {
   // Booking modal (AddBookingModal — shared with My Bookings & stay-detail)
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingEditRes, setBookingEditRes] = useState<{ res: Reservation; tripId: string } | null>(null);
+
+  // Confirmed booking bottom sheet (replaces /stay-detail navigation)
+  const [bookingSheetData, setBookingSheetData] = useState<{ res: Reservation; trip: Trip; photoUrl?: string } | null>(null);
 
   // Email forwarding for bookings
   const [bookingEmail, setBookingEmail] = useState('');
@@ -861,7 +889,7 @@ export default function TripWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip?.id, trip?.activities.length],
   );
-  const activityPhotos = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
+  const { photos: activityPhotos } = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
 
   // Weather forecast for weather-aware pulse alerts
   const [weatherForecast, setWeatherForecast] = useState<import('@/services/weather').TripWeatherForecast | null>(null);
@@ -1064,6 +1092,18 @@ export default function TripWorkspace() {
   // Resolved history entries for this trip from centralized context
   const resolvedHistoryForTrip = pulseHistory.getResolvedForTrip(currentTrip.id);
 
+  function syncPulseState(dismissed: Set<string>, seen: Set<string>) {
+    if (!user?.id) return;
+    const userId = user.id;
+    if (pulseSyncTimerRef.current) clearTimeout(pulseSyncTimerRef.current);
+    pulseSyncTimerRef.current = setTimeout(() => {
+      mergeUserSettings(userId, {
+        dismissedPulse: [...dismissed],
+        seenPulse: [...seen],
+      });
+    }, 2000);
+  }
+
   function handlePulseOpen() {
     // Mark all current active pulse alerts as "seen" (trip-scoped)
     const newSeen = new Set(seenPulse);
@@ -1072,6 +1112,7 @@ export default function TripWorkspace() {
     }
     setSeenPulse(newSeen);
     saveSeenPulse([...newSeen]);
+    syncPulseState(dismissedPulse, newSeen);
 
     // Update centralized pulse history: mark viewed alerts as "seen"
     pulseHistory.markSeen(currentTrip.id, activePulseAlerts.map((a) => a.id));
@@ -1082,6 +1123,7 @@ export default function TripWorkspace() {
     const next = new Set(dismissedPulse).add(scopedKey);
     setDismissedPulse(next);
     saveDismissedPulse([...next]);
+    syncPulseState(next, seenPulse);
 
     // Resolve in centralized pulse history
     pulseHistory.resolveAlert(currentTrip.id, alertId);
@@ -1103,6 +1145,7 @@ export default function TripWorkspace() {
     const next = new Set(dismissedPulse).add(scopedKey);
     setDismissedPulse(next);
     saveDismissedPulse([...next]);
+    syncPulseState(next, seenPulse);
 
     // Also resolve in centralized pulse history (Issue 7: dismiss = resolve in history)
     pulseHistory.resolveAlert(currentTrip.id, alertId);
@@ -2035,6 +2078,16 @@ export default function TripWorkspace() {
     return t || 'New edit';
   }
 
+  function saveAndSyncThreads(tripId: string, updated: EditChatThread[]) {
+    saveTripEditThreads(tripId, updated);
+    if (!user?.id) return;
+    const userId = user.id;
+    if (editChatSyncTimerRef.current) clearTimeout(editChatSyncTimerRef.current);
+    editChatSyncTimerRef.current = setTimeout(() => {
+      mergeTripChat(userId, tripId, updated);
+    }, 2000);
+  }
+
   function saveEditCurrentThread() {
     if (!currentTrip?.id) return;
     const threadId = editActiveThreadId || editGenerateId();
@@ -2051,7 +2104,7 @@ export default function TripWorkspace() {
       };
       const filtered = prev.filter((t) => t.id !== threadId);
       const updated = [thread, ...filtered].slice(0, 50);
-      saveTripEditThreads(currentTrip!.id, updated);
+      saveAndSyncThreads(currentTrip!.id, updated);
       return updated;
     });
     if (!editActiveThreadId) setEditActiveThreadId(threadId);
@@ -2083,7 +2136,7 @@ export default function TripWorkspace() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setEditThreads((prev) => {
       const updated = prev.filter((t) => t.id !== threadId);
-      saveTripEditThreads(currentTrip!.id, updated);
+      saveAndSyncThreads(currentTrip!.id, updated);
       return updated;
     });
     if (editActiveThreadId === threadId) {
@@ -2098,7 +2151,7 @@ export default function TripWorkspace() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setEditThreads((prev) => {
       const updated = prev.map((t) => t.id === threadId ? { ...t, pinned: !t.pinned } : t);
-      saveTripEditThreads(currentTrip!.id, updated);
+      saveAndSyncThreads(currentTrip!.id, updated);
       return updated;
     });
     setEditThreadOptionsId(null);
@@ -2118,28 +2171,48 @@ export default function TripWorkspace() {
     const newTitle = editRenameText.trim();
     setEditThreads((prev) => {
       const updated = prev.map((t) => t.id === editRenameThreadId ? { ...t, title: newTitle } : t);
-      saveTripEditThreads(currentTrip!.id, updated);
+      saveAndSyncThreads(currentTrip!.id, updated);
       return updated;
     });
     setEditRenameThreadId(null);
     setEditRenameText('');
   }
 
-  // Load threads on trip change
+  // Load threads on trip change (local first, then merge remote)
   useEffect(() => {
     if (!currentTrip?.id || editChatLoadedRef.current === currentTrip.id) return;
-    editChatLoadedRef.current = currentTrip.id;
-    loadTripEditThreads<EditChatThread[]>(currentTrip.id, []).then((savedThreads) => {
-      setEditThreads(savedThreads);
-      if (savedThreads.length > 0) {
-        const mostRecent = savedThreads[0];
-        setEditChatMessages(mostRecent.messages);
-        setEditActiveThreadId(mostRecent.id);
-      } else {
-        setEditChatMessages([]);
-        setEditActiveThreadId(null);
+    const tripId = currentTrip.id;
+    editChatLoadedRef.current = tripId;
+    loadTripEditThreads<EditChatThread[]>(tripId, []).then((savedThreads) => {
+      // Pull remote and merge by thread id
+      const applyThreads = (threads: EditChatThread[]) => {
+        setEditThreads(threads);
+        if (threads.length > 0) {
+          const mostRecent = threads[0];
+          setEditChatMessages(mostRecent.messages);
+          setEditActiveThreadId(mostRecent.id);
+        } else {
+          setEditChatMessages([]);
+          setEditActiveThreadId(null);
+        }
+      };
+      applyThreads(savedThreads);
+      if (user?.id) {
+        pullTripChats(user.id).then((remoteChats) => {
+          const remoteThreads = (remoteChats?.[tripId] as EditChatThread[] | undefined) ?? [];
+          if (remoteThreads.length === 0) return;
+          setEditThreads((prev) => {
+            const localIds = new Set(prev.map((t) => t.id));
+            const newRemote = remoteThreads.filter((t) => !localIds.has(t.id));
+            if (newRemote.length === 0) return prev;
+            const merged = [...prev, ...newRemote].sort((a, b) => b.updatedAt - a.updatedAt);
+            saveTripEditThreads(tripId, merged);
+            return merged;
+          });
+        });
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrip?.id]);
 
   // Auto-save thread after each message
@@ -2160,7 +2233,7 @@ export default function TripWorkspace() {
       };
       const filtered = prev.filter((t) => t.id !== threadId);
       const updated = [thread, ...filtered].slice(0, 50);
-      saveTripEditThreads(currentTrip!.id, updated);
+      saveAndSyncThreads(currentTrip!.id, updated);
       return updated;
     });
   }, [editChatMessages, currentTrip?.id]);
@@ -2638,11 +2711,21 @@ export default function TripWorkspace() {
       const tripData = {
         title: currentTrip.title ?? currentTrip.destination,
         destination: currentTrip.destination,
+        country: currentTrip.country,
+        emoji: currentTrip.emoji,
         startDate: currentTrip.startDate,
         endDate: currentTrip.endDate,
+        datesKnown: currentTrip.datesKnown,
+        notes: currentTrip.notes,
+        budget: currentTrip.budget,
+        budgetTotal: currentTrip.budgetTotal,
+        budgetCurrency: currentTrip.budgetCurrency,
+        travelers: currentTrip.travelers,
+        travelWith: currentTrip.travelWith,
         activities: currentTrip.activities,
         reservations: (currentTrip.reservations ?? []).filter((r) => !r.cancelled),
-        notes: currentTrip.notes,
+        prepItems: currentTrip.prepItems ?? [],
+        expenses: currentTrip.expenses ?? [],
       };
 
       const res = await fetch(edgeFnUrl, {
@@ -2660,7 +2743,6 @@ export default function TripWorkspace() {
 
       Share.share({
         message: `Check out my trip to ${currentTrip.destination}!\n${url}`,
-        url,
       });
     } catch {
       showToast('Could not create link — sharing as text');
@@ -3528,7 +3610,16 @@ export default function TripWorkspace() {
                 activityPhotos={activityPhotos}
                 onAddStay={() => setShowStaySearchModal(true)}
                 onViewStay={(activity, reservation) => {
-                  router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any);
+                  if (reservation) {
+                    setBookingSheetData({
+                      res: reservation,
+                      trip: currentTrip,
+                      photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
+                    });
+                  } else {
+                    // No booking yet — open add booking modal
+                    setShowBookingModal(true);
+                  }
                 }}
                 onBookSuggestion={(hotel) => {
                   let url = `/place-detail?name=${encodeURIComponent(hotel.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(hotel.category ?? 'stay/hotel')}&fromStaySearch=1`;
@@ -4716,7 +4807,7 @@ export default function TripWorkspace() {
                               <View style={styles.bookedCardActions}>
                                 {activity.type === 'hotel' && (
                                   <Pressable
-                                    onPress={() => router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any)}
+                                    onPress={() => setBookingSheetData({ res: linkedRes, trip: currentTrip, photoUrl: activityPhotos.get(activity.placeId ?? activity.id) })}
                                     style={[styles.bookedCardActionBtn, { backgroundColor: theme.primaryMuted }]}
                                     accessibilityRole="button"
                                     accessibilityLabel="View stay details"
@@ -4897,7 +4988,7 @@ export default function TripWorkspace() {
                           <View style={styles.bookingItemPlatforms}>
                             {activity.type === 'hotel' && (
                               <Pressable
-                                onPress={() => router.push(`/stay-detail?tripId=${currentTrip.id}&activityId=${activity.id}` as any)}
+                                onPress={() => setShowBookingModal(true)}
                                 style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
                                 accessibilityRole="button"
                                 accessibilityLabel="Add booking info"
@@ -6407,6 +6498,21 @@ export default function TripWorkspace() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Confirmed Booking Sheet */}
+      <ConfirmedBookingSheet
+        data={bookingSheetData}
+        onClose={() => setBookingSheetData(null)}
+        onEdit={(res, tripId) => {
+          setBookingEditRes({ res, tripId });
+          setShowBookingModal(true);
+        }}
+        onDelete={(res, tripId) => {
+          removeReservation(tripId, res.id);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          showToast('Booking removed', 'success');
+        }}
+      />
 
       {/* Booking Modal (shared AddBookingModal) */}
       <Modal

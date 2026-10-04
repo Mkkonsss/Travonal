@@ -347,7 +347,7 @@ async function handleGenerateTrip(payload) {
   const dietary = (profile.dietaryRestrictions ?? []).join(", ") || "none";
 
   var sysArr = [
-    "You are Toveli AI trip planner. Return ONLY valid JSON.",
+    "You are Tripseek AI trip planner. Return ONLY valid JSON.",
     "",
     "PACE: relaxed=1-2 activities+meals/day, moderate=2-4+meals, active=4-6+meals.",
     "Every day MUST have breakfast+lunch+dinner. Relaxed must still have real activities, not just meals.",
@@ -468,6 +468,10 @@ async function handleGenerateTrip(payload) {
   var paceNote = tripPace ? tripPace : pace;
   var mobility = (profile.mobilityNeeds || []).join(", ") || "none";
   var absRules = (profile.absoluteRules || []).join(", ") || "none";
+  var crowdTolerance = String(profile.crowdTolerance || "fine");
+  var foodImportance = String(profile.foodImportance || "moderate");
+  var recommendationStyle = String(profile.recommendationStyle || "few");
+  var anythingElse = String(profile.anythingElse || "");
   var travelWith = String(
     trip.travelWith || profile.travelWith || "not specified"
   );
@@ -496,6 +500,10 @@ async function handleGenerateTrip(payload) {
     "Dietary: " + dietary,
     "Mobility needs: " + mobility,
     "Absolute rules: " + absRules,
+    "Crowd tolerance: " + crowdTolerance + (crowdTolerance === "avoid" ? " — prefer quieter, off-the-beaten-path spots over famous tourist traps" : ""),
+    "Food importance: " + foodImportance + (foodImportance === "big" ? " — food is a top priority; describe dishes and food culture in detail, include more dining variety" : foodImportance === "simple" ? " — just note the place name, minimal food detail" : ""),
+    "Recommendation style: " + recommendationStyle + (recommendationStyle === "best" ? " — give the single best option with confidence, not a list" : recommendationStyle === "explore" ? " — include a broader range of options including surprises and hidden gems" : " — give 2-3 curated options"),
+    anythingElse ? "User notes: " + anythingElse : "",
     "Accommodation: " +
       String(profile.accommodationPreference || "hotel")
       + memCtx + venueCtx,
@@ -539,7 +547,7 @@ async function handleChat(payload) {
 
   const histLines = [];
   for (const m of history) {
-    const who = m.role === "user" ? "User" : "Toveli";
+    const who = m.role === "user" ? "User" : "Tripseek";
     histLines.push(who + ": " + m.content);
   }
 
@@ -633,7 +641,7 @@ async function handleChat(payload) {
 
   const sysArr = [
     // --- IDENTITY ---
-    "You are Toveli, a travel assistant.",
+    "You are Tripseek, a travel assistant.",
     "You have access to this user's profile, preferences, and trip data in the TRIP CONTEXT below.",
     "",
     // --- CORE RULES ---
@@ -657,7 +665,11 @@ async function handleChat(payload) {
     "Respect dietary restrictions/allergies — warn if a place conflicts.",
     "",
     "PREFERENCES — use to shape your recommendations, never to block a request:",
-    "Interests, crowd tolerance, budget, pace inform your picks. Food importance: 'big' = describe dishes, 'simple' = just name it.",
+    "Interests, budget, pace inform your picks.",
+    "Crowd tolerance: 'avoid' = lean toward quieter, less-touristy spots; 'fine' = no preference.",
+    "Food importance: 'big' = describe dishes and food culture in detail; 'simple' = just name the place.",
+    "Recommendation style: 'best' = give ONE confident top pick, not a list; 'few' = 2-3 curated options; 'explore' = broader range including surprises.",
+    "User notes (from their onboarding): treat as important context that should shape your suggestions.",
     "",
     // --- INTENT INTERPRETATION ---
     "Users speak casually. Understand their intent:",
@@ -1274,7 +1286,7 @@ async function handleEditTrip(payload) {
   }
 
   const sysArr = [
-    "You are Toveli smart itinerary editor.",
+    "You are Tripseek smart itinerary editor.",
     "You modify travel itineraries based on",
     "natural language.",
     "",
@@ -3024,7 +3036,7 @@ async function handlePrepareFix(payload) {
   );
 
   var sysArr = [
-    "You are Toveli AI, fixing a specific",
+    "You are Tripseek AI, fixing a specific",
     "itinerary issue.",
     "",
     "PROBLEM: " + String(alert.type) + " - " +

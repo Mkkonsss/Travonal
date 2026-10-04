@@ -6,10 +6,13 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "toveli",
+    "scheme": "tripseek",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.michaelkonshin.toveli"
+      "bundleIdentifier": "com.tripseek.app",
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -34,6 +37,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {

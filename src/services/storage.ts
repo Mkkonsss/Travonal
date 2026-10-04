@@ -346,9 +346,9 @@ export async function saveNotifDismissed(dismissed: boolean): Promise<void> {
 export async function loadTripPulseEnabled(): Promise<boolean> {
   try {
     const val = await AsyncStorage.getItem(KEYS.TRIP_PULSE_ENABLED);
-    return val !== 'false'; // default true
+    return val === 'true'; // default false
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -505,13 +505,48 @@ export async function savePulseHistory(entries: PulseHistoryEntry[]): Promise<vo
  */
 export const ALL_STORAGE_KEYS = Object.values(KEYS);
 
+// Not included in ALL_STORAGE_KEYS — survives data resets so we can detect user switches.
+const LAST_USER_ID_KEY = '@toveli/last_user_id';
+
+export async function loadLastUserId(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(LAST_USER_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveLastUserId(id: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LAST_USER_ID_KEY, id);
+  } catch {
+    // Non-critical
+  }
+}
+
 /**
  * Clears ALL persisted Tripseek data from AsyncStorage.
  * Call context reset functions separately to clear in-memory state.
  */
+const STANDALONE_BOOKINGS_KEY = 'standalone_bookings';
+
+export async function loadStandaloneBookings(): Promise<any[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STANDALONE_BOOKINGS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as any[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveStandaloneBookings(bookings: any[]): Promise<void> {
+  await AsyncStorage.setItem(STANDALONE_BOOKINGS_KEY, JSON.stringify(bookings));
+}
+
 export async function resetAllData(): Promise<void> {
   try {
-    await AsyncStorage.multiRemove(ALL_STORAGE_KEYS);
+    await AsyncStorage.multiRemove([...ALL_STORAGE_KEYS, STANDALONE_BOOKINGS_KEY]);
   } catch (e) {
     console.warn('Failed to reset all data:', e);
   }

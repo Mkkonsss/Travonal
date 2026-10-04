@@ -41,11 +41,12 @@ export function AnimatedSplashOverlay() {
 
   return animate ? (
     <Animated.View
-      entering={splashKeyframe.duration(DURATION).withCallback((finished) => {
+      entering={splashKeyframe.duration(DURATION).withCallback(() => {
         'worklet';
-        if (finished) {
-          scheduleOnRN(setVisible, false);
-        }
+        // Always hide regardless of whether animation finished cleanly or was interrupted.
+        // If we only hide when finished===true the overlay stays at opacity:0 forever,
+        // blocking touches and making every pushed screen appear transparent.
+        scheduleOnRN(setVisible, false);
       })}
       style={styles.splashOverlay}>
       {logo}
@@ -55,6 +56,9 @@ export function AnimatedSplashOverlay() {
       onLayout={() => {
         SplashScreen.hideAsync().finally(() => {
           setAnimate(true);
+          // Belt-and-suspenders: hide after max animation duration even if the
+          // worklet callback never fires (e.g. component unmounts mid-animation).
+          setTimeout(() => setVisible(false), DURATION + 200);
         });
       }}
       style={styles.splashOverlay}>

@@ -35,6 +35,8 @@ import { useInbox } from '@/context/inbox';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { loadRecentSearches, saveRecentSearches } from '@/services/storage';
+import { mergeUserSettings, pullUserSettings } from '@/services/sync';
+import { useAuth } from '@/context/auth';
 import { formatDayLabel } from '@/services/trip-helpers';
 import {
   NormalizedPlace,
@@ -706,6 +708,8 @@ export function ExploreSearchView() {
   const { profile } = useProfile();
   const { savedPlaces, savePlace, unsavePlace, isSaved } = useInbox();
   const { boards, addItemToBoard } = useBoards();
+  const { user } = useAuth();
+  const recentSearchSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [boardPickerVisible, setBoardPickerVisible] = useState(false);
   const [pendingBoardPlace, setPendingBoardPlace] = useState<NormalizedPlace | null>(null);
 
@@ -769,9 +773,34 @@ export function ExploreSearchView() {
     })();
   }, []);
 
-  // Persist recent searches
+  // Pull remote recent searches on sign-in
   useEffect(() => {
-    if (recentSearches.length > 0) saveRecentSearches(recentSearches);
+    if (!user?.id) return;
+    pullUserSettings(user.id).then((remote) => {
+      if (!remote || !Array.isArray(remote.recentSearches)) return;
+      const remoteSearches = remote.recentSearches as string[];
+      if (remoteSearches.length === 0) return;
+      setRecentSearches((local) => {
+        const merged = [...new Set([...local, ...remoteSearches])].slice(0, 20);
+        return merged.length > local.length ? merged : local;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Persist recent searches (local + cloud)
+  useEffect(() => {
+    if (recentSearches.length > 0) {
+      saveRecentSearches(recentSearches);
+      if (user?.id) {
+        const userId = user.id;
+        if (recentSearchSyncTimerRef.current) clearTimeout(recentSearchSyncTimerRef.current);
+        recentSearchSyncTimerRef.current = setTimeout(() => {
+          mergeUserSettings(userId, { recentSearches });
+        }, 2000);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentSearches]);
 
   // Default explore location: device GPS → reverse geocode → city name.
@@ -829,7 +858,7 @@ export function ExploreSearchView() {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    fetchExplorePlaces(exploreLocation, activeCategory, { interests: profile.interests })
+    fetchExplorePlaces(exploreLocation, activeCategory, { interests: profile.interests, crowdTolerance: profile.crowdTolerance })
       .then((results) => {
         if (cancelled) return;
         setPlaces(results);

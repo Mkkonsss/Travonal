@@ -1,17 +1,12 @@
 import { Tabs, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SymbolView } from 'expo-symbols';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
-import { HouseIcon, PersonIcon, SuitcaseIcon, BoardsIcon, BookingsIcon, JoinTripIcon } from '@/components/icons';
+import { HouseIcon, PersonIcon, SuitcaseIcon, BoardsIcon, BookingsIcon } from '@/components/icons';
 import { useTheme } from '@/hooks/use-theme';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
-
-const TAB_SYMBOLS: Record<string, [string, string]> = {
-  chat: ['message', 'message'],
-  explore: ['magnifyingglass', 'magnifyingglass'],
-};
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const theme = useTheme();
@@ -54,13 +49,37 @@ export default function TabLayout() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [showPlusSheet, setShowPlusSheet] = useState(false);
+  const { height: screenHeight } = useWindowDimensions();
+  const [sheetVisible, setSheetVisible] = useState(false);
+
+  // Animation values
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetTranslateY = useRef(new Animated.Value(screenHeight)).current;
 
   const tabHeight = Platform.OS === 'ios' ? 88 : 68;
 
+  function openSheet() {
+    setSheetVisible(true);
+    Animated.parallel([
+      Animated.timing(backdropOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.timing(sheetTranslateY, { toValue: 0, duration: 260, useNativeDriver: true }),
+    ]).start();
+  }
+
+  function closeSheet(onDone?: () => void) {
+    Animated.parallel([
+      Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(sheetTranslateY, { toValue: screenHeight, duration: 220, useNativeDriver: true }),
+    ]).start(() => {
+      setSheetVisible(false);
+      onDone?.();
+    });
+  }
+
   function handlePlusAction(route: string) {
-    setShowPlusSheet(false);
-    router.push(route as any);
+    // Close the sheet and navigate only after the animation completes —
+    // everything stays in the same UIWindow so there's no Modal/push conflict.
+    closeSheet(() => router.push(route as any));
   }
 
   return (
@@ -113,7 +132,7 @@ export default function TabLayout() {
           listeners={{
             tabPress: (e) => {
               e.preventDefault();
-              setShowPlusSheet(true);
+              openSheet();
             },
           }}
         />
@@ -145,14 +164,19 @@ export default function TabLayout() {
         />
       </Tabs>
 
-      {/* Plus button action sheet */}
-      <Modal visible={showPlusSheet} transparent animationType="fade" onRequestClose={() => setShowPlusSheet(false)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setShowPlusSheet(false)} accessibilityRole="button" accessibilityLabel="Dismiss">
-          <Pressable
-            style={[styles.sheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 }]}
-            onPress={(e) => e.stopPropagation()}
-            accessibilityRole="button"
-            accessibilityLabel="Action sheet"
+      {/* Plus button action sheet — rendered in-tree (same UIWindow) to avoid
+          iOS Modal UIWindow / navigation push timing conflicts */}
+      {sheetVisible && (
+        <>
+          <Animated.View style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => closeSheet()} accessibilityRole="button" accessibilityLabel="Dismiss" />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.sheet,
+              { backgroundColor: theme.background, paddingBottom: insets.bottom + 20 },
+              { transform: [{ translateY: sheetTranslateY }] },
+            ]}
           >
             <View style={[styles.sheetHandle, { backgroundColor: theme.border }]} />
             <ThemedText type="subtitle" style={styles.sheetTitle}>What would you like to do?</ThemedText>
@@ -178,16 +202,16 @@ export default function TabLayout() {
             ))}
 
             <Pressable
-              onPress={() => setShowPlusSheet(false)}
+              onPress={() => closeSheet()}
               style={[styles.sheetCancel, { backgroundColor: theme.backgroundElement }]}
               accessibilityRole="button"
               accessibilityLabel="Cancel"
             >
               <ThemedText style={[styles.sheetCancelText, { color: theme.text }]}>Cancel</ThemedText>
             </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </Animated.View>
+        </>
+      )}
     </>
   );
 }
@@ -206,15 +230,20 @@ const styles = StyleSheet.create({
   },
   // Action sheet
   sheetBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+    zIndex: 100,
   },
   sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopLeftRadius: Radius.sheet,
     borderTopRightRadius: Radius.sheet,
     paddingTop: 12,
     paddingHorizontal: Spacing.four,
+    zIndex: 101,
   },
   sheetHandle: {
     width: 36,

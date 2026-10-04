@@ -8,7 +8,8 @@
  * SendGrid sends a multipart/form-data POST with fields:
  *   from, to, subject, text, html, envelope, ...
  *
- * Recipient format: bookings+{user_id}@toveli.com
+ * All users forward to: bookings@tripseekapp.com
+ * The user is identified by matching the sender's email to auth.users.
  *
  * Environment variables:
  *   ANTHROPIC_API_KEY, GOOGLE_PLACES_API_KEY,
@@ -31,28 +32,19 @@ const MODEL = "claude-sonnet-4-6";
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Extract user_id from the recipient email address.
- * Expected format: bookings+{user_id}@toveli.com
- * Also handles "Name <bookings+uuid@toveli.com>" format.
- * Returns null if the format doesn't match.
+ * Extract the sender's bare email address from the `from` field.
+ * Handles both "Name <email@example.com>" and plain "email@example.com" formats.
+ * Returns null if no valid email is found.
  */
-function extractUserId(toField: string): string | null {
-  if (!toField) return null;
-
-  // SendGrid may include multiple recipients separated by commas.
-  // Also may wrap in angle brackets: "Name <email>"
-  const addresses = toField.split(",");
-  for (const addr of addresses) {
-    const trimmed = addr.trim();
-    // Extract the bare email from "Name <email>" or just "email"
-    const angleMatch = trimmed.match(/<([^>]+)>/);
-    const email = angleMatch ? angleMatch[1] : trimmed;
-
-    const match = email.match(/^bookings\+([a-f0-9-]{36})@toveli\.com$/i);
-    if (match) {
-      return match[1];
-    }
-  }
+function extractSenderEmail(fromField: string): string | null {
+  if (!fromField) return null;
+  const trimmed = fromField.trim();
+  // "Name <email>" format
+  const angleMatch = trimmed.match(/<([^>]+)>/);
+  if (angleMatch) return angleMatch[1].toLowerCase().trim();
+  // Plain email
+  const plain = trimmed.toLowerCase().trim();
+  if (plain.includes("@")) return plain;
   return null;
 }
 
@@ -79,6 +71,59 @@ function stripHtml(html: string): string {
     // Collapse multiple blank lines
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Convert an ArrayBuffer to a base64 string (chunked to avoid stack overflow).
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Parse an ICS (iCalendar) file and return a human-readable text summary
+ * of all VEVENT blocks found. Handles folded lines per RFC 5545.
+ */
+function parseICS(icsText: string): string {
+  // Unfold lines (lines that start with space/tab are continuations)
+  const unfolded = icsText.replace(/\r?\n[ \t]/g, '');
+  const lines = unfolded.split(/\r?\n/);
+
+  const events: string[] = [];
+  let inEvent = false;
+  let current: Record<string, string> = {};
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === 'BEGIN:VEVENT') { inEvent = true; current = {}; continue; }
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+      const parts: string[] = [];
+      if (current['SUMMARY'])     parts.push(`Event: ${current['SUMMARY']}`);
+      if (current['DTSTART'])     parts.push(`Start: ${current['DTSTART']}`);
+      if (current['DTEND'])       parts.push(`End: ${current['DTEND']}`);
+      if (current['LOCATION'])    parts.push(`Location: ${current['LOCATION']}`);
+      if (current['DESCRIPTION']) parts.push(`Description: ${current['DESCRIPTION'].replace(/\\n/g, '\n').replace(/\\,/g, ',')}`);
+      if (parts.length > 0) events.push(parts.join('\n'));
+      continue;
+    }
+    if (!inEvent) continue;
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;
+    // Strip parameters (e.g. DTSTART;TZID=America/New_York)
+    const key = line.slice(0, colon).split(';')[0].toUpperCase();
+    const value = line.slice(colon + 1);
+    current[key] = value;
+  }
+
+  if (events.length === 0) return '';
+  return '\n\n[Calendar attachment]\n' + events.join('\n---\n');
 }
 
 /**
@@ -205,6 +250,11 @@ async function verifyWithGooglePlaces(result: Record<string, unknown>, gpKey: st
   if (!gpKey || !result.found || (result.confidence != null && (result.confidence as number) < 50)) {
     return result;
   }
+  // Flights and trains are not searchable in Google Places — skip verification
+  const resType = String(result.reservationType || '');
+  if (resType === 'flight' || resType === 'train') {
+    return result;
+  }
   const query = String(result.name || "") + " " + String(result.location || "");
   const places = await fetchGooglePlaces(query, gpKey);
   if (places.length === 0) return result;
@@ -261,31 +311,82 @@ async function verifyWithGooglePlaces(result: Record<string, unknown>, gpKey: st
   return result;
 }
 
+/**
+ * Call Claude with PDF documents + text prompt. Used when attachments include PDFs.
+ */
+async function callClaudeWithDocuments(
+  client: Anthropic,
+  system: string,
+  userText: string,
+  pdfs: string[], // base64-encoded PDF data
+  maxTokens: number,
+  timeoutMs = 60000,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const content: Anthropic.MessageParam['content'] = [
+      ...pdfs.map((data) => ({
+        type: 'document' as const,
+        source: { type: 'base64' as const, media_type: 'application/pdf' as const, data },
+      })),
+      { type: 'text' as const, text: userText },
+    ];
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content }],
+    }, { signal: controller.signal });
+    clearTimeout(timer);
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    return extractJSON(text);
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 // ─── Booking extraction (same prompt/schema as ai-toveli handleImportBooking) ─
 
 async function extractBookingFromEmail(
   anthropicClient: Anthropic,
   emailText: string,
   subject: string,
+  pdfAttachments: string[] = [],
 ) {
   const bookingSchema = [
     "{",
     '  "found": true,',
     '  "confidence": 90,',
-    '  "name": "Exact place/business name",',
+    '  "name": "Place/business/airline name e.g. Grand Hyatt or Delta Air Lines",',
     '  "location": "City, Country",',
     '  "country": "Country name",',
-    '  "category": "restaurant|attraction|hotel|cafe|museum|park|other",',
+    '  "category": "restaurant|attraction|hotel|cafe|museum|park|transport|other",',
     '  "description": "1-2 specific factual sentences.",',
     '  "notes": "Practical tip if available.",',
     '  "emoji": "single emoji",',
-    '  "confirmationNumber": "booking confirmation code or null",',
-    '  "bookingDate": "YYYY-MM-DD check-in/arrival date or null",',
-    '  "checkoutDate": "YYYY-MM-DD check-out/departure date or null",',
-    '  "bookingTime": "HH:MM reservation time or null",',
+    '  "confirmationNumber": "booking/reservation/reference code or null",',
+    '  "bookingDate": "YYYY-MM-DD departure/check-in/reservation date or null",',
+    '  "checkoutDate": "YYYY-MM-DD arrival/check-out date or null",',
+    '  "bookingTime": "HH:MM departure/reservation time or null",',
+    '  "arrivalTime": "HH:MM arrival time (flights/trains) or null",',
     '  "price": 0,',
     '  "currency": "USD or relevant currency code or null",',
-    '  "reservationType": "hotel|flight|restaurant|train|activity|other"',
+    '  "reservationType": "hotel|flight|restaurant|train|activity|other",',
+    '  "flightNumber": "flight or train number e.g. F8 1600 or null",',
+    '  "origin": "departure airport/station CODE - City e.g. YYZ - Toronto or null",',
+    '  "destination": "arrival airport/station CODE - City e.g. FLL - Fort Lauderdale or null",',
+    '  "seat": "seat number or null",',
+    '  "boardingTime": "HH:MM boarding/gate time or null",',
+    '  "passengerName": "passenger or guest full name or null",',
+    '  "baggage": "baggage allowance description e.g. 1 x personal item or null",',
+    '  "roomType": "hotel room/unit type or null",',
+    '  "checkInTime": "HH:MM hotel check-in time or null",',
+    '  "checkOutTime": "HH:MM hotel check-out time or null",',
+    '  "guestCount": null,',
+    '  "cancellationPolicy": "short cancellation policy description or null",',
+    '  "duration": "activity duration e.g. 3 hours or null"',
     "}",
   ].join("\n");
 
@@ -307,21 +408,27 @@ async function extractBookingFromEmail(
     "",
     "RULES:",
     "- Return ONLY valid JSON",
-    "- Be honest - never invent information",
-    "- Extract the place/business name and location",
-    "- Extract booking details when visible: " +
-      "confirmation number, dates, times, price",
-    "- Set null for any booking field you cannot find",
+    "- Be honest — never invent information; set null for anything not found",
+    "- For 'name': hotel/restaurant/venue name for stays and dining; " +
+      "airline name for flights (e.g. 'Delta Air Lines'); train operator for trains",
+    "- FLIGHTS: name=airline, origin='CODE - City' (departure), " +
+      "destination='CODE - City' (arrival), bookingDate=departure date, " +
+      "checkoutDate=arrival date if overnight, bookingTime=departure HH:MM, " +
+      "arrivalTime=arrival HH:MM, flightNumber, seat, boardingTime, " +
+      "passengerName, baggage, reservationType='flight'",
+    "- TRAINS: same pattern as flights with operator name, reservationType='train'",
+    "- HOTELS: bookingDate=check-in, checkoutDate=check-out, " +
+      "checkInTime=HH:MM earliest check-in, checkOutTime=HH:MM latest check-out, " +
+      "roomType, guestCount=number of guests, cancellationPolicy",
+    "- RESTAURANTS: bookingDate=reservation date, bookingTime=reservation time, " +
+      "guestCount=party size, cancellationPolicy",
+    "- ACTIVITIES: bookingDate=activity date, bookingTime=start time, " +
+      "duration='X hours', guestCount=participants, cancellationPolicy; " +
+      "meeting point goes in location/address",
     "- Set price to 0 if not found",
-    "- For hotels: bookingDate = check-in, " +
-      "checkoutDate = check-out",
-    "- For flights: bookingDate = departure date",
-    "- For restaurants: bookingDate = reservation date, " +
-      "bookingTime = reservation time",
-    "- reservationType should match the type of booking",
-    "- If this is NOT a booking confirmation (just marketing " +
-      "or a non-booking email), return found: false",
-    "- If confidence is below 60%, return found: false",
+    "- reservationType must match: hotel|flight|restaurant|train|activity|other",
+    "- If this is NOT a booking confirmation return found: false",
+    "- If confidence is below 60% return found: false",
   ].join("\n");
 
   const userPrompt = [
@@ -336,7 +443,10 @@ async function extractBookingFromEmail(
     bookingSchema,
   ].join("\n");
 
-  return await callClaude(anthropicClient, systemPrompt, userPrompt, 512);
+  if (pdfAttachments.length > 0) {
+    return await callClaudeWithDocuments(anthropicClient, systemPrompt, userPrompt, pdfAttachments, 1024);
+  }
+  return await callClaude(anthropicClient, systemPrompt, userPrompt, 1024);
 }
 
 // ─── Main handler ───────────────────────────────────────────────────────────
@@ -400,11 +510,10 @@ async function processInboundEmail(req: Request) {
 
   console.log("[inbound-booking] Received email from:", from, "subject:", subject);
 
-  // ── Extract user_id from recipient ──
-  // Try envelope first (more reliable), then fall back to the to header
-  let userId = extractUserId(envelopeTo) || extractUserId(to);
-  if (!userId) {
-    console.error("[inbound-booking] Could not extract user_id from recipient:", to, "envelope:", envelopeTo);
+  // ── Look up user by sender email ──
+  const senderEmail = extractSenderEmail(from);
+  if (!senderEmail) {
+    console.error("[inbound-booking] Could not extract sender email from:", from);
     return;
   }
 
@@ -413,36 +522,77 @@ async function processInboundEmail(req: Request) {
   if (!emailText && htmlBody) {
     emailText = stripHtml(htmlBody);
   }
-  if (!emailText) {
-    console.error("[inbound-booking] No email body content found");
+
+  // ── Process attachments ──
+  const pdfAttachments: string[] = [];
+  const attachmentInfoRaw = formData.get('attachment-info');
+  if (attachmentInfoRaw) {
+    let attachmentInfo: Record<string, unknown> = {};
+    try { attachmentInfo = JSON.parse(String(attachmentInfoRaw)); } catch (_e) {}
+
+    for (const [key, info] of Object.entries(attachmentInfo)) {
+      const file = formData.get(key);
+      if (!(file instanceof File)) continue;
+
+      const mimeType = ((info as Record<string, string>).type ?? '').toLowerCase();
+      const filename = ((info as Record<string, string>).filename ?? '').toLowerCase();
+
+      if (mimeType === 'text/calendar' || filename.endsWith('.ics')) {
+        try {
+          const icsText = await file.text();
+          emailText += parseICS(icsText);
+          console.log('[inbound-booking] Parsed ICS attachment:', filename);
+        } catch (_e) { /* non-fatal */ }
+
+      } else if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) {
+        try {
+          const buffer = await file.arrayBuffer();
+          pdfAttachments.push(arrayBufferToBase64(buffer));
+          console.log('[inbound-booking] Added PDF attachment:', filename);
+        } catch (_e) { /* non-fatal */ }
+
+      } else if (mimeType === 'text/html' || filename.endsWith('.html') || filename.endsWith('.htm')) {
+        try {
+          const htmlText = await file.text();
+          emailText += '\n\n[HTML attachment]\n' + stripHtml(htmlText);
+        } catch (_e) { /* non-fatal */ }
+      }
+    }
+  }
+
+  // Need at least some content to parse
+  if (!emailText && pdfAttachments.length === 0) {
+    console.error("[inbound-booking] No email body or attachments found");
     return;
   }
 
-  // Truncate extremely long emails to avoid token limits
+  // Truncate extremely long email text to avoid token limits (PDFs go via document API, not truncated)
   const MAX_EMAIL_LENGTH = 15000;
   if (emailText.length > MAX_EMAIL_LENGTH) {
     emailText = emailText.slice(0, MAX_EMAIL_LENGTH) + "\n\n[... email truncated ...]";
   }
 
-  // ── Verify user exists in Supabase ──
+  // ── Look up user in auth by sender email ──
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  const { data: userExists, error: userError } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-
+  const { data: userList, error: userError } = await supabase.auth.admin.listUsers();
   if (userError) {
-    console.error("[inbound-booking] Error checking user:", userError.message);
+    console.error("[inbound-booking] Error listing users:", userError.message);
     return;
   }
-  if (!userExists) {
-    console.error("[inbound-booking] User not found:", userId);
+
+  const matchedUser = userList.users.find(
+    (u) => u.email?.toLowerCase() === senderEmail
+  );
+
+  if (!matchedUser) {
+    console.error("[inbound-booking] No user found with email:", senderEmail);
     return;
   }
+
+  const userId = matchedUser.id;
 
   // ── Extract booking details with Claude ──
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
@@ -454,7 +604,7 @@ async function processInboundEmail(req: Request) {
 
   let bookingData: Record<string, unknown>;
   try {
-    bookingData = await extractBookingFromEmail(anthropicClient, emailText, subject);
+    bookingData = await extractBookingFromEmail(anthropicClient, emailText, subject, pdfAttachments);
   } catch (err) {
     console.error("[inbound-booking] AI extraction failed:", err instanceof Error ? err.message : err);
     return;

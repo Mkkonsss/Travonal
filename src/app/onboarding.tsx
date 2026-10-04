@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import {
   Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -44,15 +47,10 @@ type Phase = 'welcome' | 'survey' | 'reveal';
 // ---------- survey steps ----------
 const STEPS = [
   'interests',
-  'pace',
-  'planningStyle',
   'decisionPriorities',
   'crowdTolerance',
-  'foodImportance',
   'dietary',
   'accessibility',
-  'spendingPriorities',
-  'recommendationStyle',
   'features',
 ] as const;
 
@@ -60,40 +58,29 @@ type Step = (typeof STEPS)[number];
 
 const STEP_TITLES: Record<Step, string> = {
   interests: 'What are you into when you travel?',
-  pace: 'What does your ideal travel day feel like?',
-  planningStyle: 'How do you like your trips planned?',
   decisionPriorities: 'What makes somewhere worth choosing?',
   crowdTolerance: 'How do you feel about busy, touristy places?',
-  foodImportance: 'How important is food when you travel?',
   dietary: 'Anything we should keep in mind about food?',
-  accessibility: 'Is there anything Tripseek should consider when recommending places or planning your day?',
-  spendingPriorities: 'Where are you happiest spending a little more?',
-  recommendationStyle: 'How do you like recommendations?',
+  accessibility: 'Any accessibility needs we should know about?',
   features: 'Your smart travel assistant',
 };
 
 const STEP_SUBTITLES: Record<Step, string> = {
   interests: 'Choose at least 3. Add your own too.',
-  pace: 'This becomes your default pace — you can still change it for individual trips.',
-  planningStyle: 'This influences how much structure Tripseek surfaces throughout the app.',
   decisionPriorities: 'Choose 1 to 3.',
   crowdTolerance: '',
-  foodImportance: '',
   dietary: 'Select any that apply.',
   accessibility: 'Select any that apply.',
-  spendingPriorities: 'Choose up to 2. This tells us where you tend to see value — not your budget.',
-  recommendationStyle: '',
   features: 'Two features help you get the most from Tripseek.',
 };
 
 // Required steps: Next disabled until valid, no skip button
 // Optional steps: Next disabled until selection made, skip button provided
 const REQUIRED_STEPS = new Set<Step>([
-  'interests', 'pace', 'planningStyle',
-  'decisionPriorities', 'recommendationStyle', 'features',
+  'interests', 'decisionPriorities', 'features',
 ]);
 const OPTIONAL_STEPS = new Set<Step>([
-  'crowdTolerance', 'foodImportance', 'dietary', 'accessibility', 'spendingPriorities',
+  'crowdTolerance', 'dietary', 'accessibility',
 ]);
 
 // ---------- option data ----------
@@ -162,8 +149,6 @@ const DIETARY_OPTIONS = [
   '🥜  Nut-free',
   '🦐  Shellfish-free',
   '🚫  No pork',
-  '➕  Other',
-  '👌  Nothing in particular',
 ];
 
 const ACCESSIBILITY_OPTIONS = [
@@ -175,8 +160,6 @@ const ACCESSIBILITY_OPTIONS = [
   '👂  Hearing accessibility',
   '👁️  Vision accessibility',
   '🌿  Sensory-friendly environments',
-  '➕  Other',
-  '👌  Nothing in particular',
 ];
 
 const SPENDING_OPTIONS = [
@@ -294,16 +277,6 @@ export default function OnboardingScreen() {
   const uc1Float = useAnimatedStyle(() => ({ transform: [{ translateY: uc1Y.value }] }));
   const uc2Float = useAnimatedStyle(() => ({ transform: [{ translateY: uc2Y.value }] }));
 
-  // Pre-decode slide images the moment the component mounts so they're ready
-  // before the user sees the first slide.
-  useEffect(() => {
-    ExpoImage.prefetch([
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('@/assets/images/phone image.png'),
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      require('@/assets/images/third slide.png'),
-    ]);
-  }, []);
 
   useEffect(() => {
     if (phase !== 'welcome') return;
@@ -387,12 +360,7 @@ export default function OnboardingScreen() {
     switch (currentStep) {
       case 'interests': return interests.length >= 3;
       case 'decisionPriorities': return decisionPriorities.length >= 1;
-      // Optional: Next active only if user made a selection; otherwise use Skip
-      case 'crowdTolerance': return crowdTouched;
-      case 'foodImportance': return foodTouched;
-      case 'dietary': return dietary.length > 0;
-      case 'accessibility': return accessibility.length > 0;
-      case 'spendingPriorities': return spendingPriorities.length > 0;
+      // Optional steps are always advanceable
       default: return true;
     }
   }
@@ -400,16 +368,11 @@ export default function OnboardingScreen() {
   function getProfileUpdates(): Partial<TravelProfile> {
     return {
       interests,
-      pace,
-      flexibility: planningStyle,
       decisionPriorities,
       crowdTolerance: crowdTouched ? crowdTolerance : undefined,
-      foodImportance: foodTouched ? foodImportance : undefined,
       dietaryRestrictions: dietary,
       dietaryNote: dietaryNote.trim() || undefined,
       mobilityNeeds: accessibility,
-      spendingPriorities,
-      recommendationStyle,
     };
   }
 
@@ -424,7 +387,7 @@ export default function OnboardingScreen() {
       if (tripPulseEnabled) {
         requestNotificationPermission();
       }
-      setPhase('reveal');
+      handleFinish();
     }
   }
 
@@ -437,9 +400,11 @@ export default function OnboardingScreen() {
   // ========== WELCOME ==========
   if (phase === 'welcome') {
     const slideHeadlines = [
-      { small: 'Your trips,', big: 'made\neffortless.' },
-      { small: 'Change', big: 'anything\nwith AI.' },
-      { small: 'Discover', big: "places you'll\nlove." },
+      'Your whole trip\nlives here.',
+      'All your bookings\nautomatically organized.',
+      'Explore and save\nreal places nearby.',
+      'Catch problems before\nthey ruin your trip.',
+      'Share your trip and\nplan it together.',
     ];
     const headline = slideHeadlines[activeSlide];
 
@@ -449,10 +414,16 @@ export default function OnboardingScreen() {
 
         <Animated.View
           entering={FadeIn.delay(200).duration(600)}
-          style={[styles.welcomeTopBar, { paddingTop: insets.top + 16 }]}
+          style={[styles.welcomeLogoBar, { paddingTop: insets.top + 16 }]}
         >
-          <Text style={styles.welcomeWordmark}>✦  TOVELI</Text>
+          <ExpoImage
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('@/assets/images/logo-dark.png')}
+            style={{ width: 120, height: 32 }}
+            contentFit="contain"
+          />
         </Animated.View>
+
 
         <View
           style={styles.welcomeHero}
@@ -467,38 +438,50 @@ export default function OnboardingScreen() {
               }}
               style={{ flex: 1 }}
             >
-              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={[wStyles.slideImage, uc1Float]} entering={FadeIn.duration(400)}>
-                  <ExpoImage
-                    // eslint-disable-next-line @typescript-eslint/no-require-imports
-                    source={require('@/assets/images/phone image.png')}
-                    style={{ width: '100%', height: '100%' }}
-                    contentFit="contain"
-                  />
-                </Animated.View>
+              {/* Slide 1 */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/onboarding-slide-1.png')}
+                  style={{ width: '95%', height: '95%' }}
+                  contentFit="contain"
+                />
               </View>
-
-              <View style={{ width: SCREEN_WIDTH, height: heroHeight, paddingHorizontal: 24, justifyContent: 'center', gap: 12 }}>
-                <Animated.View style={[wStyles.bubbleUser, uc1Float, { alignSelf: 'flex-end' }]}>
-                  <Text style={wStyles.bubbleSenderLabel}>YOU</Text>
-                  <Text style={wStyles.bubbleUserText}>"Make day 2 more budget-friendly"</Text>
-                </Animated.View>
-                <Animated.View style={[wStyles.bubbleAI, uc2Float, { alignSelf: 'flex-start' }]}>
-                  <Text style={wStyles.bubbleAILabel}>✦  TOVELI</Text>
-                  <Text style={wStyles.bubbleAIText}>Done! Swapped the restaurant for a local street food market. Saving you ~€40.</Text>
-                  <View style={wStyles.bubbleAITag}><Text style={wStyles.bubbleAITagText}>Day 2 updated ✓</Text></View>
-                </Animated.View>
+              {/* Slide 2 */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/onboarding-slide-2.png')}
+                  style={{ width: '95%', height: '95%', transform: [{ rotate: '10deg' }] }}
+                  contentFit="contain"
+                />
               </View>
-
-              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={[wStyles.slideImage, uc2Float]} entering={FadeIn.delay(100).duration(400)}>
-                  <ExpoImage
-                    // eslint-disable-next-line @typescript-eslint/no-require-imports
-                    source={require('@/assets/images/third slide.png')}
-                    style={{ width: '100%', height: '100%' }}
-                    contentFit="contain"
-                  />
-                </Animated.View>
+              {/* Slide 3 */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/onboarding-slide-3.png')}
+                  style={{ width: '75%', height: '75%' }}
+                  contentFit="contain"
+                />
+              </View>
+              {/* Slide 4 */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/onboarding-slide-4.png')}
+                  style={{ width: '95%', height: '95%' }}
+                  contentFit="contain"
+                />
+              </View>
+              {/* Slide 5 */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/onboarding-slide-5.png')}
+                  style={{ width: '95%', height: '95%' }}
+                  contentFit="contain"
+                />
               </View>
             </ScrollView>
           )}
@@ -509,14 +492,13 @@ export default function OnboardingScreen() {
           style={[styles.welcomeBottom, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}
         >
           <View style={styles.slideDotRow}>
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3, 4].map((i) => (
               <View key={i} style={[styles.slideDot, i === activeSlide && styles.slideDotActive]} />
             ))}
           </View>
 
           <Animated.View key={activeSlide} entering={FadeInDown.duration(300)} style={styles.welcomeHeadlineBlock}>
-            <Text style={styles.welcomeHeadlineSmall}>{headline.small}</Text>
-            <Text style={styles.welcomeHeadlineBig}>{headline.big}</Text>
+            <Text style={styles.welcomeHeadlineBig}>{headline}</Text>
           </Animated.View>
 
           <View style={styles.welcomeButtons}>
@@ -551,67 +533,56 @@ export default function OnboardingScreen() {
     const realDietary = (merged.dietaryRestrictions ?? []).filter((d) => !d.includes('Nothing'));
     const realAccessibility = (merged.mobilityNeeds ?? []).filter((a) => !a.includes('Nothing'));
 
-    const paceEmoji = ({ relaxed: '🌿', moderate: '⚖️', active: '🏃' } as Record<string, string>)[merged.pace] ?? '⚖️';
-    const paceLabel = ({ relaxed: 'Relaxed', moderate: 'Balanced', active: 'Full throttle' } as Record<string, string>)[merged.pace] ?? 'Balanced';
-    const planEmoji = ({ planned: '📋', some: '🔄', freeflow: '🎲' } as Record<string, string>)[merged.flexibility ?? 'some'] ?? '🔄';
-    const planLabel = ({ planned: 'Mapped out', some: 'Flexible', freeflow: 'Spontaneous' } as Record<string, string>)[merged.flexibility ?? 'some'] ?? 'Flexible';
+    const crowdDisplayLabel = crowdTouched
+      ? ({ fine: 'Fine with crowds', moderate: 'Crowds in moderation', avoid: 'Prefers quieter spots' } as Record<string, string>)[crowdTolerance] ?? null
+      : null;
 
-    const foodLabel = ({ big: 'Central to every trip', care: 'Matters a lot', simple: 'Keep it simple' } as Record<string, string>)[merged.foodImportance ?? 'care'] ?? 'Matters a lot';
-    const crowdLabel = ({ fine: "Fine with it", moderate: 'In moderation', avoid: 'Rather avoid' } as Record<string, string>)[merged.crowdTolerance ?? 'moderate'] ?? 'In moderation';
-    const recLabel = ({ best: 'Just the best one', few: 'A few great picks', explore: 'Let me explore' } as Record<string, string>)[merged.recommendationStyle ?? 'few'] ?? 'A few great picks';
+    const INTEREST_LIMIT = 8;
+    const visibleInterests = merged.interests.slice(0, INTEREST_LIMIT);
+    const overflowCount = merged.interests.length - INTEREST_LIMIT;
+
+    const featuresOn: string[] = [];
+    if (tripPulseEnabled) featuresOn.push('✈️  Trip Alerts');
+    if (travelMemoryEnabled) featuresOn.push('🧠  Travel Memory');
+    const featuresOff: string[] = [];
+    if (!tripPulseEnabled) featuresOff.push('Trip Alerts');
+    if (!travelMemoryEnabled) featuresOff.push('Travel Memory');
+
+    const hasSummaryContent = (merged.decisionPriorities ?? []).length > 0;
 
     return (
       <ThemedView style={styles.container}>
         <ScrollView
           contentContainerStyle={[
             revealStyles.scrollContent,
-            { paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 16) + 100 },
+            { paddingTop: insets.top + 32, paddingBottom: Math.max(insets.bottom, 16) + 100 },
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
+          {/* ── 1. Header ── */}
           <Animated.View entering={FadeInDown.duration(350)}>
             <ThemedText style={[revealStyles.revealEyebrow, { color: theme.textSecondary }]}>
               ✦  All done
             </ThemedText>
-            <ThemedText style={revealStyles.revealTitle}>{"Here's what\nwe've learned."}</ThemedText>
+            <ThemedText style={revealStyles.revealTitle}>{"Your profile\nis ready."}</ThemedText>
           </Animated.View>
 
-          {/* How you travel */}
-          <Animated.View entering={FadeInDown.delay(120).duration(350)}>
-            <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-              How you travel
-            </ThemedText>
-            <View style={revealStyles.statsGrid}>
-              <View style={[revealStyles.statBox, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText style={revealStyles.statEmoji}>{paceEmoji}</ThemedText>
-                <ThemedText style={revealStyles.statValue}>{paceLabel}</ThemedText>
-                <ThemedText style={[revealStyles.statKey, { color: theme.textSecondary }]}>Pace</ThemedText>
-              </View>
-              <View style={[revealStyles.statBox, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText style={revealStyles.statEmoji}>{planEmoji}</ThemedText>
-                <ThemedText style={revealStyles.statValue}>{planLabel}</ThemedText>
-                <ThemedText style={[revealStyles.statKey, { color: theme.textSecondary }]}>Planning</ThemedText>
-              </View>
-            </View>
-          </Animated.View>
-
-          {/* Interests */}
-          {merged.interests.length > 0 && (
-            <Animated.View entering={FadeInDown.delay(300).duration(350)}>
+          {/* ── 2. Interests ── */}
+          {visibleInterests.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(100).duration(350)}>
               <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-                {"You're into"}
+                You're into
               </ThemedText>
               <View style={revealStyles.chipRow}>
-                {merged.interests.slice(0, 9).map((item) => (
+                {visibleInterests.map((item) => (
                   <View key={item} style={[revealStyles.revealChip, { backgroundColor: theme.primaryMuted, borderColor: theme.border }]}>
                     <ThemedText style={[revealStyles.revealChipText, { color: theme.primary }]}>{item}</ThemedText>
                   </View>
                 ))}
-                {merged.interests.length > 9 && (
+                {overflowCount > 0 && (
                   <View style={[revealStyles.revealChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
                     <ThemedText style={[revealStyles.revealChipText, { color: theme.textSecondary }]}>
-                      +{merged.interests.length - 9} more
+                      +{overflowCount} more
                     </ThemedText>
                   </View>
                 )}
@@ -619,107 +590,95 @@ export default function OnboardingScreen() {
             </Animated.View>
           )}
 
-          {/* Decision priorities */}
-          {(merged.decisionPriorities ?? []).length > 0 && (
-            <Animated.View entering={FadeInDown.delay(360).duration(350)}>
-              <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-                What matters most
-              </ThemedText>
-              <View style={revealStyles.chipRow}>
-                {(merged.decisionPriorities ?? []).map((item) => (
-                  <View key={item} style={[revealStyles.revealChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
+          {/* ── 3. Summary card ── */}
+          {hasSummaryContent && (
+            <Animated.View entering={FadeInDown.delay(200).duration(350)}>
+              <View style={[revealStyles.summaryCard, { borderColor: theme.border }]}>
+
+                {/* Decision priorities */}
+                {(merged.decisionPriorities ?? []).length > 0 && (
+                  <View style={revealStyles.summaryRow}>
+                    <ThemedText style={[revealStyles.summaryKey, { color: theme.textSecondary }]}>What matters</ThemedText>
+                    <View style={revealStyles.summaryChips}>
+                      {(merged.decisionPriorities ?? []).map((item) => (
+                        <View key={item} style={[revealStyles.summaryChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                          <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                ))}
+                )}
+
+                {/* Crowd tolerance */}
+                {crowdDisplayLabel != null && (
+                  <>
+                    <View style={[revealStyles.summaryDivider, { backgroundColor: theme.border }]} />
+                    <View style={revealStyles.summaryRow}>
+                      <ThemedText style={[revealStyles.summaryKey, { color: theme.textSecondary }]}>Crowds</ThemedText>
+                      <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{crowdDisplayLabel}</ThemedText>
+                    </View>
+                  </>
+                )}
+
+                {/* Dietary */}
+                {realDietary.length > 0 && (
+                  <>
+                    <View style={[revealStyles.summaryDivider, { backgroundColor: theme.border }]} />
+                    <View style={revealStyles.summaryRow}>
+                      <ThemedText style={[revealStyles.summaryKey, { color: theme.textSecondary }]}>Dietary</ThemedText>
+                      <View style={revealStyles.summaryChips}>
+                        {realDietary.map((item) => (
+                          <View key={item} style={[revealStyles.summaryChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                            <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  </>
+                )}
+
+                {/* Accessibility */}
+                {realAccessibility.length > 0 && (
+                  <>
+                    <View style={[revealStyles.summaryDivider, { backgroundColor: theme.border }]} />
+                    <View style={revealStyles.summaryRow}>
+                      <ThemedText style={[revealStyles.summaryKey, { color: theme.textSecondary }]}>Accessibility</ThemedText>
+                      <View style={revealStyles.summaryChips}>
+                        {realAccessibility.map((item) => (
+                          <View key={item} style={[revealStyles.summaryChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                            <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  </>
+                )}
+
               </View>
             </Animated.View>
           )}
 
-          {/* How Tripseek will tailor */}
-          <Animated.View entering={FadeInDown.delay(420).duration(350)}>
+          {/* ── 4. Features ── */}
+          <Animated.View entering={FadeInDown.delay(300).duration(350)}>
             <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-              How Tripseek will tailor trips
+              Features
             </ThemedText>
-            <View style={[revealStyles.tailorCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-              <View style={revealStyles.tailorRow}>
-                <ThemedText style={revealStyles.tailorEmoji}>🍽️</ThemedText>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={revealStyles.tailorKey}>Food</ThemedText>
-                  <ThemedText style={[revealStyles.tailorVal, { color: theme.textSecondary }]}>{foodLabel}</ThemedText>
+            <View style={revealStyles.featurePills}>
+              {featuresOn.map((label) => (
+                <View key={label} style={[revealStyles.featurePill, { backgroundColor: theme.primaryMuted, borderColor: theme.primary }]}>
+                  <ThemedText style={[revealStyles.featurePillText, { color: theme.primary }]}>{label}</ThemedText>
                 </View>
-              </View>
-              <View style={[revealStyles.tailorDivider, { backgroundColor: theme.border }]} />
-              <View style={revealStyles.tailorRow}>
-                <ThemedText style={revealStyles.tailorEmoji}>👥</ThemedText>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={revealStyles.tailorKey}>Crowds</ThemedText>
-                  <ThemedText style={[revealStyles.tailorVal, { color: theme.textSecondary }]}>{crowdLabel}</ThemedText>
+              ))}
+              {featuresOff.map((label) => (
+                <View key={label} style={[revealStyles.featurePill, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                  <ThemedText style={[revealStyles.featurePillText, { color: theme.textSecondary }]}>{label} off</ThemedText>
                 </View>
-              </View>
-              <View style={[revealStyles.tailorDivider, { backgroundColor: theme.border }]} />
-              <View style={revealStyles.tailorRow}>
-                <ThemedText style={revealStyles.tailorEmoji}>🎯</ThemedText>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={revealStyles.tailorKey}>Recommendations</ThemedText>
-                  <ThemedText style={[revealStyles.tailorVal, { color: theme.textSecondary }]}>{recLabel}</ThemedText>
-                </View>
-              </View>
-              {(merged.spendingPriorities ?? []).length > 0 && (
-                <>
-                  <View style={[revealStyles.tailorDivider, { backgroundColor: theme.border }]} />
-                  <View style={revealStyles.tailorRow}>
-                    <ThemedText style={revealStyles.tailorEmoji}>💳</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={revealStyles.tailorKey}>Happy to spend more on</ThemedText>
-                      <ThemedText style={[revealStyles.tailorVal, { color: theme.textSecondary }]}>
-                        {(merged.spendingPriorities ?? []).join(' · ')}
-                      </ThemedText>
-                    </View>
-                  </View>
-                </>
-              )}
+              ))}
             </View>
           </Animated.View>
 
-          {/* Dietary */}
-          {realDietary.length > 0 && (
-            <Animated.View entering={FadeInDown.delay(480).duration(350)}>
-              <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-                Dietary
-              </ThemedText>
-              <View style={revealStyles.chipRow}>
-                {realDietary.map((item) => (
-                  <View key={item} style={[revealStyles.revealChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
-                  </View>
-                ))}
-              </View>
-              {merged.dietaryNote ? (
-                <ThemedText style={[revealStyles.noteText, { color: theme.textSecondary }]}>
-                  {merged.dietaryNote}
-                </ThemedText>
-              ) : null}
-            </Animated.View>
-          )}
-
-          {/* Accessibility */}
-          {realAccessibility.length > 0 && (
-            <Animated.View entering={FadeInDown.delay(530).duration(350)}>
-              <ThemedText style={[revealStyles.sectionLabel, { color: theme.textSecondary }]}>
-                Accessibility
-              </ThemedText>
-              <View style={revealStyles.chipRow}>
-                {realAccessibility.map((item) => (
-                  <View key={item} style={[revealStyles.revealChip, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                    <ThemedText style={[revealStyles.revealChipText, { color: theme.text }]}>{item}</ThemedText>
-                  </View>
-                ))}
-              </View>
-            </Animated.View>
-          )}
-
-          {/* Update hint */}
-          <Animated.View entering={FadeInDown.delay(570).duration(350)}>
+          {/* ── 5. Hint ── */}
+          <Animated.View entering={FadeInDown.delay(380).duration(350)}>
             <ThemedText style={[revealStyles.updateHint, { color: theme.textSecondary }]}>
               You can update these anytime from your Profile.
             </ThemedText>
@@ -737,7 +696,7 @@ export default function OnboardingScreen() {
             accessibilityRole="button"
             accessibilityLabel="Start exploring"
           >
-            <ThemedText style={[revealStyles.ctaText, { color: theme.background }]}>
+            <ThemedText style={[revealStyles.ctaText, { color: theme.primaryText }]}>
               Start exploring →
             </ThemedText>
           </Pressable>
@@ -748,18 +707,22 @@ export default function OnboardingScreen() {
 
   // ========== SURVEY ==========
   const isNextDisabled = !canAdvance();
-  const isSkippable = OPTIONAL_STEPS.has(currentStep);
   const stepEntering = navDirection === 'forward'
     ? FadeInRight.duration(260).easing(Easing.out(Easing.quad))
     : FadeInLeft.duration(260).easing(Easing.out(Easing.quad));
 
   return (
     <ThemedView style={styles.container}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior="height"
+        keyboardVerticalOffset={0}
+      >
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + Spacing.five, paddingBottom: insets.bottom + 40 },
+          { paddingTop: insets.top + Spacing.five, paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -785,17 +748,6 @@ export default function OnboardingScreen() {
               <ThemedText style={[styles.surveySubtitle, { color: theme.textSecondary }]}>
                 {STEP_SUBTITLES[currentStep]}
               </ThemedText>
-              {isSkippable && (
-                <Pressable onPress={() => goToStep(step + 1)} hitSlop={8}>
-                  <ThemedText style={[styles.skipLink, { color: theme.primary }]}>Skip</ThemedText>
-                </Pressable>
-              )}
-            </View>
-          ) : isSkippable ? (
-            <View style={[styles.subtitleRow, { marginBottom: Spacing.four }]}>
-              <Pressable onPress={() => goToStep(step + 1)} hitSlop={8}>
-                <ThemedText style={[styles.skipLink, { color: theme.primary }]}>Skip this step</ThemedText>
-              </Pressable>
             </View>
           ) : null}
 
@@ -816,9 +768,10 @@ export default function OnboardingScreen() {
                       const vals = customInterest.split(',').map((v) => v.trim()).filter((v) => v && !interests.includes(v));
                       if (vals.length) setInterests([...interests, ...vals]);
                       setCustomInterest('');
+                      Keyboard.dismiss();
                     }}
                     returnKeyType="done"
-                    blurOnSubmit={false}
+                    blurOnSubmit={true}
                   />
                 </View>
                 {/* Predefined chips */}
@@ -875,10 +828,10 @@ export default function OnboardingScreen() {
               </View>
             )}
 
-            {/* ─── 6. Crowd tolerance ─── */}
+            {/* ─── 3. Crowd tolerance ─── */}
             {currentStep === 'crowdTolerance' &&
               CROWD_OPTIONS.map((o) => (
-                <OptionButton key={o.value} selected={crowdTolerance === o.value} label={o.label} desc={o.desc} onPress={() => { setCrowdTolerance(o.value); setCrowdTouched(true); }} />
+                <OptionButton key={o.value} selected={crowdTouched && crowdTolerance === o.value} label={o.label} desc={o.desc} onPress={() => { setCrowdTolerance(o.value); setCrowdTouched(true); }} />
               ))}
 
             {/* ─── 7. Food importance ─── */}
@@ -907,29 +860,18 @@ export default function OnboardingScreen() {
                     placeholderTextColor={theme.textSecondary}
                     onSubmitEditing={() => {
                       const val = customDietary.trim();
-                      if (val && !dietary.includes(val)) setDietary([...dietary.filter((i) => i !== '👌  Nothing in particular'), val]);
+                      if (val && !dietary.includes(val)) setDietary([...dietary, val]);
                       setCustomDietary('');
+                      Keyboard.dismiss();
                     }}
                     returnKeyType="done"
-                    blurOnSubmit={false}
-                  />
-                </View>
-                <View style={[styles.noteInputRow, { borderTopColor: theme.border }]}>
-                  <ThemedText style={[styles.noteLabel, { color: theme.textSecondary }]}>Anything else?</ThemedText>
-                  <TextInput
-                    style={[styles.noteInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                    value={dietaryNote}
-                    onChangeText={setDietaryNote}
-                    placeholder="E.g. severe peanut allergy, prefer pescatarian..."
-                    placeholderTextColor={theme.textSecondary}
-                    multiline
-                    returnKeyType="done"
+                    blurOnSubmit={true}
                   />
                 </View>
               </View>
             )}
 
-            {/* ─── 9. Accessibility ─── */}
+            {/* ─── 5. Accessibility ─── */}
             {currentStep === 'accessibility' && (
               <View style={styles.chipGrid}>
                 {ACCESSIBILITY_OPTIONS.map((item) => (
@@ -949,11 +891,12 @@ export default function OnboardingScreen() {
                     placeholderTextColor={theme.textSecondary}
                     onSubmitEditing={() => {
                       const val = customAccessibility.trim();
-                      if (val && !accessibility.includes(val)) setAccessibility([...accessibility.filter((i) => i !== '👌  Nothing in particular'), val]);
+                      if (val && !accessibility.includes(val)) setAccessibility([...accessibility, val]);
                       setCustomAccessibility('');
+                      Keyboard.dismiss();
                     }}
                     returnKeyType="done"
-                    blurOnSubmit={false}
+                    blurOnSubmit={true}
                   />
                 </View>
               </View>
@@ -992,12 +935,12 @@ export default function OnboardingScreen() {
                   <View style={styles.featureInfo}>
                     <ThemedText style={styles.featureTitle}>Trip Alerts</ThemedText>
                     <ThemedText style={[styles.featureDesc, { color: theme.textSecondary }]}>
-                      Smart alerts about schedule gaps, conflicts, and personalized suggestions as you plan.
+                      Catches things like closed venues, schedule conflicts, and weather issues before they become problems.
                     </ThemedText>
                   </View>
                   <Switch
                     value={tripPulseEnabled}
-                    onValueChange={(val) => { Haptics.selectionAsync(); setTripPulseEnabled(val); }}
+                    onValueChange={(val) => { Haptics.selectionAsync(); setTripPulseEnabled(val); if (val) requestNotificationPermission(); }}
                     trackColor={{ false: theme.border, true: theme.primary }}
                     thumbColor="#fff"
                   />
@@ -1008,7 +951,7 @@ export default function OnboardingScreen() {
                   <View style={styles.featureInfo}>
                     <ThemedText style={styles.featureTitle}>Travel Memory</ThemedText>
                     <ThemedText style={[styles.featureDesc, { color: theme.textSecondary }]}>
-                      Remembers what you loved and avoided so future trips feel even more tailored.
+                      Learns your preferences over time so every recommendation feels more like you.
                     </ThemedText>
                   </View>
                   <Switch
@@ -1048,6 +991,7 @@ export default function OnboardingScreen() {
           </ThemedText>
         </Pressable>
       </View>
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
@@ -1058,13 +1002,14 @@ const styles = StyleSheet.create({
   // ── Welcome ────────────────────────────────────────────────
   welcomeRoot: { flex: 1, backgroundColor: '#FFFFFF' },
   welcomeTopBar: { paddingHorizontal: 26, paddingBottom: 8 },
+  welcomeLogoBar: { alignItems: 'center', paddingBottom: 8 },
   welcomeWordmark: { fontSize: 11, fontWeight: '700', letterSpacing: 3.5, color: 'rgba(0,0,0,0.45)' },
   welcomeHero: { flex: 1 },
   welcomeBottom: {
     paddingHorizontal: 26,
     paddingTop: 20,
   },
-  welcomeHeadlineBlock: { marginBottom: 24, marginTop: 4, height: 88, justifyContent: 'flex-start' },
+  welcomeHeadlineBlock: { marginBottom: 24, marginTop: 4, minHeight: 88, justifyContent: 'flex-start' },
   welcomeHeadlineSmall: { fontSize: 15, fontWeight: '400', color: 'rgba(0,0,0,0.50)', letterSpacing: 0.2, marginBottom: 2 },
   welcomeHeadlineBig: { fontSize: 30, fontWeight: '800', color: '#000000', letterSpacing: -1, lineHeight: 36 },
   welcomeButtons: { gap: 12 },
@@ -1139,31 +1084,27 @@ const styles = StyleSheet.create({
 
 // Reveal screen styles
 const revealStyles = StyleSheet.create({
-  scrollContent: { paddingHorizontal: 24, gap: 28 },
+  scrollContent: { paddingHorizontal: 24, gap: 32 },
 
-  revealEyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 10 },
-  revealTitle: { fontSize: 38, fontWeight: '800', letterSpacing: -1.4, lineHeight: 44 },
+  revealEyebrow: { marginBottom: 10 },
+  revealTitle: { fontSize: 40, fontWeight: '800', letterSpacing: -1.5, lineHeight: 46 },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12 },
-
-  statsGrid: { flexDirection: 'row', gap: 10 },
-  statBox: { flex: 1, borderRadius: Radius.md, padding: 14, alignItems: 'center', gap: 4 },
-  statEmoji: { fontSize: 22, lineHeight: 30, marginBottom: 2 },
-  statValue: { fontSize: 12, fontWeight: '700', textAlign: 'center', lineHeight: 16 },
-  statKey: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
 
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   revealChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.lg, borderWidth: 1 },
   revealChipText: { fontSize: 13, fontWeight: '500' },
 
-  tailorCard: { borderRadius: Radius.md, borderWidth: 1, overflow: 'hidden' },
-  tailorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 16 },
-  tailorEmoji: { fontSize: 20, width: 28, textAlign: 'center' },
-  tailorKey: { fontSize: 13, fontWeight: '700', marginBottom: 2 },
-  tailorVal: { fontSize: 13 },
-  tailorDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
+  summaryCard: { borderRadius: Radius.md, borderWidth: 1, overflow: 'hidden' },
+  summaryRow: { paddingVertical: 14, paddingHorizontal: 16, gap: 6 },
+  summaryKey: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.1, marginBottom: 4 },
+  summaryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  summaryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.lg, borderWidth: 1 },
+  summaryDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
 
-  noteText: { fontSize: 13, marginTop: 8, fontStyle: 'italic', lineHeight: 19 },
+  featurePills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  featurePill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.xl, borderWidth: 1 },
+  featurePillText: { fontSize: 13, fontWeight: '600' },
 
   updateHint: { fontSize: 13, textAlign: 'center', paddingBottom: 4 },
 

@@ -24,7 +24,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTrips, type Reservation } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
-import { getPlacePhoto } from '@/services/free-photos';
+import { useActivityPhotos } from '@/hooks/use-activity-photos';
 import { getBookingEmailAI } from '@/services/ai';
 import { getPlaceBookingLinks, openBookingLink } from '@/services/booking-links';
 import { formatShortDate } from '@/services/trip-helpers';
@@ -43,16 +43,15 @@ export default function StayDetailScreen() {
     ? trip?.reservations?.find((r) => r.id === activity.reservationId)
     : undefined;
 
-  // Photo
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!activity) return;
-    const ref = activity.placeId;
-    if (!ref) return;
-    getPlacePhoto({ cacheKey: ref, photoRef: ref, name: activity.title })
-      .then((r) => { if (r) setPhotoUrl(r.url); })
-      .catch(() => {});
-  }, [activity?.placeId, activity?.title]);
+  // Photo — use placeId if available, fall back to name search
+  const placeIds = activity?.placeId ? [activity.placeId] : [];
+  const nameHints = !activity?.placeId && activity
+    ? [{ key: `stay-${activity.id}`, name: activity.title, destination: trip?.destination }]
+    : undefined;
+  const { photos: photoMapResult } = useActivityPhotos(placeIds, undefined, nameHints);
+  const photoUrl = activity?.placeId
+    ? (photoMapResult.get(activity.placeId) ?? null)
+    : (photoMapResult.get(`stay-${activity?.id ?? ''}`) ?? null);
 
   // Booking modal
   const [showBookingModal, setShowBookingModal] = useState(false);

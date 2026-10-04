@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -19,7 +20,7 @@ import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Reservation, ReservationType, Trip } from '@/context/trips';
 import { useToast } from '@/context/toast';
-import { ParsedBooking, getBookingEmailAI } from '@/services/ai';
+import { ParsedBooking } from '@/services/ai';
 import { sortTripsForPicker } from '@/services/trip-helpers';
 
 // ── Shared helpers (exported for use by bookings screen) ──
@@ -87,14 +88,9 @@ export function AddBookingModal({
   const [addMode, setAddMode] = useState<'choose' | 'email' | 'review' | 'manual'>(editRes ? 'manual' : initData ? 'review' : (initialMode ?? 'choose'));
 
   // Email forwarding
-  const [bookingEmail, setBookingEmail] = useState('');
-  const [emailLoading, setEmailLoading] = useState(false);
+  const bookingEmail = 'bookings@tripseekapp.com';
+  const [emailLoading] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
-
-  // Auto-load email when starting in email mode
-  useEffect(() => {
-    if (initialMode === 'email') loadBookingEmail();
-  }, []);
 
   // Form fields — pre-fill from edit or pending import
   const typeMap: Record<string, ReservationType> = { restaurant: 'restaurant', hotel: 'hotel', flight: 'flight', train: 'train', activity: 'activity', other: 'other' };
@@ -111,6 +107,16 @@ export function AddBookingModal({
   const [resCurrency, setResCurrency] = useState(editRes?.res.currency ?? initData?.currency ?? 'USD');
   const [resAddress, setResAddress] = useState(editRes?.res.address ?? initData?.address ?? initData?.location ?? '');
   const [resNotes, setResNotes] = useState(editRes?.res.notes ?? initData?.description ?? '');
+
+  // Type-specific fields
+  const [resOrigin, setResOrigin] = useState(editRes?.res.origin ?? '');
+  const [resDestination, setResDestination] = useState(editRes?.res.destination ?? '');
+  const [resFlightNumber, setResFlightNumber] = useState(editRes?.res.flightNumber ?? '');
+  const [resSeat, setResSeat] = useState(editRes?.res.seat ?? '');
+  const [resPassengerName, setResPassengerName] = useState(editRes?.res.passengerName ?? '');
+  const [resGuestCount, setResGuestCount] = useState(editRes?.res.guestCount != null ? String(editRes.res.guestCount) : '');
+  const [resRoomType, setResRoomType] = useState(editRes?.res.roomType ?? '');
+  const [resDuration, setResDuration] = useState(editRes?.res.duration ?? '');
 
   // Trip picker
   const [selectedTripId, setSelectedTripId] = useState<string | null>(fixedTripId ?? editRes?.tripId ?? null);
@@ -138,17 +144,7 @@ export function AddBookingModal({
     });
   }
 
-  async function loadBookingEmail() {
-    if (bookingEmail) return;
-    setEmailLoading(true);
-    try {
-      const result = await getBookingEmailAI();
-      setBookingEmail(result.email);
-    } catch {
-      showToast('Could not load forwarding address', 'error');
-    }
-    setEmailLoading(false);
-  }
+
 
   function handleSave() {
     if (!resTitle.trim()) return;
@@ -164,9 +160,30 @@ export function AddBookingModal({
         price: resPrice ? parseFloat(resPrice) : undefined,
         currency: resCurrency || undefined,
         address: resAddress.trim() || undefined,
-        notes: resCheckoutDate.trim()
-          ? [resNotes.trim(), `Check-out: ${resCheckoutDate.trim()}`].filter(Boolean).join('\n') || undefined
-          : resNotes.trim() || undefined,
+        notes: resNotes.trim() || undefined,
+        checkOutDate: resCheckoutDate.trim() || undefined,
+        // Flight / train
+        ...((resType === 'flight' || resType === 'train') && {
+          origin: resOrigin.trim() || undefined,
+          destination: resDestination.trim() || undefined,
+          flightNumber: resFlightNumber.trim() || undefined,
+          seat: resSeat.trim() || undefined,
+          passengerName: resPassengerName.trim() || undefined,
+        }),
+        // Hotel
+        ...(resType === 'hotel' && {
+          roomType: resRoomType.trim() || undefined,
+          guestCount: resGuestCount ? parseInt(resGuestCount) || undefined : undefined,
+        }),
+        // Restaurant
+        ...(resType === 'restaurant' && {
+          guestCount: resGuestCount ? parseInt(resGuestCount) || undefined : undefined,
+        }),
+        // Activity
+        ...(resType === 'activity' && {
+          duration: resDuration.trim() || undefined,
+          guestCount: resGuestCount ? parseInt(resGuestCount) || undefined : undefined,
+        }),
         fixed: true,
       };
 
@@ -185,11 +202,14 @@ export function AddBookingModal({
     };
 
     if (editRes) {
-      doSave(editRes.tripId);
+      doSave(editRes.tripId ?? '');
     } else if (fixedTripId) {
       doSave(fixedTripId);
     } else if (selectedTripId) {
       doSave(selectedTripId);
+    } else if (trips.length === 0) {
+      // Standalone mode — no trip to pick
+      doSave('');
     } else {
       openTripPicker((tripId) => {
         setSelectedTripId(tripId);
@@ -198,7 +218,7 @@ export function AddBookingModal({
     }
   }
 
-  const showTripPicker = !fixedTripId;
+  const showTripPicker = !fixedTripId && trips.length > 0;
 
   return (
     <>
@@ -206,14 +226,19 @@ export function AddBookingModal({
       <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
         {/* Modal header */}
         <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
-          <ThemedText style={styles.modalTitle}>
-            {editRes ? 'Edit Booking' : addMode === 'choose' ? 'Add Booking' : addMode === 'email' ? 'Forward Email' : addMode === 'review' ? 'Booking Found' : 'Booking Details'}
-          </ThemedText>
           {!editRes && addMode !== 'choose' ? (
             <Pressable onPress={() => setAddMode('choose')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back" style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <SymbolView name="chevron.left" size={14} tintColor={theme.primary} />
               <ThemedText style={[{ fontSize: 14, color: theme.primary, fontWeight: '600' }]}>Back</ThemedText>
             </Pressable>
+          ) : (
+            <View style={styles.modalClose} />
+          )}
+          <ThemedText style={[styles.modalTitle, addMode === 'choose' && { textAlign: 'center' }]}>
+            {editRes ? 'Edit Booking' : addMode === 'choose' ? 'Add Booking' : addMode === 'email' ? 'Forward Email' : addMode === 'review' ? 'Booking Found' : 'Booking Details'}
+          </ThemedText>
+          {!editRes && addMode !== 'choose' ? (
+            <View style={styles.modalClose} />
           ) : (
             <Pressable onPress={onClose} hitSlop={8} style={styles.modalClose} accessibilityRole="button" accessibilityLabel="Close">
               <SymbolView name="xmark" size={18} tintColor={theme.textSecondary} />
@@ -223,41 +248,51 @@ export function AddBookingModal({
 
         {/* STEP 1: Choose entry path */}
         {!editRes && addMode === 'choose' && (
-          <ScrollView contentContainerStyle={{ padding: 24, gap: 16, paddingBottom: 40 }}>
-            <ThemedText style={[{ fontSize: 15, color: theme.textSecondary, textAlign: 'center' }]}>
-              How would you like to add this booking?
-            </ThemedText>
-            <Pressable
-              onPress={() => { setAddMode('email'); loadBookingEmail(); }}
-              style={({ pressed }) => [styles.choiceBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Forward confirmation email"
-            >
-              <View style={styles.choiceBtnIcon}><SymbolView name="envelope.fill" size={24} tintColor={theme.text} /></View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.choiceBtnTitle}>Forward Email</ThemedText>
-                <ThemedText style={[styles.choiceBtnDesc, { color: theme.textSecondary }]}>
-                  Forward your confirmation email to import automatically
+          <View style={styles.chooseContainer}>
+            <View style={styles.chooseMain}>
+              <Image
+                source={require('@/assets/images/gmail-logo.png')}
+                style={styles.chooseGmailLogo}
+                contentFit="contain"
+              />
+              <ThemedText type="headline" style={{ textAlign: 'center' }}>
+                Your bookings, all in one place.
+              </ThemedText>
+              <ThemedText style={[styles.chooseDesc, { color: theme.textSecondary }]}>
+                Forward your confirmation emails to the address below and we'll organize everything for you.
+              </ThemedText>
+              <Pressable
+                onPress={async () => {
+                  await Clipboard.setStringAsync(bookingEmail);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  setEmailCopied(true);
+                  setTimeout(() => setEmailCopied(false), 2000);
+                }}
+                style={[styles.chooseEmailBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                accessibilityRole="button"
+                accessibilityLabel="Copy forwarding email address"
+              >
+                <ThemedText style={[styles.chooseEmailText, { color: theme.primary }]} numberOfLines={1}>
+                  {bookingEmail}
                 </ThemedText>
-              </View>
-              <SymbolView name="chevron.right" size={14} tintColor={theme.textSecondary} />
-            </Pressable>
+                <SymbolView
+                  name={emailCopied ? 'checkmark' : 'square.on.square'}
+                  size={14}
+                  tintColor={emailCopied ? theme.primary : theme.textSecondary}
+                />
+              </Pressable>
+            </View>
             <Pressable
               onPress={() => setAddMode('manual')}
-              style={({ pressed }) => [styles.choiceBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 }]}
+              style={styles.chooseManualBtn}
               accessibilityRole="button"
-              accessibilityLabel="Enter manually"
+              accessibilityLabel="Enter details manually"
             >
-              <View style={styles.choiceBtnIcon}><SymbolView name="pencil" size={24} tintColor={theme.text} /></View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.choiceBtnTitle}>Enter Manually</ThemedText>
-                <ThemedText style={[styles.choiceBtnDesc, { color: theme.textSecondary }]}>
-                  Fill in all the details yourself
-                </ThemedText>
-              </View>
-              <SymbolView name="chevron.right" size={14} tintColor={theme.textSecondary} />
+              <ThemedText style={[styles.chooseManualText, { color: theme.textSecondary }]}>
+                or enter details manually
+              </ThemedText>
             </Pressable>
-          </ScrollView>
+          </View>
         )}
 
         {/* STEP: Forward Email instructions */}
@@ -496,6 +531,128 @@ export function AddBookingModal({
             <ThemedText style={styles.formLabel}>Time (optional)</ThemedText>
             <TimePickerButton value={resTime} onChange={setResTime} />
 
+            {/* Flight / Train specific */}
+            {(resType === 'flight' || resType === 'train') && (
+              <>
+                <ThemedText style={styles.formLabel}>From (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resOrigin}
+                  onChangeText={setResOrigin}
+                  placeholder="e.g. YYZ - Toronto"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  accessibilityLabel="Origin"
+                />
+                <ThemedText style={styles.formLabel}>To (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resDestination}
+                  onChangeText={setResDestination}
+                  placeholder="e.g. FLL - Fort Lauderdale"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  accessibilityLabel="Destination"
+                />
+                <ThemedText style={styles.formLabel}>{resType === 'train' ? 'Train number (optional)' : 'Flight number (optional)'}</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resFlightNumber}
+                  onChangeText={setResFlightNumber}
+                  placeholder={resType === 'train' ? 'e.g. VIA 51' : 'e.g. F8 1600'}
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  accessibilityLabel="Flight or train number"
+                />
+                <ThemedText style={styles.formLabel}>Seat (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resSeat}
+                  onChangeText={setResSeat}
+                  placeholder="e.g. 1C"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  accessibilityLabel="Seat"
+                />
+                <ThemedText style={styles.formLabel}>Passenger name (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resPassengerName}
+                  onChangeText={setResPassengerName}
+                  placeholder="e.g. KONSHIN, MICHAEL"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="characters"
+                  accessibilityLabel="Passenger name"
+                />
+              </>
+            )}
+
+            {/* Hotel specific */}
+            {resType === 'hotel' && (
+              <>
+                <ThemedText style={styles.formLabel}>Room type (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resRoomType}
+                  onChangeText={setResRoomType}
+                  placeholder="e.g. Deluxe King Room"
+                  placeholderTextColor={theme.textSecondary}
+                  accessibilityLabel="Room type"
+                />
+                <ThemedText style={styles.formLabel}>Number of guests (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resGuestCount}
+                  onChangeText={setResGuestCount}
+                  placeholder="2"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                  accessibilityLabel="Number of guests"
+                />
+              </>
+            )}
+
+            {/* Restaurant specific */}
+            {resType === 'restaurant' && (
+              <>
+                <ThemedText style={styles.formLabel}>Party size (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resGuestCount}
+                  onChangeText={setResGuestCount}
+                  placeholder="4"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                  accessibilityLabel="Party size"
+                />
+              </>
+            )}
+
+            {/* Activity specific */}
+            {resType === 'activity' && (
+              <>
+                <ThemedText style={styles.formLabel}>Duration (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resDuration}
+                  onChangeText={setResDuration}
+                  placeholder="e.g. 3 hours"
+                  placeholderTextColor={theme.textSecondary}
+                  accessibilityLabel="Duration"
+                />
+                <ThemedText style={styles.formLabel}>Participants (optional)</ThemedText>
+                <TextInput
+                  style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
+                  value={resGuestCount}
+                  onChangeText={setResGuestCount}
+                  placeholder="2"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="number-pad"
+                  accessibilityLabel="Participants"
+                />
+              </>
+            )}
+
             <ThemedText style={styles.formLabel}>Confirmation number (optional)</ThemedText>
             <TextInput
               style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
@@ -519,7 +676,7 @@ export function AddBookingModal({
               accessibilityLabel="Booking URL"
             />
 
-            <ThemedText style={styles.formLabel}>Price (optional)</ThemedText>
+            <ThemedText style={styles.formLabel}>{resType === 'hotel' ? 'Total Price (optional)' : 'Price (optional)'}</ThemedText>
             <TextInput
               style={[styles.formInput, { color: theme.text, borderColor: theme.backgroundSelected }]}
               value={resPrice}
@@ -622,20 +779,27 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 17, fontWeight: '600' },
+  modalTitle: { fontSize: 17, fontWeight: '600', flex: 1, textAlign: 'center' },
   modalClose: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
 
-  choiceBtn: {
+  chooseContainer: { flex: 1, paddingHorizontal: 32, paddingBottom: 32, justifyContent: 'space-between' },
+  chooseMain: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  chooseGmailLogo: { width: 72, height: 72, marginBottom: 4 },
+  chooseDesc: { fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  chooseEmailBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: Radius.md,
     borderWidth: 1,
-    gap: 14,
+    marginTop: 4,
   },
-  choiceBtnIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  choiceBtnTitle: { fontSize: 16, fontWeight: '700' },
-  choiceBtnDesc: { fontSize: 13, marginTop: 2 },
+  chooseEmailText: { fontSize: 15, fontWeight: '700' },
+  chooseManualBtn: { alignItems: 'center', paddingVertical: 12 },
+  chooseManualText: { fontSize: 14, fontWeight: '500', textDecorationLine: 'underline' },
 
   formLabel: { fontSize: 13, fontWeight: '600', marginTop: 4 },
   formInput: {

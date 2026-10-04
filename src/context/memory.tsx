@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { loadMemorySafe, saveMemory, loadLearningEnabled, saveLearningEnabled, loadMemoryFirstSeen, saveMemoryFirstSeen } from '@/services/storage';
 import { useAuth } from '@/context/auth';
-import { pushMemory, pullMemory } from '@/services/sync';
+import { pushMemory, pullMemory, mergeUserSettings, pullUserSettings } from '@/services/sync';
 
 export type MemoryCategory =
   | 'preference' | 'crowds' | 'budget' | 'logistics'
@@ -84,17 +84,22 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Pull remote memory on sign-in
+  // Pull remote memory + learningEnabled on sign-in
   useEffect(() => {
     if (!loaded || !user?.id) return;
     pullMemory(user.id).then((remote) => {
       if (!remote || remote.length === 0) return;
-      // Merge: keep local entries, add remote entries that don't exist locally
       setEntries((prev) => {
         const localIds = new Set(prev.map((e) => e.id));
         const newRemote = remote.filter((e) => !localIds.has(e.id));
         return newRemote.length > 0 ? [...prev, ...newRemote] : prev;
       });
+    });
+    pullUserSettings(user.id).then((settings) => {
+      if (settings && typeof settings.learningEnabled === 'boolean') {
+        setLearningEnabled(settings.learningEnabled);
+        saveLearningEnabled(settings.learningEnabled);
+      }
     });
   }, [loaded, user?.id]);
 
@@ -118,9 +123,18 @@ export function MemoryProvider({ children }: { children: ReactNode }) {
     };
   }, [entries, loaded, user?.id]);
 
+  const learningSettingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   function handleSetLearningEnabled(enabled: boolean) {
     setLearningEnabled(enabled);
     saveLearningEnabled(enabled);
+    if (user?.id) {
+      const userId = user.id;
+      if (learningSettingTimerRef.current) clearTimeout(learningSettingTimerRef.current);
+      learningSettingTimerRef.current = setTimeout(() => {
+        mergeUserSettings(userId, { learningEnabled: enabled });
+      }, 1500);
+    }
   }
 
   function addEntry(entry: Omit<TravelMemoryEntry, 'id' | 'timestamp' | 'enabled' | 'sentiment'>) {

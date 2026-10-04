@@ -13,7 +13,7 @@ export type ReservationType = 'restaurant' | 'hotel' | 'flight' | 'train' | 'act
 
 export interface Reservation {
   id: string;
-  tripId: string;
+  tripId?: string;
   type: ReservationType;
   title: string;
   day?: number;
@@ -32,6 +32,19 @@ export interface Reservation {
   checkOutTime?: string;
   roomType?: string;
   amenities?: string[];
+  // Flight / train
+  flightNumber?: string;
+  origin?: string;       // "YYZ - Toronto"
+  destination?: string;  // "FLL - Fort Lauderdale"
+  seat?: string;
+  boardingTime?: string; // HH:MM
+  passengerName?: string;
+  baggage?: string;
+  arrivalTime?: string;  // HH:MM
+  // Shared
+  guestCount?: number;
+  cancellationPolicy?: string;
+  duration?: string;
 }
 
 export interface Activity {

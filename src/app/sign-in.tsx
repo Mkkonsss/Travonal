@@ -4,30 +4,63 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Pressable,
   ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { Image as ExpoImage } from 'expo-image';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 import { Radius } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 import { useToast } from '@/context/toast';
 
+function GoogleIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24">
+      <Path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+      <Path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <Path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+      <Path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+    </Svg>
+  );
+}
+
+const HERO_IMAGE = require('@/assets/images/sign-up-hero.png');
+
 export default function SignInScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { signIn, resetPassword } = useAuth();
+  const { signIn, signInWithApple, signInWithGoogle, resetPassword } = useAuth();
   const { showToast } = useToast();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'apple' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function handleAppleSignIn() {
+    setError(null);
+    setSocialLoading('apple');
+    const { error } = await signInWithApple();
+    setSocialLoading(null);
+    if (error) setError(error.message);
+  }
+
+  async function handleGoogleSignIn() {
+    setError(null);
+    setSocialLoading('google');
+    const { error } = await signInWithGoogle();
+    setSocialLoading(null);
+    if (error) setError(error.message);
+  }
 
   async function handleSignIn() {
     if (!email.trim() || !password) return;
@@ -58,112 +91,168 @@ export default function SignInScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 24) + 16 },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          hitSlop={12}
+    <View style={styles.root}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 24) + 16 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
         >
-          <View style={styles.backRow}>
-            <SymbolView name="chevron.left" size={14} tintColor="#9CA3AF" />
-            <Text style={styles.backText}>Back</Text>
-          </View>
-        </Pressable>
-
-        <Text style={styles.wordmark}>✦  TOVELI</Text>
-
-        <View style={styles.hero}>
-          <SymbolView name="hand.wave.fill" size={36} tintColor="#111827" style={styles.heroEmoji} />
-          <Text style={styles.heroTitle}>Welcome back.</Text>
-          <Text style={styles.heroSubtitle}>
-            Sign in to access your trips and profile.
-          </Text>
-        </View>
-
-        <View style={styles.fields}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email address"
-            placeholderTextColor="#9CA3AF"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            returnKeyType="next"
-          />
-
-          <View style={styles.passwordBox}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Password"
-              placeholderTextColor="#9CA3AF"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              returnKeyType="done"
-              onSubmitEditing={handleSignIn}
-            />
+          {/* Back button — only shown if there's somewhere to go back to */}
+          {navigation.canGoBack() && (
             <Pressable
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.showHide}
+              onPress={() => router.back()}
+              style={styles.backButton}
               accessibilityRole="button"
-              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              accessibilityLabel="Go back"
+              hitSlop={12}
             >
-              <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              <View style={styles.backRow}>
+                <SymbolView name="chevron.left" size={14} tintColor="#9CA3AF" />
+                <Text style={styles.backText}>Back</Text>
+              </View>
             </Pressable>
-          </View>
-        </View>
-
-        <Pressable
-          onPress={handleForgotPassword}
-          style={styles.forgotRow}
-          accessibilityRole="button"
-          accessibilityLabel="Forgot password"
-        >
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </Pressable>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Pressable
-          style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.88 : 1 }]}
-          onPress={handleSignIn}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="Sign in"
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryButtonText}>Sign in</Text>
           )}
-        </Pressable>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>{"Don't have an account? "}</Text>
-          <Pressable
-            onPress={() => router.push('/sign-up')}
-            accessibilityRole="button"
-            accessibilityLabel="Create account"
-          >
-            <Text style={styles.footerLink}>Create account</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          {/* Title + image row */}
+          <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.titleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title}>Welcome back.</Text>
+              <Text style={styles.subtitle}>Your trips are waiting.</Text>
+            </View>
+            <View style={styles.titleImage}>
+              {HERO_IMAGE ? (
+                <ExpoImage source={HERO_IMAGE} style={StyleSheet.absoluteFill} contentFit="cover" />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, styles.imagePlaceholder]} />
+              )}
+            </View>
+          </Animated.View>
+
+          {/* Social buttons */}
+          <Animated.View entering={FadeInDown.delay(120).duration(400)} style={styles.socialRow}>
+            {Platform.OS === 'ios' && (
+              <Pressable
+                style={({ pressed }) => [styles.appleButton, { opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleAppleSignIn}
+                disabled={socialLoading !== null || loading}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with Apple"
+              >
+                {socialLoading === 'apple' ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <SymbolView name="apple.logo" size={18} tintColor="#FFFFFF" />
+                    <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+
+            <Pressable
+              style={({ pressed }) => [styles.googleButton, { opacity: pressed ? 0.85 : 1 }]}
+              onPress={handleGoogleSignIn}
+              disabled={socialLoading !== null || loading}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Google"
+            >
+              {socialLoading === 'google' ? (
+                <ActivityIndicator color="#111827" size="small" />
+              ) : (
+                <>
+                  <GoogleIcon />
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
+                </>
+              )}
+            </Pressable>
+          </Animated.View>
+
+          {/* Divider */}
+          <Animated.View entering={FadeInDown.delay(180).duration(400)} style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </Animated.View>
+
+          {/* Fields */}
+          <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.fields}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email address"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              returnKeyType="next"
+              textContentType="emailAddress"
+            />
+            <View style={styles.passwordBox}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                returnKeyType="done"
+                textContentType="password"
+                onSubmitEditing={handleSignIn}
+              />
+              <Pressable
+                onPress={() => setShowPassword(!showPassword)}
+                style={styles.showHide}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(300).duration(400)}>
+            <Pressable
+              onPress={handleForgotPassword}
+              style={styles.forgotRow}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password"
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </Pressable>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <Pressable
+              style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.88 : 1, marginTop: 16 }]}
+              onPress={handleSignIn}
+              disabled={loading || socialLoading !== null}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in"
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Sign in</Text>
+              )}
+            </Pressable>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>{"Don't have an account? "}</Text>
+              <Pressable
+                onPress={() => router.push('/sign-up')}
+                accessibilityRole="button"
+                accessibilityLabel="Create account"
+              >
+                <Text style={styles.footerLink}>Create account</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </ScrollView>
+    </View>
   );
 }
 
@@ -171,11 +260,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-  },
-
-  content: {
-    paddingHorizontal: 28,
-    gap: 24,
   },
 
   backButton: {
@@ -192,34 +276,95 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
   },
 
-  wordmark: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 3,
-    color: '#D1D5DB',
-    marginTop: -8,
+  content: {
+    paddingHorizontal: 28,
+    gap: 28,
   },
-
-  hero: {
-    gap: 8,
-    marginTop: 4,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
-  heroEmoji: {
-    marginBottom: 4,
+  titleImage: {
+    width: 96,
+    height: 96,
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    flexShrink: 0,
   },
-  heroTitle: {
-    fontSize: 36,
+  imagePlaceholder: {
+    backgroundColor: '#F3F4F6',
+  },
+  title: {
+    fontSize: 28,
     fontWeight: '800',
     color: '#111827',
-    letterSpacing: -1.2,
-    lineHeight: 42,
+    letterSpacing: -0.8,
+    lineHeight: 34,
+    marginBottom: 6,
   },
-  heroSubtitle: {
-    fontSize: 15,
+  subtitle: {
+    fontSize: 14,
     color: '#6B7280',
-    lineHeight: 22,
+    lineHeight: 20,
   },
 
+  // Social
+  socialRow: {
+    gap: 10,
+  },
+  appleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#111827',
+    borderRadius: Radius.md,
+    paddingVertical: 15,
+  },
+  appleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.md,
+    paddingVertical: 15,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    letterSpacing: -0.2,
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginVertical: -4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+
+  // Fields
   fields: {
     gap: 12,
   },
@@ -260,7 +405,6 @@ const styles = StyleSheet.create({
 
   forgotRow: {
     alignSelf: 'flex-end',
-    marginTop: -12,
   },
   forgotText: {
     fontSize: 13,
@@ -271,6 +415,7 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 13,
     color: '#EF4444',
+    marginTop: 8,
   },
 
   primaryButton: {
@@ -290,6 +435,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 4,
   },
   footerText: {
     fontSize: 14,

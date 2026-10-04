@@ -52,7 +52,7 @@ export default function TripMembersScreen() {
     if (!inviteCode || !trip) return;
     const tripName = trip.title ?? trip.destination;
     Share.share({
-      message: `Join my trip "${tripName}" on Tripseek!\n\nEnter this code in the app:\n${inviteCode}\n\nOr tap: toveli://join?code=${inviteCode}`,
+      message: `Join my trip "${tripName}" on Tripseek!\n\nEnter this code in the app:\n${inviteCode}\n\nOr tap: tripseek://join?code=${inviteCode}`,
     });
   }
 

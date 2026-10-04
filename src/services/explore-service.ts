@@ -173,11 +173,51 @@ function resultsCacheKey(lat: number, lng: number, keyword: string): string {
   return `${rLat},${rLng},${keyword}`;
 }
 
+// ── Interest → query mapping for For You personalization ──
+
+const INTEREST_QUERY_MAP: Record<string, string[]> = {
+  'Food & restaurants': ['best restaurants', 'local food market', 'top cafes'],
+  'Nature & scenery': ['parks nature scenery', 'gardens outdoor', 'hiking trails viewpoint'],
+  'Art & culture': ['museums art galleries', 'cultural landmarks', 'historic sites'],
+  'Beaches': ['beach waterfront', 'coastal spots', 'seaside'],
+  'Shopping': ['shopping markets', 'boutique stores', 'local shops'],
+  'Nightlife': ['bars nightlife', 'rooftop bars', 'cocktail bars'],
+  'Wellness & spa': ['spa wellness', 'yoga retreat'],
+  'Adventure & sports': ['outdoor adventure', 'sports activities'],
+  'History': ['historic sites monuments', 'heritage museums'],
+  'Architecture': ['architecture landmarks', 'iconic buildings'],
+};
+
+/** Pick For You queries based on user interests, always mixing in some variety */
+function buildForYouQueries(interests: string[]): string[] {
+  const interestQueries: string[] = [];
+  for (const interest of interests) {
+    const mapped = INTEREST_QUERY_MAP[interest];
+    if (mapped) interestQueries.push(...mapped.slice(0, 2)); // max 2 per interest
+  }
+
+  // Fallback defaults to always mix in for variety (prevents over-personalization)
+  const defaults = ['top attractions', 'popular cafes'];
+
+  // Combine: up to 4 interest-based + 2 variety defaults, deduped
+  const combined = [...new Set([...interestQueries.slice(0, 4), ...defaults])];
+  return combined.length > 0 ? combined.slice(0, 5) : ['best places to visit', 'popular cafes', 'top attractions', 'boutique hotels'];
+}
+
+/** Soft-sort for crowd-sensitive users: deprioritize very high review-count places */
+function applyCrowdSort(places: NormalizedPlace[], crowdTolerance: string): NormalizedPlace[] {
+  if (crowdTolerance !== 'avoid') return places;
+  // Split into "quiet" (≤2000 reviews) and "busy" (>2000), preserving distance order within each group
+  const quiet = places.filter((p) => (p.reviewCount ?? 0) <= 2000);
+  const busy = places.filter((p) => (p.reviewCount ?? 0) > 2000);
+  return [...quiet, ...busy];
+}
+
 /** Fetch places for the explore location and category */
 export async function fetchExplorePlaces(
   location: ExploreLocation,
   category: string,
-  _options?: { interests?: string[] },
+  options?: { interests?: string[]; crowdTolerance?: string },
 ): Promise<NormalizedPlace[]> {
   const coords = await resolveCoordinates(location);
   if (!coords) return [];
@@ -185,15 +225,25 @@ export async function fetchExplorePlaces(
   const { lat, lng } = coords;
   const catQuery = CATEGORY_QUERIES[category] ?? CATEGORY_QUERIES.for_you;
 
-  // Check cache
-  const cKey = resultsCacheKey(lat, lng, catQuery.keyword);
+  // Check cache (include interests in key for For You so different profiles get different results)
+  const interestKey = category === 'for_you' && options?.interests?.length
+    ? options.interests.slice().sort().join('|')
+    : '';
+  const cKey = resultsCacheKey(lat, lng, catQuery.keyword) + (interestKey ? `:${interestKey}` : '');
   const cached = resultsCache.get(cKey);
   if (cached && Date.now() - cached.ts < RESULTS_CACHE_TTL) {
     return cached.data;
   }
 
   const initialRadius = location.type === 'current' ? 15000 : 20000;
-  const keywords = catQuery.multiQuery ?? [catQuery.keyword];
+
+  // For You: pick queries based on user interests
+  let keywords: string[];
+  if (category === 'for_you' && options?.interests?.length) {
+    keywords = buildForYouQueries(options.interests);
+  } else {
+    keywords = catQuery.multiQuery ?? [catQuery.keyword];
+  }
 
   // Fetch all keywords in parallel, with radius expansion for rural areas
   async function fetchWithExpansion(keyword: string): Promise<Record<string, unknown>[]> {
@@ -233,6 +283,11 @@ export async function fetchExplorePlaces(
     places = rankStayResults(places);
   }
 
+  // For You: apply crowd tolerance soft-sort (deprioritize very busy places for avoid users)
+  if (category === 'for_you' && options?.crowdTolerance) {
+    places = applyCrowdSort(places, options.crowdTolerance);
+  }
+
   resultsCache.set(cKey, { data: places, ts: Date.now() });
   return places;
 }
@@ -270,6 +325,29 @@ export async function searchExplorePlaces(
   // Apply stay ranking for hotel-like searches
   const isHotelSearch = /hotel|stay|accommodation|lodge|hostel/i.test(query);
   return isHotelSearch ? rankStayResults(deduped) : deduped;
+}
+
+/**
+ * Search for a specific place by name without a location restriction.
+ * Passes lat:0/lng:0 to the edge function which skips locationRestriction
+ * when both values are falsy — giving a pure global text search.
+ * Use this when you have a place name but no reliable nearby coordinates
+ * (e.g. booking confirmation cards).
+ */
+export async function searchPlaceByName(
+  name: string,
+  locationHint?: string,
+): Promise<NormalizedPlace[]> {
+  const keyword = locationHint ? `${name} ${locationHint}` : name;
+  try {
+    const result = await callExploreEdge<{ places: Record<string, unknown>[] }>(
+      'places_nearby',
+      { lat: 0, lng: 0, radius: 0, keyword },
+    );
+    return (result.places ?? []).map(normalizeGooglePlace);
+  } catch {
+    return [];
+  }
 }
 
 /** In-memory cache for place details — avoids duplicate fetches when

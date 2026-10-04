@@ -1,3 +1,4 @@
+import React from 'react';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
@@ -736,52 +737,25 @@ export default function HomeScreen() {
               {/* Get started block */}
               <Animated.View entering={FadeIn.duration(500)} style={styles.emptyHeroBlock}>
                 <ThemedText style={[styles.getStartedLabel, { color: theme.text }]}>Get started</ThemedText>
-                <View style={styles.ctaList}>
-                  <Pressable
-                    onPress={() => router.push('/add-trip')}
-                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Plan a trip"
-                  >
-                    <View style={styles.ctaIcon}>
-                      <SuitcaseIcon size={18} color={theme.primary} />
-                    </View>
-                    <View style={styles.ctaTextCol}>
-                      <ThemedText style={styles.ctaTitle}>Plan a trip</ThemedText>
-                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>Start planning your next adventure</ThemedText>
-                    </View>
-                    <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => router.push('/inbox' as any)}
-                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Create a board"
-                  >
-                    <View style={styles.ctaIcon}>
-                      <BoardsIcon size={18} color={theme.primary} />
-                    </View>
-                    <View style={styles.ctaTextCol}>
-                      <ThemedText style={styles.ctaTitle}>Create a board</ThemedText>
-                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>Save and organize your travel inspiration</ThemedText>
-                    </View>
-                    <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => router.push('/bookings' as any)}
-                    style={({ pressed }) => [styles.ctaCard, { opacity: pressed ? 0.6 : 1 }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="My Bookings"
-                  >
-                    <View style={styles.ctaIcon}>
-                      <BookingsIcon size={18} color={theme.primary} />
-                    </View>
-                    <View style={styles.ctaTextCol}>
-                      <ThemedText style={styles.ctaTitle}>My Bookings</ThemedText>
-                      <ThemedText style={[styles.ctaDesc, { color: theme.textSecondary }]}>View and manage your trip bookings</ThemedText>
-                    </View>
-                    <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-                  </Pressable>
+                <View style={styles.ctaGrid}>
+                  {([
+                    { label: 'Plan a trip', image: require('@/assets/images/sign-up-hero.png'), route: '/add-trip' },
+                    { label: 'Make a board', image: require('@/assets/images/icon-boards-empty.png'), route: '/inbox' },
+                    { label: 'My bookings', image: require('@/assets/images/onboarding-slide-2.png'), route: '/bookings' },
+                  ] as const).map(({ label, image, route }, i) => (
+                    <React.Fragment key={label}>
+                      {i > 0 && <View style={[styles.ctaDivider, { backgroundColor: '#000' }]} />}
+                      <Pressable
+                        onPress={() => router.push(route as any)}
+                        style={({ pressed }) => [styles.ctaSquare, { opacity: pressed ? 0.7 : 1 }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={label}
+                      >
+                        <ExpoImage source={image} style={{ width: 52, height: 52 }} contentFit="contain" />
+                        <ThemedText style={[styles.ctaSquareLabel, { color: theme.text }]}>{label}</ThemedText>
+                      </Pressable>
+                    </React.Fragment>
+                  ))}
                 </View>
               </Animated.View>
 
@@ -955,23 +929,20 @@ const styles = StyleSheet.create({
   emptyHeroBlock: { gap: 12 },
   getStartedLabel: { fontSize: 18, fontWeight: '700', marginTop: 20 },
   sectionLabel: { fontSize: 18, fontWeight: '700' },
-  ctaList: { gap: 10 },
-  ctaCard: {
+  ctaGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 10,
+    gap: 10,
   },
-  ctaIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: Radius.sm,
+  ctaSquare: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+    borderRadius: Radius.md,
   },
-  ctaTextCol: { flex: 1, gap: 2 },
-  ctaTitle: { fontSize: 15, fontWeight: '600' },
-  ctaDesc: { fontSize: 12 },
+  ctaSquareLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  ctaDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
 
   // Board cards
   boardGrid: {

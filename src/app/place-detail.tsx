@@ -25,7 +25,7 @@ import { searchAllPlaces } from '@/services/places-data';
 import { sortTripsForPicker, formatDayLabel } from '@/services/trip-helpers';
 import { categoryToActivityType, priceLevelLabel, mapGoogleTypeToCategory } from '@/services/place-model';
 import { getPlacePhoto } from '@/services/free-photos';
-import { fetchPlaceDetails, getCachedPlaceDetails, searchExplorePlaces } from '@/services/explore-service';
+import { fetchPlaceDetails, getCachedPlaceDetails, searchExplorePlaces, searchPlaceByName } from '@/services/explore-service';
 import { normalizeGooglePlace } from '@/services/place-model';
 import { getPlaceBookingLinks, getPlaceBookingSectionTitle, openBookingLink, isBookablePlace, getBookableCTA } from '@/services/booking-links';
 
@@ -223,7 +223,10 @@ export default function PlaceDetailScreen() {
         ? { type: 'current' as const, lat: parseFloat(paramLat!), lng: parseFloat(paramLng!), label: destination || '' }
         : { type: 'custom' as const, query: destination || 'world', label: destination || '' };
 
-      const results = await searchExplorePlaces(title, searchLocation);
+      let results = await searchExplorePlaces(title, searchLocation);
+      if (results.length === 0) {
+        results = await searchPlaceByName(title, destination || undefined);
+      }
       if (results.length > 0 && results[0].placeId) {
         const match = results[0];
         setResolvedPlace({

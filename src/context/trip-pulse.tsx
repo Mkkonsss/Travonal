@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { loadTripPulseEnabled, saveTripPulseEnabled } from '@/services/storage';
+import { useAuth } from '@/context/auth';
+import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 
 interface TripPulseContextType {
   enabled: boolean;
@@ -20,8 +22,10 @@ export function shouldRunTripPulse(loaded: boolean, enabled: boolean): boolean {
 }
 
 export function TripPulseProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabledState] = useState(true);
+  const [enabled, setEnabledState] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const { user } = useAuth();
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadTripPulseEnabled().then((val) => {
@@ -30,9 +34,27 @@ export function TripPulseProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Pull remote setting on sign-in
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pullUserSettings(user.id).then((remote) => {
+      if (remote && typeof remote.tripPulseEnabled === 'boolean') {
+        setEnabledState(remote.tripPulseEnabled);
+        saveTripPulseEnabled(remote.tripPulseEnabled);
+      }
+    });
+  }, [loaded, user?.id]);
+
   function setEnabled(value: boolean) {
     setEnabledState(value);
     saveTripPulseEnabled(value);
+    if (user?.id) {
+      const userId = user.id;
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
+        mergeUserSettings(userId, { tripPulseEnabled: value });
+      }, 1500);
+    }
   }
 
   function resetAll() {

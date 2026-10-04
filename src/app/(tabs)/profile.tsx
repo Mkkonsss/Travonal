@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -22,6 +22,7 @@ import { useToast } from '@/context/toast';
 import { TravelStyleCard } from '@/components/travel-style-card';
 
 import { clearOnboardingComplete, resetAllData, loadChatMessages, saveChatMessages, saveChatThreads, loadRecentSearches, loadDismissedPulse, loadSeenPulse, loadNotifDismissed, loadTripPulseEnabled, loadLearningEnabled, loadBookingRemindersEnabled, saveBookingRemindersEnabled, loadDepartureReminderEnabled, saveDepartureReminderEnabled, loadDailyBriefingEnabled, saveDailyBriefingEnabled } from '@/services/storage';
+import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 import { hasPermission, requestNotificationPermission, onPermissionChange, openNotificationSettings } from '@/services/notifications';
 import { deleteAccount } from '@/services/supabase';
 import { verifyEntitlement, openSubscriptionManagement } from '@/services/subscription';
@@ -238,6 +239,7 @@ export default function ProfileScreen() {
   const { user, signOut, resetPassword } = useAuth();
   const { showToast } = useToast();
 
+  const notifSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(hasPermission());
   const [bookingRemindersEnabled, setBookingRemindersEnabled] = useState(true);
   const [departureReminderEnabled, setDepartureReminderEnabled] = useState(true);
@@ -264,6 +266,27 @@ export default function ProfileScreen() {
     loadChatMessages<unknown[]>([]).then((msgs) => setChatMessageCount(msgs.length));
   }, []);
 
+  // Pull notification settings from cloud on sign-in
+  useEffect(() => {
+    if (!user?.id) return;
+    pullUserSettings(user.id).then((remote) => {
+      if (!remote) return;
+      if (typeof remote.bookingRemindersEnabled === 'boolean') {
+        setBookingRemindersEnabled(remote.bookingRemindersEnabled);
+        saveBookingRemindersEnabled(remote.bookingRemindersEnabled);
+      }
+      if (typeof remote.departureReminderEnabled === 'boolean') {
+        setDepartureReminderEnabled(remote.departureReminderEnabled);
+        saveDepartureReminderEnabled(remote.departureReminderEnabled);
+      }
+      if (typeof remote.dailyBriefingEnabled === 'boolean') {
+        setDailyBriefingEnabled(remote.dailyBriefingEnabled);
+        saveDailyBriefingEnabled(remote.dailyBriefingEnabled);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
   useEffect(() => {
     setSyncErrorCallback(() => showToast('Profile sync failed — changes saved locally', 'error'));
   }, [setSyncErrorCallback, showToast]);
@@ -271,6 +294,17 @@ export default function ProfileScreen() {
   useEffect(() => {
     return onPermissionChange(() => setNotificationsEnabled(hasPermission()));
   }, []);
+
+  // ─── Helpers ───
+
+  function pushNotifSettings(patch: Record<string, boolean>) {
+    if (!user?.id) return;
+    const userId = user.id;
+    if (notifSyncTimerRef.current) clearTimeout(notifSyncTimerRef.current);
+    notifSyncTimerRef.current = setTimeout(() => {
+      mergeUserSettings(userId, patch);
+    }, 1500);
+  }
 
   // ─── Handlers ───
 
@@ -443,12 +477,12 @@ export default function ProfileScreen() {
         <View style={styles.identityHeader}>
           <View style={[styles.avatar, { backgroundColor: theme.primaryMuted }]}>
             <ThemedText style={[styles.avatarText, { color: theme.primary }]}>
-              {(user?.email?.[0] ?? 'T').toUpperCase()}
+              {((user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'T').toUpperCase()}
             </ThemedText>
           </View>
           <View style={{ flex: 1 }}>
             <ThemedText style={styles.userName}>
-              {formatDisplayName(user?.email)}
+              {(user?.user_metadata?.full_name as string | undefined) || formatDisplayName(user?.email)}
             </ThemedText>
             {user?.email && (
               <ThemedText style={[styles.userEmail, { color: theme.textSecondary }]}>{user.email}</ThemedText>
@@ -621,21 +655,21 @@ export default function ProfileScreen() {
                   label="Booking reminders"
                   sublabel="Remind about unbooked hotels and flights"
                   value={bookingRemindersEnabled}
-                  onToggle={(val) => { setBookingRemindersEnabled(val); saveBookingRemindersEnabled(val); }}
+                  onToggle={(val) => { setBookingRemindersEnabled(val); saveBookingRemindersEnabled(val); pushNotifSettings({ bookingRemindersEnabled: val }); }}
                   theme={theme}
                 />
                 <SettingToggle
                   label="Trip countdown"
                   sublabel="Reminder the day before your trip starts"
                   value={departureReminderEnabled}
-                  onToggle={(val) => { setDepartureReminderEnabled(val); saveDepartureReminderEnabled(val); }}
+                  onToggle={(val) => { setDepartureReminderEnabled(val); saveDepartureReminderEnabled(val); pushNotifSettings({ departureReminderEnabled: val }); }}
                   theme={theme}
                 />
                 <SettingToggle
                   label="Daily briefing"
                   sublabel="Morning summary of today's activities"
                   value={dailyBriefingEnabled}
-                  onToggle={(val) => { setDailyBriefingEnabled(val); saveDailyBriefingEnabled(val); }}
+                  onToggle={(val) => { setDailyBriefingEnabled(val); saveDailyBriefingEnabled(val); pushNotifSettings({ dailyBriefingEnabled: val }); }}
                   theme={theme}
                 />
 

@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -29,6 +30,7 @@ import { useInbox } from '@/context/inbox';
 import { useMemory } from '@/context/memory';
 import { useTheme } from '@/hooks/use-theme';
 import { loadChatMessages, saveChatMessages, loadChatThreads, saveChatThreads } from '@/services/storage';
+import { pushChatThreads, pullChatThreads } from '@/services/sync';
 import { chatAI, type TripAction, type ChatPlace } from '@/services/ai';
 import { ChatPlaceCard, placeStyles } from '@/components/chat-place-card';
 import { normalizeTimeTo24 } from '@/services/ai-utils';
@@ -803,7 +805,7 @@ export default function ChatScreen() {
   const { boards, addItemToBoard, createBoard, deleteBoard, renameBoard, removeItemFromBoard, markItemPlanned } = useBoards();
   const { savedPlaces } = useInbox();
   const { user } = useAuth();
-  const userName = formatUserName(user?.email);
+  const userName = (user?.user_metadata?.full_name as string | undefined) || formatUserName(user?.email);
 
   const chatGate = useGate('chat');
   const { refresh: refreshSubscription } = useSubscription();
@@ -827,6 +829,7 @@ export default function ChatScreen() {
   const [renameText, setRenameText] = useState('');
   const listRef = useRef<FlatList>(null);
   const chatInputRef = useRef<TextInput>(null);
+  const chatSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tripsRef = useRef(trips);
   useEffect(() => { tripsRef.current = trips; }, [trips]);
   const boardsRef = useRef(boards);
@@ -899,6 +902,16 @@ export default function ChatScreen() {
     return t || 'New chat';
   }
 
+  function saveAndPushThreads(updated: ChatThread[]) {
+    saveChatThreads(updated);
+    if (!user?.id) return;
+    const userId = user.id;
+    if (chatSyncTimerRef.current) clearTimeout(chatSyncTimerRef.current);
+    chatSyncTimerRef.current = setTimeout(() => {
+      pushChatThreads(userId, updated);
+    }, 1500);
+  }
+
   function saveCurrentThread() {
     const id = activeThreadId || generateId();
 
@@ -915,7 +928,7 @@ export default function ChatScreen() {
       };
       const filtered = prev.filter((t) => t.id !== id);
       const updated = [thread, ...filtered].slice(0, 50);
-      saveChatThreads(updated);
+      saveAndPushThreads(updated);
       return updated;
     });
     if (!activeThreadId) setActiveThreadId(id);
@@ -940,7 +953,7 @@ export default function ChatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setThreads((prev) => {
       const updated = prev.filter((t) => t.id !== threadId);
-      saveChatThreads(updated);
+      saveAndPushThreads(updated);
       return updated;
     });
     if (activeThreadId === threadId) {
@@ -955,7 +968,7 @@ export default function ChatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setThreads((prev) => {
       const updated = prev.map((t) => t.id === threadId ? { ...t, pinned: !t.pinned } : t);
-      saveChatThreads(updated);
+      saveAndPushThreads(updated);
       return updated;
     });
     setThreadOptionsId(null);
@@ -975,7 +988,7 @@ export default function ChatScreen() {
     const newTitle = renameText.trim();
     setThreads((prev) => {
       const updated = prev.map((t) => t.id === renameThreadId ? { ...t, title: newTitle } : t);
-      saveChatThreads(updated);
+      saveAndPushThreads(updated);
       return updated;
     });
     setRenameThreadId(null);
@@ -989,14 +1002,28 @@ export default function ChatScreen() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  // Load persisted threads — resume most recent on app reopen
+  // Load persisted threads — resume most recent on app reopen, then merge remote
   useEffect(() => {
-    loadChatThreads<ChatThread[]>([]).then((savedThreads) => {
-      setThreads(savedThreads);
-      if (!placeContext && savedThreads.length > 0) {
-        const mostRecent = savedThreads[0]; // already sorted by updatedAt desc
+    loadChatThreads<ChatThread[]>([]).then(async (savedThreads) => {
+      let merged = savedThreads;
+
+      if (user?.id) {
+        const remote = await pullChatThreads(user.id);
+        if (remote && remote.length > 0) {
+          const localIds = new Set(savedThreads.map((t) => t.id));
+          const newFromRemote = remote.filter((t) => !localIds.has(t.id));
+          if (newFromRemote.length > 0) {
+            merged = [...savedThreads, ...newFromRemote].sort((a, b) => b.updatedAt - a.updatedAt);
+            saveChatThreads(merged);
+          }
+        }
+      }
+
+      setThreads(merged);
+      if (!placeContext && merged.length > 0) {
+        const mostRecent = merged[0];
         loadedMsgCount.current = mostRecent.messages.length;
-        setMessages(mostRecent.messages);
+        setMessages(mostRecent.messages as Message[]);
         setActiveThreadId(mostRecent.id);
       }
       setLoaded(true);
@@ -1031,7 +1058,7 @@ export default function ChatScreen() {
         };
         const filtered = prev.filter((t) => t.id !== id);
         const updated = [thread, ...filtered].slice(0, 50);
-        saveChatThreads(updated);
+        saveAndPushThreads(updated);
         return updated;
       });
     }
@@ -1709,7 +1736,7 @@ export default function ChatScreen() {
           {isUser && (
             <View style={[styles.avatarCircle, { backgroundColor: theme.primaryMuted }]}>
               <ThemedText style={[styles.avatarLabel, { color: theme.primary }]}>
-                {(user?.email?.[0] ?? 'U').toUpperCase()}
+                {((user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
               </ThemedText>
             </View>
           )}
@@ -1920,6 +1947,12 @@ export default function ChatScreen() {
             return (
             <Pressable style={styles.emptyState} onPress={() => Keyboard.dismiss()}>
               <Animated.View entering={FadeIn.duration(400)} style={styles.emptyContent}>
+                <ExpoImage
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require('@/assets/images/icon-chat-empty.png')}
+                  style={{ width: 120, height: 120, marginBottom: 8 }}
+                  contentFit="contain"
+                />
                 <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
                   {getGreeting(userName)}
                 </ThemedText>
@@ -1999,7 +2032,7 @@ export default function ChatScreen() {
 
 
           {/* Input bar */}
-          <View style={[styles.inputBar, { borderTopColor: theme.border, paddingBottom: keyboardVisible ? 8 : insets.bottom + 8 }]}>
+          <View style={[styles.inputBar, { borderTopColor: theme.border, paddingBottom: keyboardVisible ? 2 : insets.bottom - 4 }]}>
           <TextInput
             ref={chatInputRef}
             style={[styles.textInput, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
