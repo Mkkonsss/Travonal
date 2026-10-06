@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -71,12 +71,27 @@ export function Toast() {
         animatedStyle,
         { top: insets.top + Spacing.two, backgroundColor: bgColor },
       ]}
-      pointerEvents="none"
+      pointerEvents={toast.action ? 'box-none' : 'none'}
     >
       <SymbolView name={ICON_NAMES[toast.type]} size={16} tintColor="#FFFFFF" style={styles.icon} />
       <Text style={[styles.text, { color: '#FFFFFF' }]} numberOfLines={2}>
         {toast.text}
       </Text>
+      {toast.action && (
+        <Pressable
+          onPress={() => {
+            const { onPress } = toast.action!;
+            dismiss();
+            onPress();
+          }}
+          hitSlop={8}
+          style={({ pressed }) => [styles.action, { opacity: pressed ? 0.7 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel={toast.action.label}
+        >
+          <Text style={styles.actionText}>{toast.action.label}</Text>
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -106,5 +121,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     flex: 1,
+  },
+  action: {
+    marginLeft: Spacing.two,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  actionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

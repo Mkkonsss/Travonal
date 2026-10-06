@@ -37,7 +37,9 @@ import { useTheme } from '@/hooks/use-theme';
 import { loadRecentSearches, saveRecentSearches } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 import { useAuth } from '@/context/auth';
-import { formatDayLabel } from '@/services/trip-helpers';
+import { formatDayLabel, sortTripsForPicker } from '@/services/trip-helpers';
+import { suggestTimeForActivity } from '@/services/itinerary-engine';
+import { buildPlaceDetailUrl } from '@/services/place-nav';
 import {
   NormalizedPlace,
   categoryToActivityType,
@@ -813,7 +815,7 @@ export function ExploreSearchView() {
 
   // Default explore location: device GPS → reverse geocode → city name.
   useEffect(() => {
-    if (exploreLocation) return;
+    if (exploreLocation || paramTripId) return;
 
     let cancelled = false;
 
@@ -859,6 +861,23 @@ export function ExploreSearchView() {
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const contextTrip = paramTripId ? trips.find((t) => t.id === paramTripId) : undefined;
+  useEffect(() => {
+    if (!contextTrip) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExploreLocation((prev) =>
+      prev?.type === 'trip' && prev.tripId === contextTrip.id
+        ? prev
+        : { type: 'trip', tripId: contextTrip.id, destination: contextTrip.destination, label: contextTrip.destination },
+    );
+  }, [contextTrip]);
+
+  function exitDayMode(goToTrip: boolean) {
+    const tid = paramTripId;
+    router.setParams({ tripId: undefined, day: undefined } as any);
+    if (goToTrip && tid) router.push(`/trip/${tid}` as any);
+  }
 
   // Fetch places when location, category, or profile changes
   useEffect(() => {
@@ -1021,55 +1040,52 @@ export function ExploreSearchView() {
   // ---- Navigation ----
 
   function navigateToDetail(place: NormalizedPlace) {
-    let url = `/place-detail?name=${encodeURIComponent(place.name)}`;
-    if (place.placeId) url += `&placeId=${encodeURIComponent(place.placeId)}`;
-    if (place.address) url += `&address=${encodeURIComponent(place.address)}`;
-    if (place.description) url += `&description=${encodeURIComponent(place.description)}`;
-    if (place.rating != null) url += `&rating=${place.rating}`;
-    if (place.reviewCount != null) url += `&reviewCount=${place.reviewCount}`;
-    if (place.lat != null) url += `&lat=${place.lat}`;
-    if (place.lng != null) url += `&lng=${place.lng}`;
-    if (place.category) url += `&category=${encodeURIComponent(place.category)}`;
-    if (place.website) url += `&website=${encodeURIComponent(place.website)}`;
-    if (place.phone) url += `&phone=${encodeURIComponent(place.phone)}`;
-    if (place.openingHours && place.openingHours.length > 0) {
-      url += `&hours=${encodeURIComponent(JSON.stringify(place.openingHours))}`;
-    }
-    if (place.priceLevel != null) url += `&priceLevel=${place.priceLevel}`;
-    if (place.googleMapsUri) url += `&googleMapsUri=${encodeURIComponent(place.googleMapsUri)}`;
-    if (place.openNow != null) url += `&openNow=${place.openNow}`;
-    const dest = exploreLocation?.label ?? '';
-    if (dest) url += `&destination=${encodeURIComponent(dest)}`;
-    if (paramTripId && paramDay) {
-      url += `&tripId=${encodeURIComponent(paramTripId)}&day=${encodeURIComponent(paramDay)}`;
-    }
-    router.push(url as any);
+    router.push(buildPlaceDetailUrl(place, {
+      destination: exploreLocation?.label,
+      tripId: paramTripId && paramDay ? paramTripId : undefined,
+      day: paramDay,
+    }) as any);
   }
 
   // ---- Add to trip ----
 
   function handleAddToTrip(place: NormalizedPlace) {
-    if (trips.length === 0) {
-      Alert.alert("No trips yet", "Plan a trip first, then you can add activities to it.");
+    if (paramTripId && paramDay && contextTrip) {
+      doAdd(paramTripId, Number(paramDay), place);
       return;
     }
 
-    if (paramTripId && paramDay) {
-      const contextTrip = trips.find((t) => t.id === paramTripId);
-      if (contextTrip) {
-        doAdd(paramTripId, Number(paramDay), place);
-        return;
-      }
+    if (trips.length === 0) {
+      const dest = exploreLocation?.type === 'current' ? '' : exploreLocation?.label ?? '';
+      Alert.alert('No trips yet', `Start a trip${dest ? ` to ${dest}` : ''} and you can add "${place.name}" to it.`, [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Plan a trip',
+          onPress: () => router.push((dest ? `/add-trip?initialDest=${encodeURIComponent(dest)}` : '/add-trip') as any),
+        },
+      ]);
+      return;
     }
 
-    if (trips.length === 1) {
-      showDayPicker(trips[0].id, place);
+    // Exploring a trip's destination → that's the trip they mean
+    if (exploreLocation?.type === 'trip' && trips.some((t) => t.id === exploreLocation.tripId)) {
+      showDayPicker(exploreLocation.tripId, place);
+      return;
+    }
+
+    const sorted = sortTripsForPicker(trips, exploreLocation?.label);
+    if (sorted.length === 1) {
+      showDayPicker(sorted[0].id, place);
       return;
     }
 
     setSheetState({
       title: 'Add to which trip?',
-      options: trips.map((trip) => ({ label: trip.destination, value: trip.id })),
+      subtitle: `Select a trip for "${place.name}"`,
+      options: sorted.map((trip) => ({
+        label: `${trip.destination} \u00B7 ${formatTripDates(trip.startDate, trip.endDate)}`,
+        value: trip.id,
+      })),
       onSelect: (tripId) => {
         setSheetState(null);
         showDayPicker(tripId, place);
@@ -1108,11 +1124,13 @@ export function ExploreSearchView() {
   }
 
   function doAdd(tripId: string, day: number, place: NormalizedPlace) {
+    const trip = trips.find((t) => t.id === tripId);
+    const type = categoryToActivityType(place.category);
     setPendingAdd({
       tripId,
       day,
       place,
-      time: '10:00',
+      time: type === 'hotel' ? '15:00' : suggestTimeForActivity(trip?.activities ?? [], day, type),
     });
   }
 
@@ -1129,18 +1147,27 @@ export function ExploreSearchView() {
       category: place.category,
       cost: place.priceLevel != null && place.priceLevel <= 1 ? 'budget' : 'moderate',
       description: place.description ?? place.address ?? '',
+      placeId: place.placeId,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      reviewCount: place.reviewCount,
+      openingHours: place.openingHours,
+      ...(actType === 'hotel' ? { fixed: true } : {}),
     });
     setPendingAdd(null);
-    showToast(`"${place.name}" added to ${trip?.destination ?? 'trip'} (Day ${day})`, 'success');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast(
+      `"${place.name}" added to ${trip?.destination ?? 'trip'} (Day ${day})`,
+      'success',
+      paramDay ? undefined : { label: 'View trip', onPress: () => router.push(`/trip/${tripId}` as any) },
+    );
   }
 
   // ---- Save ----
 
   function handleSaveToBoard(place: NormalizedPlace) {
-    if (boards.length === 0) {
-      Alert.alert("No boards yet", "Create a board first to save places to it.");
-      return;
-    }
     setPendingBoardPlace(place);
     setBoardPickerVisible(true);
   }
@@ -1163,7 +1190,11 @@ export function ExploreSearchView() {
       lng: place.lng,
       rating: place.rating,
     });
-    showToast(`"${place.name}" saved to board`, 'success');
+    const boardName = boards.find((b) => b.id === boardId)?.name;
+    showToast(`"${place.name}" saved to ${boardName ?? 'board'}`, 'success', {
+      label: 'View',
+      onPress: () => router.push(`/board-detail?boardId=${boardId}` as any),
+    });
     setBoardPickerVisible(false);
     setPendingBoardPlace(null);
   }
@@ -1307,16 +1338,26 @@ export function ExploreSearchView() {
           </Animated.View>
         )}
 
-        {/* Import actions */}
-        {paramTripId && paramDay ? (
-          <View style={[styles.identifyBanner, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '40' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        {/* Day context from a trip */}
+        {paramTripId && paramDay && contextTrip ? (
+          <View style={[styles.identifyBanner, styles.dayModeBanner, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '40' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
               <SymbolView name="mappin" size={14} tintColor={theme.primary} />
-              <ThemedText style={[styles.identifyBannerTitle, { color: theme.primary }]}>
-                Adding to Day {paramDay}
-              {trips.find((t) => t.id === paramTripId) ? ` \u00B7 ${trips.find((t) => t.id === paramTripId)!.destination}` : ''}
-            </ThemedText>
+              <ThemedText style={[styles.identifyBannerTitle, { color: theme.primary, flexShrink: 1 }]} numberOfLines={1}>
+                Adding to Day {paramDay} {'\u00B7'} {contextTrip.destination}
+              </ThemedText>
             </View>
+            <Pressable onPress={() => exitDayMode(false)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Stop adding to this day">
+              <SymbolView name="xmark" size={12} tintColor={theme.primary} />
+            </Pressable>
+            <Pressable
+              onPress={() => exitDayMode(true)}
+              style={[styles.dayModeDoneBtn, { backgroundColor: theme.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Done, back to trip"
+            >
+              <ThemedText style={[styles.dayModeDoneText, { color: theme.primaryText }]}>Done</ThemedText>
+            </Pressable>
           </View>
         ) : null}
         {/* Category tabs */}
@@ -1629,6 +1670,10 @@ const styles = StyleSheet.create({
   clearAllText: { fontSize: 13, fontWeight: '500' },
   searchSuggestion: { paddingVertical: 10, paddingHorizontal: 4 },
   searchSuggestionText: { fontSize: 15 },
+
+  dayModeBanner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dayModeDoneBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14 },
+  dayModeDoneText: { fontSize: 13, fontWeight: '700' },
 
   // Category tabs
   categoryScroll: { marginBottom: 12 },

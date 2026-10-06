@@ -5549,6 +5549,30 @@ export default function TripWorkspace() {
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
               keyboardShouldPersistTaps="handled"
             >
+              {actSearchQuery.trim().length < 2 && addingToDay != null && trip && (
+                <Pressable
+                  onPress={() => {
+                    const day = addingToDay;
+                    setAddingToDay(null);
+                    setActSearchQuery('');
+                    setActSearchResults([]);
+                    setActSelectedPlace(null);
+                    router.push({ pathname: '/(tabs)/explore', params: { tripId: trip.id, day: String(day) } } as any);
+                  }}
+                  style={({ pressed }) => [styles.browseExploreRow, { borderColor: theme.border, backgroundColor: theme.backgroundElement, opacity: pressed ? 0.8 : 1 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Browse places in ${trip.destination}`}
+                >
+                  <SymbolView name="map" size={18} tintColor={theme.primary} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.browseExploreTitle}>Browse {trip.destination}</ThemedText>
+                    <ThemedText style={[styles.browseExploreSub, { color: theme.textSecondary }]}>
+                      Explore restaurants, sights and stays on a map
+                    </ThemedText>
+                  </View>
+                  <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
+                </Pressable>
+              )}
               {actSearchLoading && (
                 <View style={{ padding: 20, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color={theme.primary} />
@@ -6684,6 +6708,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addSaveText: { fontSize: 15, fontWeight: '600' },
+
+  browseExploreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  browseExploreTitle: { fontSize: 15, fontWeight: '600' },
+  browseExploreSub: { fontSize: 13, marginTop: 2 },
 
   // Discover a place (Issue 2)
   discoverBtn: {

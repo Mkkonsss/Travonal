@@ -27,6 +27,7 @@ import { TripActionSheet } from '@/components/trip-action-sheet';
 import { prefetchPhotosFromCache, getCachedPhotoUrl, categoryPlaceholderColors, categoryPlaceholderEmoji } from '@/services/free-photos';
 
 import { formatDateRange } from '@/services/trip-helpers';
+import { buildPlaceDetailUrl } from '@/services/place-nav';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
 
 // ---------- Helpers ----------
@@ -603,27 +604,7 @@ function NearYouSection() {
           <NearYouCard
             key={place.placeId ?? String(idx)}
             place={place}
-            onPress={() => {
-              let url = `/place-detail?name=${encodeURIComponent(place.name)}`;
-              if (place.placeId) url += `&placeId=${encodeURIComponent(place.placeId)}`;
-              if (place.address) url += `&address=${encodeURIComponent(place.address)}`;
-              if (place.description) url += `&description=${encodeURIComponent(place.description)}`;
-              if (place.rating != null) url += `&rating=${place.rating}`;
-              if (place.reviewCount != null) url += `&reviewCount=${place.reviewCount}`;
-              if (place.lat != null) url += `&lat=${place.lat}`;
-              if (place.lng != null) url += `&lng=${place.lng}`;
-              if (place.category) url += `&category=${encodeURIComponent(place.category)}`;
-              if (place.website) url += `&website=${encodeURIComponent(place.website)}`;
-              if (place.phone) url += `&phone=${encodeURIComponent(place.phone)}`;
-              if (place.openingHours && place.openingHours.length > 0) {
-                url += `&hours=${encodeURIComponent(JSON.stringify(place.openingHours))}`;
-              }
-              if (place.priceLevel != null) url += `&priceLevel=${place.priceLevel}`;
-              if (place.googleMapsUri) url += `&googleMapsUri=${encodeURIComponent(place.googleMapsUri)}`;
-              if (place.openNow != null) url += `&openNow=${place.openNow}`;
-              if (place.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(place.photos[0].reference)}`;
-              router.push(url as any);
-            }}
+            onPress={() => router.push(buildPlaceDetailUrl(place) as any)}
           />
         ))}
       </ScrollView>

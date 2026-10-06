@@ -643,10 +643,6 @@ export default function PlaceDetailScreen() {
   }
 
   function handleOpenBoardPicker() {
-    if (boards.length === 0) {
-      Alert.alert("No boards yet", "Create a board first to save places to it.");
-      return;
-    }
     setBoardPickerVisible(true);
   }
 
@@ -668,7 +664,11 @@ export default function PlaceDetailScreen() {
       rating: place.rating,
       ...(photoUrl ? { mediaUri: photoUrl, mediaType: 'image' as const } : {}),
     });
-    showToast(`"${place.title}" saved to board`, 'success');
+    const boardName = boards.find((b) => b.id === boardId)?.name;
+    showToast(`"${place.title}" saved to ${boardName ?? 'board'}`, 'success', {
+      label: 'View',
+      onPress: () => router.push(`/board-detail?boardId=${boardId}` as any),
+    });
     setBoardPickerVisible(false);
   }
 
@@ -680,7 +680,7 @@ export default function PlaceDetailScreen() {
     }
 
     if (trips.length === 0) {
-      Alert.alert("No trips yet", "Plan a trip first, then you can add activities to it.");
+      promptPlanTrip();
       return;
     }
 
@@ -741,6 +741,22 @@ export default function PlaceDetailScreen() {
     });
   }
 
+  function promptPlanTrip() {
+    const dest = place?.destination ?? '';
+    Alert.alert('No trips yet', `Start a trip${dest ? ` to ${dest}` : ''} and you can add "${place?.title ?? 'this place'}" to it.`, [
+      { text: 'Not now', style: 'cancel' },
+      {
+        text: 'Plan a trip',
+        onPress: () => router.push((dest ? `/add-trip?initialDest=${encodeURIComponent(dest)}` : '/add-trip') as any),
+      },
+    ]);
+  }
+
+  // Launched from inside a trip → user is one back-swipe away from it already
+  function viewTripAction(tripId: string) {
+    return paramTripId ? undefined : { label: 'View trip', onPress: () => router.push(`/trip/${tripId}` as any) };
+  }
+
   function handleAddToStays() {
     if (!place) return;
 
@@ -751,7 +767,7 @@ export default function PlaceDetailScreen() {
     }
 
     if (trips.length === 0) {
-      Alert.alert("No trips yet", "Plan a trip first, then you can add stays to it.");
+      promptPlanTrip();
       return;
     }
 
@@ -792,7 +808,7 @@ export default function PlaceDetailScreen() {
       rating: place.rating,
       fixed: true,
     });
-    showToast(`"${place.title}" added to stays`, 'success');
+    showToast(`"${place.title}" added to stays`, 'success', viewTripAction(tripId));
   }
 
   function confirmPendingAdd() {
@@ -816,7 +832,7 @@ export default function PlaceDetailScreen() {
       ...(isHotel ? { fixed: true } : {}),
     });
     setPendingAdd(null);
-    showToast(`"${place.title}" added to ${trip?.destination ?? 'trip'} (Day ${day})`, 'success');
+    showToast(`"${place.title}" added to ${trip?.destination ?? 'trip'} (Day ${day})`, 'success', viewTripAction(tripId));
   }
 
   const reviewsToShow = place.reviews
