@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -12,6 +12,18 @@ import type { StaysData } from '@/components/stays-section';
 import type { NormalizedPlace } from '@/services/place-model';
 
 import { StayCard } from '@/components/stays/stay-card';
+
+// TODO: Replace with your real Booking.com affiliate ID once approved
+const BOOKING_AFFILIATE_ID = 'YOUR_AID_HERE';
+
+function buildBookingHotelUrl(hotelName: string, destination: string): string {
+  const query = [hotelName, destination].filter(Boolean).join(' ');
+  const params = new URLSearchParams({
+    ss: query,
+    aid: BOOKING_AFFILIATE_ID,
+  });
+  return `https://www.booking.com/searchresults.html?${params.toString()}`;
+}
 
 export interface StaysStripProps {
   trip: Trip;
@@ -101,9 +113,18 @@ export const StaysStrip = memo(function StaysStrip({
                           </ThemedText>
                         )}
                       </View>
-                      <View style={[s.bookBtn, { backgroundColor: theme.primary }]}>
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Linking.openURL(buildBookingHotelUrl(hotel.name, hotel.city ?? hotel.address ?? trip.destination));
+                        }}
+                        style={[s.bookBtn, { backgroundColor: theme.primary }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Book ${hotel.name} on Booking.com`}
+                        hitSlop={4}
+                      >
                         <ThemedText style={{ color: theme.background, fontSize: 11, fontWeight: '600' }}>Book</ThemedText>
-                      </View>
+                      </Pressable>
                     </View>
                   </Pressable>
                 );
@@ -138,24 +159,26 @@ export const StaysStrip = memo(function StaysStrip({
         </View>
       </View>
 
-      {/* Stay cards */}
-      <View style={{ gap: 10 }}>
-      {blocks.map((b) => {
-        const photoUrl = b.hotel.placeId
-          ? activityPhotos.get(b.hotel.placeId)
-          : hotelPhotoUrls.get(b.hotel.title);
-        return (
-          <StayCard
-            key={b.hotel.id}
-            block={b}
-            tripStartDate={trip.startDate}
-            datesKnown={datesKnown}
-            photoUrl={photoUrl}
-            theme={theme}
-            onViewStay={onViewStay}
-          />
-        );
-      })}
+      {/* Stay cards — 2-column grid */}
+      <View style={s.grid}>
+        {blocks.map((b) => {
+          const photoUrl = b.hotel.placeId
+            ? activityPhotos.get(b.hotel.placeId)
+            : hotelPhotoUrls.get(b.hotel.title);
+          return (
+            <View key={b.hotel.id} style={s.gridItem}>
+              <StayCard
+                block={b}
+                tripStartDate={trip.startDate}
+                datesKnown={datesKnown}
+                photoUrl={photoUrl}
+                gridMode
+                theme={theme}
+                onViewStay={onViewStay}
+              />
+            </View>
+          );
+        })}
       </View>
     </Animated.View>
   );
@@ -192,6 +215,15 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
   // ── Suggestions ──
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  gridItem: {
+    width: '48%',
+    flexShrink: 0,
+  },
   suggestionsBlock: {
     marginTop: 10,
   },

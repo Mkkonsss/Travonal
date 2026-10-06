@@ -257,14 +257,14 @@ function ChipButton({
 // ---------- main component ----------
 export default function OnboardingScreen() {
   const router = useRouter();
-  const { edit } = useLocalSearchParams<{ edit?: string }>();
+  const { edit, survey } = useLocalSearchParams<{ edit?: string; survey?: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { profile, updateProfile } = useProfile();
   const { learningEnabled: travelMemoryEnabled, setLearningEnabled: setTravelMemoryEnabled } = useMemory();
   const { enabled: tripPulseEnabled, setEnabled: setTripPulseEnabled } = useTripPulse();
 
-  const [phase, setPhase] = useState<Phase>(edit === '1' ? 'survey' : 'welcome');
+  const [phase, setPhase] = useState<Phase>(edit === '1' || survey === '1' ? 'survey' : 'welcome');
   const [activeSlide, setActiveSlide] = useState(0);
   const [heroHeight, setHeroHeight] = useState(0);
   const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -369,7 +369,7 @@ export default function OnboardingScreen() {
     return {
       interests,
       decisionPriorities,
-      crowdTolerance: crowdTouched ? crowdTolerance : undefined,
+      crowdTolerance,
       dietaryRestrictions: dietary,
       dietaryNote: dietaryNote.trim() || undefined,
       mobilityNeeds: accessibility,
@@ -394,7 +394,11 @@ export default function OnboardingScreen() {
   function handleFinish() {
     if (edit === '1') { router.back(); return; }
     setOnboardingComplete();
-    router.push('/sign-up');
+    if (survey === '1') {
+      router.replace('/(tabs)' as any);
+    } else {
+      router.push('/sign-up');
+    }
   }
 
   // ========== WELCOME ==========

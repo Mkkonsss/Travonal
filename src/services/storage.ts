@@ -524,6 +524,14 @@ export async function saveLastUserId(id: string): Promise<void> {
   }
 }
 
+export async function clearLastUserId(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(LAST_USER_ID_KEY);
+  } catch {
+    // Non-critical
+  }
+}
+
 /**
  * Clears ALL persisted Tripseek data from AsyncStorage.
  * Call context reset functions separately to clear in-memory state.
@@ -542,6 +550,38 @@ export async function loadStandaloneBookings(): Promise<any[]> {
 
 export async function saveStandaloneBookings(bookings: any[]): Promise<void> {
   await AsyncStorage.setItem(STANDALONE_BOOKINGS_KEY, JSON.stringify(bookings));
+}
+
+// ---------- External trip alerts cache ----------
+
+export async function loadTripExternalAlerts(tripId: string): Promise<{ alerts: import('@/services/ai').TripAlertResult[]; fetchedAt: string } | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`@toveli/trip_external_alerts_${tripId}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveTripExternalAlerts(
+  tripId: string,
+  alerts: import('@/services/ai').TripAlertResult[],
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      `@toveli/trip_external_alerts_${tripId}`,
+      JSON.stringify({ alerts, fetchedAt: new Date().toISOString() }),
+    );
+  } catch {
+    // Non-critical cache
+  }
+}
+
+export async function clearTripExternalAlerts(tripId: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(`@toveli/trip_external_alerts_${tripId}`);
+  } catch {}
 }
 
 export async function resetAllData(): Promise<void> {

@@ -17,6 +17,7 @@ interface TripMapProps {
   activities: Activity[];
   destination: string;
   totalDays: number;
+  topInset?: number;
   onActivityPress?: (activity: Activity) => void;
 }
 
@@ -30,6 +31,7 @@ function getCategoryIcon(category: string): string {
 function buildTripMapHtml(
   activities: { title: string; day: number; time: string; lat: number; lng: number; idx: number; svgIcon: string }[],
   totalDays: number,
+  destinationCoords?: { lat: number; lng: number },
 ): string {
   const placesJson = JSON.stringify(activities.map((a) => ({
     title: a.title.replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;'),
@@ -83,8 +85,6 @@ var COLORS=${colorsJson};
 var markers=[];
 
 (function(){
-  if(!ACTS.length) return;
-
   var map=L.map('map',{zoomControl:false,attributionControl:true});
 
   L.tileLayer('${OSM_TILES}',{
@@ -92,8 +92,12 @@ var markers=[];
     attribution:'\\u00a9 <a href="https://openstreetmap.org/">OSM</a>'
   }).addTo(map);
 
-  var bounds=L.latLngBounds(ACTS.map(function(a){return [a.lat,a.lng];}));
-  map.fitBounds(bounds,{padding:[50,50]});
+  if(ACTS.length>0){
+    var bounds=L.latLngBounds(ACTS.map(function(a){return [a.lat,a.lng];}));
+    map.fitBounds(bounds,{padding:[50,50]});
+  } else {
+    map.setView([${destinationCoords?.lat ?? 20}, ${destinationCoords?.lng ?? 0}], ${destinationCoords ? 11 : 2});
+  }
 
   // Group by day for polylines
   var byDay={};
@@ -195,13 +199,31 @@ function CardPhoto({ activity }: { activity: Activity }) {
 const CARD_WIDTH = 272;
 const CARD_GAP = 12;
 
-export function TripMap({ activities, destination, totalDays, onActivityPress }: TripMapProps) {
+export function TripMap({ activities, destination, totalDays, topInset = 0, onActivityPress }: TripMapProps) {
   const theme = useTheme();
   const webViewRef = useRef<WebView>(null);
   const nativeMapRef = useRef<NativeMapRef>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | undefined>();
+  const [destinationCoords, setDestinationCoords] = useState<{ lat: number; lng: number } | null>(null);
   const isWeb = Platform.OS === 'web';
+
+  // Geocode destination for empty-state map centering
+  useEffect(() => {
+    if (!destination) return;
+    let cancelled = false;
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(destination)}&format=json&limit=1`, {
+      headers: { 'User-Agent': 'TripseekApp/1.0' },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data?.[0]) {
+          setDestinationCoords({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [destination]);
 
   const geoActivities = useMemo(() => {
     return activities
@@ -253,20 +275,8 @@ export function TripMap({ activities, destination, totalDays, onActivityPress }:
       }));
   }, [geoActivities, isWeb]);
 
-  if (geoActivities.length === 0) {
-    return (
-      <View style={styles.fallback}>
-        <SymbolView name="map.fill" size={48} tintColor={theme.text} />
-        <ThemedText style={styles.fallbackTitle}>Map view</ThemedText>
-        <ThemedText style={[styles.fallbackSub, { color: theme.textSecondary }]}>
-          No activities with locations yet. Activities from AI or Explore will appear on the map.
-        </ThemedText>
-      </View>
-    );
-  }
-
   // Web: build Leaflet HTML
-  const html = isWeb ? buildTripMapHtml(geoActivities, totalDays) : '';
+  const html = isWeb ? buildTripMapHtml(geoActivities, totalDays, destinationCoords ?? undefined) : '';
 
   function handleMapMessage(event: { nativeEvent: { data: string } }) {
     try {
@@ -314,10 +324,16 @@ export function TripMap({ activities, destination, totalDays, onActivityPress }:
         }}
         activeMarkerIndex={activeMarkerIndex}
         initialPadding={{ top: 50, right: 50, bottom: 200, left: 50 }}
+        initialRegion={destinationCoords && nativeMarkers.length === 0 ? {
+          latitude: destinationCoords.lat,
+          longitude: destinationCoords.lng,
+          latitudeDelta: 0.15,
+          longitudeDelta: 0.15,
+        } : undefined}
       />
 
       {/* Destination + count badge */}
-      <View style={[styles.locationBadge, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
+      <View style={[styles.locationBadge, { backgroundColor: 'rgba(0,0,0,0.55)', top: topInset + 12 }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <SymbolView name="mappin" size={14} tintColor="#fff" />
           <ThemedText style={[styles.locationText, { color: '#fff' }]}>
@@ -372,22 +388,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative' as const,
-  },
-  fallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 48,
-    gap: 8,
-  },
-  fallbackTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  fallbackSub: {
-    fontSize: 14,
-    textAlign: 'center',
-    paddingHorizontal: 32,
   },
   locationBadge: {
     position: 'absolute',

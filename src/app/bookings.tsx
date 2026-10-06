@@ -70,6 +70,32 @@ function BookingImage({ uri, typeKey, iconSize = 28, photosLoading = false }: { 
   );
 }
 
+function findMatchingTrip(bookingData: Record<string, unknown>, trips: Trip[]): Trip | null {
+  const location = (
+    (bookingData.location as string) ||
+    (bookingData.destination as string) ||
+    ''
+  ).toLowerCase();
+  if (!location) return null;
+  const matches = trips.filter(
+    (t) =>
+      location.includes(t.destination.toLowerCase()) ||
+      t.destination.toLowerCase().includes(location),
+  );
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  // Multiple matches — pick the trip whose start date is closest to the booking date
+  const bookingDate = bookingData.bookingDate
+    ? new Date(bookingData.bookingDate as string).getTime()
+    : null;
+  if (!bookingDate) return matches[0];
+  return matches.reduce((best, trip) => {
+    const tripDate = trip.startDate ? new Date(trip.startDate).getTime() : Infinity;
+    const bestDate = best.startDate ? new Date(best.startDate).getTime() : Infinity;
+    return Math.abs(tripDate - bookingDate) < Math.abs(bestDate - bookingDate) ? trip : best;
+  });
+}
+
 export default function BookingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -137,10 +163,10 @@ export default function BookingsScreen() {
       .then((res) => {
         const pending = res.bookings.filter((b) => b.status === 'pending');
         for (const booking of pending) {
-          const data = booking.booking_data;
+          const data = booking.booking_data as Record<string, unknown>;
           const typeMap: Record<string, string> = { restaurant: 'restaurant', hotel: 'hotel', flight: 'flight', train: 'train', activity: 'activity', other: 'other' };
           const resType = typeMap[data.reservationType as string] ?? 'other';
-          addStandaloneBooking({
+          const payload = {
             type: resType as any,
             title: (data.name as string) || 'Booking',
             date: (data.bookingDate as string) ?? undefined,
@@ -170,7 +196,13 @@ export default function BookingsScreen() {
             guestCount: data.guestCount != null ? Number(data.guestCount) : undefined,
             cancellationPolicy: (data.cancellationPolicy as string) ?? undefined,
             duration: (data.duration as string) ?? undefined,
-          });
+          };
+          addStandaloneBooking(payload);
+          // Also link to matching trip if destination matches
+          const matchedTrip = findMatchingTrip(data, trips);
+          if (matchedTrip) {
+            addReservation(matchedTrip.id, payload);
+          }
           markBookingImportedAI(booking.id).catch(() => {});
         }
       })

@@ -7,7 +7,7 @@ import { createTripRecord } from '@/services/trip-helpers';
 import { generateId } from '@/services/itinerary-engine';
 import { generateActivityId, normalizeTimeTo24 } from '@/services/ai-utils';
 import { useAuth } from '@/context/auth';
-import { pushTrips, pullTrips, deleteRemoteTrip } from '@/services/sync';
+import { pushTrips, pullTrips, deleteRemoteTrip, pullSharedTrips, subscribeToSharedTrips, leaveSharedTrip as syncLeaveSharedTrip, pushSharedTripData } from '@/services/sync';
 
 export type ReservationType = 'restaurant' | 'hotel' | 'flight' | 'train' | 'activity' | 'other';
 
@@ -58,6 +58,7 @@ export interface Activity {
   requested?: boolean; // from board/inbox — AI must include, can freely place
   category?: string;
   description?: string;
+  personalNote?: string;   // why this was picked for this traveler
   cost?: 'free' | 'budget' | 'moderate' | 'premium';
   placeId?: string;       // Google Place ID
   address?: string;       // formattedAddress from Google Places
@@ -118,6 +119,8 @@ export interface Trip {
   reservations?: Reservation[];
   invitations?: Invitation[];
   members?: TripMember[];
+  /** Set when the user joined this trip via invite code. Undefined = user is the owner. */
+  joinedAs?: 'member' | 'viewer';
 }
 
 export interface PrepItem {
@@ -204,7 +207,7 @@ interface TripsContextType {
   attachReservation: (tripId: string, activityId: string, res: Omit<Reservation, 'id' | 'tripId'>) => void;
   updateReservation: (tripId: string, res: Reservation) => void;
   removeReservation: (tripId: string, resId: string) => void;
-  addInvitation: (tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>) => void;
+  addInvitation: (tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>) => string;
   removeInvitation: (tripId: string, invId: string) => void;
   updateInvitationStatus: (tripId: string, invId: string, status: Invitation['status']) => void;
   acceptInvitation: (tripId: string, invId: string) => void;
@@ -212,6 +215,8 @@ interface TripsContextType {
   addMember: (tripId: string, member: Omit<TripMember, 'id' | 'joinedAt'>) => void;
   removeMember: (tripId: string, memberId: string) => void;
   updateMemberRole: (tripId: string, memberId: string, role: TripMember['role']) => void;
+  joinTrip: (trip: Trip, role: 'member' | 'viewer') => void;
+  leaveSharedTrip: (tripId: string) => Promise<void>;
   resetAll: () => void;
 }
 
@@ -237,6 +242,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   // After local data is ready and user is signed in, pull any remote-only trips
   useEffect(() => {
     if (!loaded || !user?.id) return;
+    // Pull owned trips
     pullTrips(user.id).then((remoteTrips) => {
       if (remoteTrips.length === 0) return;
       setTrips((local) => {
@@ -245,8 +251,40 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         return newFromRemote.length > 0 ? [...local, ...newFromRemote] : local;
       });
     });
-   
+    // Pull shared trips (invited as member/viewer) — add new ones AND refresh existing
+    pullSharedTrips(user.id).then((sharedResults) => {
+      if (sharedResults.length === 0) return;
+      setTrips((local) => {
+        const localIds = new Set(local.map((t) => t.id));
+        const newShared: Trip[] = [];
+        const updatedMap = new Map<string, Trip>();
+        for (const { trip, role } of sharedResults) {
+          const decorated = { ...trip, joinedAs: role };
+          if (!localIds.has(trip.id)) newShared.push(decorated);
+          else updatedMap.set(trip.id, decorated);
+        }
+        if (newShared.length === 0 && updatedMap.size === 0) return local;
+        return [...local.map((t) => (updatedMap.has(t.id) ? updatedMap.get(t.id)! : t)), ...newShared];
+      });
+    });
   }, [loaded, user?.id]);
+
+  // Realtime subscription for shared trips — re-subscribes whenever the set of shared trip IDs changes
+  // (e.g. immediately after joining a trip mid-session, not just on app load)
+  const sharedTripIdKey = trips.filter((t) => t.joinedAs).map((t) => t.id).sort().join(',');
+  useEffect(() => {
+    if (!loaded || !user?.id || !sharedTripIdKey) return;
+    const sharedTripIds = sharedTripIdKey.split(',');
+    const unsub = subscribeToSharedTrips(sharedTripIds, (updatedTrip) => {
+      setTrips((prev) =>
+        prev.map((t) =>
+          t.id === updatedTrip.id ? { ...updatedTrip, joinedAs: t.joinedAs } : t,
+        ),
+      );
+    });
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, user?.id, sharedTripIdKey]);
 
   // Trip save is gated only on its OWN load result, not on history.
   useEffect(() => {
@@ -256,12 +294,17 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   }, [trips, loaded, tripsLoadError]);
 
   // Push trips to Supabase (debounced 1.5s to avoid hammering on rapid mutations)
+  // Only push owned trips — shared trips are owned by another user's row.
   useEffect(() => {
     if (!loaded || !user?.id || tripsLoadError) return;
     const userId = user.id;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
-      pushTrips(userId, trips);
+      const ownedTrips = trips.filter((t) => !t.joinedAs);
+      pushTrips(userId, ownedTrips);
+      // Push member edits back to the shared trip's canonical row
+      const memberTrips = trips.filter((t) => t.joinedAs === 'member');
+      for (const t of memberTrips) pushSharedTripData(t.id, t);
     }, 1500);
     return () => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -356,6 +399,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   const addActivity = useCallback((tripId: string, activity: Omit<Activity, 'id'>): boolean => {
     const trip = tripsRef.current.find((t) => t.id === tripId);
     if (!trip) return false;
+    if (trip.joinedAs === 'viewer') return false;
 
     const newAct: Activity = { ...activity, id: generateActivityId(), time: normalizeTimeTo24(activity.time) };
 
@@ -379,6 +423,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   const updateActivity = useCallback((tripId: string, activityId: string, updates: Partial<Omit<Activity, 'id'>>, skipLockCheck?: boolean): boolean => {
     const trip = tripsRef.current.find((t) => t.id === tripId);
     if (!trip) return false;
+    if (trip.joinedAs === 'viewer') return false;
     const target = trip.activities.find((a) => a.id === activityId);
     if (!target) return false;
     if (!skipLockCheck && isLocked(target) && !('locked' in updates)) return false;
@@ -403,6 +448,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   const removeActivity = useCallback((tripId: string, activityId: string, skipLockCheck?: boolean): boolean => {
     const trip = tripsRef.current.find((t) => t.id === tripId);
     if (!trip) return false;
+    if (trip.joinedAs === 'viewer') return false;
     const target = trip.activities.find((a) => a.id === activityId);
     if (!target) return false;
     if (!skipLockCheck && isLocked(target)) return false;
@@ -515,6 +561,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   function setTripActivities(tripId: string, activities: Activity[], changeDescription?: string, bypassLockProtection?: boolean) {
     const trip = trips.find((t) => t.id === tripId);
     if (!trip) return;
+    if (trip.joinedAs === 'viewer') return;
     let merged: Activity[];
     if (bypassLockProtection) {
       merged = activities;
@@ -670,17 +717,19 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  function addInvitation(tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>) {
+  function addInvitation(tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>): string {
+    const code = generateInviteCode();
     const newInv: Invitation = {
       ...inv,
       id: generateId(),
       sentAt: new Date().toISOString(),
-      inviteCode: generateInviteCode(),
+      inviteCode: code,
       role: inv.role ?? 'member',
     };
     setTrips((prev) =>
       prev.map((t) => (t.id === tripId ? { ...t, invitations: [...(t.invitations ?? []), newInv] } : t))
     );
+    return code;
   }
 
   function removeInvitation(tripId: string, invId: string) {
@@ -771,6 +820,24 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  /**
+   * Add a shared trip preserving its original ID (from the owner's Supabase row).
+   * This ensures realtime updates and re-pulls match by ID correctly.
+   */
+  function joinTrip(trip: Trip, role: 'member' | 'viewer') {
+    const tripWithRole: Trip = { ...trip, joinedAs: role };
+    setTrips((prev) => {
+      if (prev.some((t) => t.id === trip.id)) return prev;
+      return [...prev, tripWithRole];
+    });
+    tripsRef.current = [...tripsRef.current.filter((t) => t.id !== trip.id), tripWithRole];
+  }
+
+  async function leaveSharedTrip(tripId: string): Promise<void> {
+    await syncLeaveSharedTrip(tripId).catch(() => {});
+    setTrips((prev) => prev.filter((t) => t.id !== tripId));
+  }
+
   function resetAll() {
     setTrips(EMPTY_TRIPS);
     setTripsLoadError(false);
@@ -812,6 +879,8 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         addMember,
         removeMember,
         updateMemberRole,
+        joinTrip,
+        leaveSharedTrip,
         resetAll,
       }}>
       {children}

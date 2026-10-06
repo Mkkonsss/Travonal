@@ -119,12 +119,11 @@ export function AppPulseEvaluator() {
       const alerts = runTripPulse(trip, currentProfile, currentMemory, Infinity, weatherForecast);
       const activeAlertIds = new Set<string>();
 
-      let importantNotifiedThisCycle = false;
+      const newAlertOccurrenceIds: string[] = [];
 
       for (const alert of alerts) {
         activeAlertIds.add(alert.id);
 
-        // Record or update the occurrence in centralized history
         const occurrenceId = history.recordAlert(trip.id, alert.id, {
           title: alert.title,
           message: alert.message,
@@ -132,22 +131,25 @@ export function AppPulseEvaluator() {
           severity: alert.severity,
         });
 
-        // Schedule notification for alerts whose occurrence hasn't been notified
-        // Urgent: always notify. Important: throttle to 1 per trip per evaluation cycle.
-        const shouldNotify =
-          alert.severity === 'urgent' ||
-          (alert.severity === 'important' && !importantNotifiedThisCycle);
+        if (!history.isOccurrenceNotified(trip.id, alert.id)) {
+          newAlertOccurrenceIds.push(occurrenceId);
+        }
+      }
 
-        if (shouldNotify && !history.isOccurrenceNotified(trip.id, alert.id)) {
-          const scheduled = await scheduleLocalNotification(
-            `Trip Alerts: ${trip.destination}`,
-            alert.message,
-            { tripId: trip.id, alertId: alert.id, openPulse: 'true' },
-            'pulse_alert',
-          );
-          if (scheduled) {
-            history.markNotified(occurrenceId);
-            if (alert.severity === 'important') importantNotifiedThisCycle = true;
+      // Send a single summary notification for all new alerts this cycle
+      if (newAlertOccurrenceIds.length > 0) {
+        const count = newAlertOccurrenceIds.length;
+        const scheduled = await scheduleLocalNotification(
+          `${count} alert${count > 1 ? 's' : ''} for your ${trip.destination} trip`,
+          count > 1
+            ? 'Tap to review alerts and advisories before you go.'
+            : alerts.find((a) => !history.isOccurrenceNotified(trip.id, a.id))?.message ?? 'Tap to review.',
+          { tripId: trip.id, openPulse: 'true' },
+          'pulse_alert',
+        );
+        if (scheduled) {
+          for (const occId of newAlertOccurrenceIds) {
+            history.markNotified(occId);
           }
         }
       }

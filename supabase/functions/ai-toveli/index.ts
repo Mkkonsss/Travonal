@@ -108,7 +108,9 @@ async function claude(system, user, maxTokens, timeoutMs) {
 
 // --- Google Places helper ---
 
-async function fetchGooglePlaces(query, apiKey) {
+// locationBias: { lat, lng, radiusMeters } — pass user location or trip destination coords
+// to prevent Google from defaulting to the edge function server's IP (which is in Canada).
+async function fetchGooglePlaces(query, apiKey, locationBias?) {
   var url =
     "https://places.googleapis.com" +
     "/v1/places:searchText";
@@ -123,10 +125,19 @@ async function fetchGooglePlaces(query, apiKey) {
     "places.location",
     "places.photos",
   ].join(",");
-  var body = JSON.stringify({
+  var reqBody: any = {
     textQuery: query,
     pageSize: 20,
-  });
+  };
+  // Always set a location bias so Google doesn't fall back to server IP geolocation
+  if (locationBias?.lat != null && locationBias?.lng != null) {
+    reqBody.locationBias = {
+      circle: {
+        center: { latitude: locationBias.lat, longitude: locationBias.lng },
+        radius: locationBias.radiusMeters ?? 50000,
+      },
+    };
+  }
   try {
     var resp = await fetch(url, {
       method: "POST",
@@ -135,7 +146,7 @@ async function fetchGooglePlaces(query, apiKey) {
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": fieldMask,
       },
-      body: body,
+      body: JSON.stringify(reqBody),
     });
     if (!resp.ok) return [];
     var data = await resp.json();
@@ -345,6 +356,7 @@ async function handleGenerateTrip(payload) {
     || "general sightseeing";
   const dislikes = (profile.dislikes ?? []).join(", ") || "none";
   const dietary = (profile.dietaryRestrictions ?? []).join(", ") || "none";
+  const decisionPriorities = (profile.decisionPriorities ?? []).join(", ");
 
   var sysArr = [
     "You are Tripseek AI trip planner. Return ONLY valid JSON.",
@@ -368,6 +380,7 @@ async function handleGenerateTrip(payload) {
     "Use Category label from place data if available. Waterparks/museums are activity, NOT food.",
     "",
     "Each description: 1 short sentence. Use real places only, never invent names.",
+    "personalNote: 1 short phrase connecting this place to a specific traveler preference (e.g. 'great for your love of street food', 'quiet spot for crowd-avoiders'). Omit for flights and hotels.",
     "cost: free/budget/moderate/premium. time: HH:MM 24h. duration: minutes.",
     "Copy placeId, address, lat, lng from the verified places list exactly.",
   ];
@@ -389,6 +402,7 @@ async function handleGenerateTrip(payload) {
   ];
   if (!isLong) {
     schemaArr.push('      "description": "One sentence: what makes it special + a practical tip.",');
+    schemaArr.push('      "personalNote": "One phrase: why this fits you (e.g. \'quiet spot for crowd-avoiders\' or \'top pick for foodies\').",');
   }
   schemaArr.push(
     '      "duration": 90,',
@@ -504,6 +518,7 @@ async function handleGenerateTrip(payload) {
     "Food importance: " + foodImportance + (foodImportance === "big" ? " — food is a top priority; describe dishes and food culture in detail, include more dining variety" : foodImportance === "simple" ? " — just note the place name, minimal food detail" : ""),
     "Recommendation style: " + recommendationStyle + (recommendationStyle === "best" ? " — give the single best option with confidence, not a list" : recommendationStyle === "explore" ? " — include a broader range of options including surprises and hidden gems" : " — give 2-3 curated options"),
     anythingElse ? "User notes: " + anythingElse : "",
+    decisionPriorities ? "Decision priorities: " + decisionPriorities : "",
     "Accommodation: " +
       String(profile.accommodationPreference || "hotel")
       + memCtx + venueCtx,
@@ -538,6 +553,7 @@ async function handleChat(payload) {
   const tripContext = String(payload.tripContext ?? "");
   const profile = payload.profile ?? {};
   const activeTrip = payload.activeTrip;
+  const userLocation = payload.userLocation ?? null; // { lat, lng, city? }
 
   // Resolve the canonical trip ID for actions.
   // activeTrip.id is authoritative; payload.activeTripId is fallback.
@@ -594,7 +610,7 @@ async function handleChat(payload) {
     "{",
     '  "message": "your response text",',
     '  "actions": [],',
-    '  "recommended_places": ["Exact Place Name 1", "Exact Place Name 2"],',
+    '  "recommended_places": [{"name": "Exact Place Name", "reason": "one phrase: why this fits the traveler"}, {"name": "Exact Place Name 2", "reason": "..."}],',
     '  "suggestions": ["follow-up 1", "follow-up 2"],',
     '  "context": "optional — what personalization you used"',
     "}",
@@ -615,7 +631,7 @@ async function handleChat(payload) {
   );
   var chatPlacesCtx = "";
   var chatPlaces = [];
-  // Search Google Places using trip context OR general destination
+  // Search Google Places using user's current location, trip context, or destination
   var searchDest = activeTrip
     ? String(activeTrip.destination || "")
     : "";
@@ -624,10 +640,19 @@ async function handleChat(payload) {
     var destMatch = tripContext.match(/(?:Active|Upcoming) trips:\s*-\s*(?:"[^"]*"\s*—\s*)?([^,(]+)/);
     if (destMatch) searchDest = destMatch[1].trim();
   }
+  // Use user's current location city if available and no trip destination
+  if (!searchDest && userLocation?.city) {
+    searchDest = userLocation.city;
+  }
   if (isPlaceQ && chatGpKey) {
     var chatPlaceQ = searchDest ? (message + " near " + searchDest) : message;
+    // Determine location bias: prefer user's current GPS coords, fall back to nothing
+    // (the text query already includes the destination city when relevant)
+    var chatBias = userLocation?.lat != null
+      ? { lat: userLocation.lat, lng: userLocation.lng, radiusMeters: 50000 }
+      : undefined;
     chatPlaces = await fetchGooglePlaces(
-      chatPlaceQ, chatGpKey
+      chatPlaceQ, chatGpKey, chatBias
     );
     if (chatPlaces.length > 0) {
       chatPlacesCtx =
@@ -641,8 +666,22 @@ async function handleChat(payload) {
 
   const sysArr = [
     // --- IDENTITY ---
-    "You are Tripseek, a travel assistant.",
-    "You have access to this user's profile, preferences, and trip data in the TRIP CONTEXT below.",
+    "You are Tripseek, a personal travel companion — not a rigid trip assistant.",
+    "Your name is Tripseek. Never refer to yourself as Travonal, Toveli, or any other name.",
+    "You have full access to the user's entire account: all trips, boards, saved places, profile, preferences, and memory in the TRIP CONTEXT below.",
+    userLocation
+      ? ("The user's current location is: " + (userLocation.city ? userLocation.city + " (" : "(") + "lat " + userLocation.lat.toFixed(4) + ", lng " + userLocation.lng.toFixed(4) + "). Use this when they ask about 'nearby', 'around here', 'near me', or any location-relative request.")
+      : "The user's current location is unknown — don't assume a location if they ask for nearby places; ask where they are.",
+    "You think across their whole travel life — past trips, upcoming plans, saved ideas, preferences — and connect dots naturally.",
+    "You ask questions when something is unclear rather than guessing. You feel like a smart friend who happens to know everything about travel.",
+    "",
+    // --- COMPANION BEHAVIOR ---
+    "COMPANION MINDSET:",
+    "- You know everything in the user's account. Reference it naturally: 'I see you're heading to Tokyo next month...' or 'You saved that sushi place in your Tokyo board...'",
+    "- You're proactive but not pushy. If you notice something relevant (a conflict, an opportunity, a saved place nearby), mention it.",
+    "- You ask clarifying questions naturally, like a person would. Not 'Please specify the trip ID' but 'Which trip do you mean — Tokyo or Lisbon?'",
+    "- If the user asks a vague question, make your best inference from their context and answer, then offer to refine.",
+    "- Never tell the user to 'go to settings' or 'select a trip' — just handle it conversationally.",
     "",
     // --- CORE RULES ---
     "BEFORE ANY ACTION — ASK IF ANYTHING IS UNCLEAR:",
@@ -665,10 +704,12 @@ async function handleChat(payload) {
     "Respect dietary restrictions/allergies — warn if a place conflicts.",
     "",
     "PREFERENCES — use to shape your recommendations, never to block a request:",
-    "Interests, budget, pace inform your picks.",
+    "Interests, budget, decision priorities, and crowd tolerance inform your picks.",
     "Crowd tolerance: 'avoid' = lean toward quieter, less-touristy spots; 'fine' = no preference.",
     "Food importance: 'big' = describe dishes and food culture in detail; 'simple' = just name the place.",
     "Recommendation style: 'best' = give ONE confident top pick, not a list; 'few' = 2-3 curated options; 'explore' = broader range including surprises.",
+    "NEVER mention 'pace', 'flexibility', 'accommodation preference', or 'decision priorities' to the user — these are internal field names they never saw.",
+    "Instead say things like 'since you prefer local and authentic places' or 'based on what you look for in a spot'.",
     "User notes (from their onboarding): treat as important context that should shape your suggestions.",
     "",
     // --- INTENT INTERPRETATION ---
@@ -684,16 +725,28 @@ async function handleChat(payload) {
     "- 'Never mind' / 'undo that' → remove the last thing you added.",
     "- Relative time: 'morning' = 08:00-11:00, 'afternoon' = 13:00-17:00, 'evening' = 18:00-21:00.",
     "- When the user refers to a place from earlier in the conversation, use EXACTLY that place. Never substitute a different one.",
+    "MULTIPLE TRIPS — resolve naturally, don't ask for IDs:",
+    "- If the user says 'add this to my Tokyo trip' — use the trip with Tokyo as destination.",
+    "- If the user's message is ambiguous and they have multiple active trips, ask casually: 'Which trip — Tokyo or Lisbon?'",
+    "- If only one active trip exists, always use it without asking.",
+    "- NEVER ask the user to 'select a trip' or use any app UI concept. Just ask which destination they mean.",
     "",
     // --- PERSONALIZATION GUIDANCE ---
     "WHEN TO PERSONALIZE:",
-    "- Recommending places the user didn't specifically name — use interests, budget, crowd tolerance to choose.",
-    "- User asks for open-ended suggestions — lean heavily on profile to curate.",
-    "- A profile detail is directly relevant (e.g., allergy when recommending food).",
+    "- User asks for recommendations or suggestions — they're asking you to choose, so choose for them using their profile.",
+    "- Open-ended questions ('where should I eat?', 'what's good here?') — these are invitations to personalize.",
+    "- A profile detail is directly relevant (e.g., allergy when recommending food, crowd preference when picking a bar).",
     "WHEN NOT TO PERSONALIZE:",
-    "- Executing direct commands ('remove this', 'move that to 3pm') — just do it, no profile commentary needed.",
-    "- Answering factual questions — just answer.",
-    "- Do NOT force a profile reference into every response. Only mention preferences when they genuinely shaped your recommendation.",
+    "- Executing direct commands ('remove this', 'move that to 3pm') — just do it.",
+    "- Answering factual questions ('what time does X open?', 'how far is X?') — just answer.",
+    "- The user names a specific place — they've already decided, don't second-guess with profile commentary.",
+    "- NEVER force personalization into every message. If it's not genuinely shaping your answer, leave it out.",
+    "HOW TO PERSONALIZE — sound like a friend, not a chatbot:",
+    "- GOOD: 'This one's more your vibe — local spot, not the tourist trap version'",
+    "- GOOD: 'Skipping the obvious picks since you prefer discovering things off the beaten path'",
+    "- BAD: 'Based on your crowd tolerance setting of avoid...'",
+    "- BAD: 'According to your what-they-look-for-in-a-place preference...'",
+    "- Reference what they care about naturally, never cite field names or survey answers literally.",
     "Use the user's name naturally (not every message, but in greetings and key moments).",
     "Cross-reference saved boards with trips — if they saved a place nearby, mention it when relevant.",
     "",
@@ -716,16 +769,28 @@ async function handleChat(payload) {
     "  'Done! Your morning is free now.'",
     "- If there is genuinely nothing useful to add beyond what the cards show, write a single short confirmation like 'Done!' or 'All set.' or 'Swapped.'",
     "",
-    "WHEN ANSWERING QUESTIONS OR GIVING INFO (actions array is empty):",
+    "WHEN GIVING RECOMMENDATIONS (actions array is empty, user asked for suggestions):",
+    "- Always use this two-section structure:",
+    "  **For you**",
+    "  - **Place Name** — [what it is / why it's great] — *[brief natural reason why it fits THIS person specifically]*",
+    "  - **Place Name** — [what it is / why it's great] — *[brief natural reason why it fits THIS person specifically]*",
+    "  ",
+    "  **Also great**",
+    "  - **Place Name** — one line: why it's broadly excellent (no personal commentary)",
+    "  - **Place Name** — one line: why it's broadly excellent (no personal commentary)",
+    "- 'For you' = 1-2 picks genuinely shaped by their profile. Each must end with a short italicized reason like:",
+    "  *you tend to avoid the tourist crowds*",
+    "  *fits your love of local food culture*",
+    "  *your kind of spot — hidden, not on every list*",
+    "  *given you prefer discovering places over the obvious picks*",
+    "  Keep the reason short (under 8 words), natural, and specific to what you know about them.",
+    "- 'Also great' = 1-3 broadly excellent picks. No personalization commentary here at all.",
+    "- If the user has NO profile signal (no interests, no preferences set), skip 'For you' entirely and give 3-4 great picks under one header.",
+    "- Keep descriptions concise. No filler.",
+    "",
+    "WHEN ANSWERING QUESTIONS OR GIVING INFO (actions array is empty, not a recommendation):",
     "- Use **bold section headers** on their own line to organize topics, followed by bullet points.",
     "- Lead with the most actionable info first.",
-    "- For recommendations, structure like:",
-    "  **Top pick**",
-    "  - **Place Name** — one line why, with a practical detail",
-    "  ",
-    "  **Alternatives**",
-    "  - **Place 2** — one line why",
-    "  - **Place 3** — one line why",
     "- For general info, structure like:",
     "  **Getting there**",
     "  - Bullet with key detail",
@@ -738,16 +803,17 @@ async function handleChat(payload) {
     "FIELD RULES:",
     "- \"message\": Follow the structure rules above. When actions are taken, 1 sentence with a useful tip or just a brief confirmation. When answering questions, structured bullets with bold headers.",
     "- \"actions\": Array of mutation objects. Empty [] when just answering questions.",
-    "- \"recommended_places\": Array of EXACT place names from REAL NEARBY PLACES to show as cards.",
+    "- \"recommended_places\": Array of {name, reason} objects from REAL NEARBY PLACES to show as cards.",
+    "  Each object: {\"name\": \"Exact Place Name\", \"reason\": \"one short phrase why this fits the traveler (e.g. 'great for street food lovers' or 'quiet spot for crowd-avoiders')\"}.",
     "  STRICT: Only include places you explicitly name and discuss in your message. Every name in this array MUST appear in your message text.",
-    "  If you mention 3 places in your message, this array must have exactly those 3 names — no more, no less.",
+    "  If you mention 3 places in your message, this array must have exactly those 3 entries — no more, no less.",
     "  This applies ANY TIME you mention specific place names — including when asking clarifying questions, offering options, suggesting alternatives, or proposing cheaper/better swaps.",
     "  When suggesting replacements or alternatives, include ALL the new suggestions — not just the original place being replaced.",
     "  Use the EXACT name string from the places list — copy-paste, not paraphrased. Empty [] when not mentioning any specific places.",
     "- \"suggestions\": 2-4 short follow-up prompts (max 30 chars each). Contextual to the conversation.",
     "- \"context\": Set this when your response was shaped by personalization.",
     "  Examples: \"Based on your interest in street food\", \"From your Tokyo eats board\",",
-    "  \"Keeping your peanut allergy in mind\", \"Matching your relaxed pace\".",
+    "  \"Keeping your peanut allergy in mind\", \"Matching your crowd preference\".",
     "  Omit or set null when response isn't specifically personalized.",
     "",
     "AVAILABLE ACTIONS (use the exact tripId/activityId from FOCUS TRIP):",
@@ -1030,7 +1096,10 @@ async function handleChat(payload) {
       .trim();
   }
   if (chatPlaces && chatPlaces.length > 0) {
-    var recNames = Array.isArray(chatResult.recommended_places) ? chatResult.recommended_places : [];
+    var recItems = Array.isArray(chatResult.recommended_places) ? chatResult.recommended_places : [];
+    // Support both legacy string[] and new {name, reason}[] formats
+    var recNames = recItems.map(function(p) { return typeof p === 'string' ? p : (p && p.name ? p.name : ''); });
+    var recReasons = recItems.map(function(p) { return (typeof p === 'object' && p && p.reason) ? String(p.reason) : ''; });
     // Normalize recommended names for matching
     var recNamesNorm = recNames.map(function(n) { return normalizePlaceName(n); });
     var recNamesLower = recNames.map(function(n) { return String(n).toLowerCase().trim(); });
@@ -1093,6 +1162,7 @@ async function handleChat(payload) {
           types: cpTypes,
           primaryTypeLabel: cpPrimaryType || undefined,
           photoRefs: cpPhotos,
+          reason: recReasons[ri] || undefined,
           _srcIdx: ci,
         });
         break; // Found match for this recommended name, move to next
@@ -1141,7 +1211,7 @@ async function handleChat(payload) {
       var uPromises = unmatchedNames.slice(0, 5).map(function(uNameRaw) {
         var uQuery = searchDest ? (uNameRaw + " " + searchDest) : uNameRaw;
         return Promise.race([
-          fetchGooglePlaces(uQuery, chatGpKey),
+          fetchGooglePlaces(uQuery, chatGpKey, chatBias),
           new Promise(function(_, reject) { setTimeout(function() { reject(new Error("timeout")); }, 4000); }),
         ]).catch(function() { return []; });
       });
@@ -1175,11 +1245,13 @@ async function handleChat(payload) {
     chatResult.places = cardPlaces;
   } else if (Array.isArray(chatResult.recommended_places) && chatResult.recommended_places.length > 0 && chatGpKey) {
     // chatPlaces was empty but AI returned recommended_places — search individually in parallel
-    var fbNames = chatResult.recommended_places.slice(0, 5);
+    var fbItems = chatResult.recommended_places.slice(0, 5);
+    var fbNames = fbItems.map(function(p) { return typeof p === 'string' ? p : (p && p.name ? p.name : ''); });
+    var fbReasons = fbItems.map(function(p) { return (typeof p === 'object' && p && p.reason) ? String(p.reason) : ''; });
     var fbPromises = fbNames.map(function(fbName) {
       var fbQuery = searchDest ? (String(fbName) + " " + searchDest) : String(fbName);
       return Promise.race([
-        fetchGooglePlaces(fbQuery, chatGpKey),
+        fetchGooglePlaces(fbQuery, chatGpKey, chatBias),
         new Promise(function(_, reject) { setTimeout(function() { reject(new Error("timeout")); }, 4000); }),
       ]).catch(function() { return []; });
     });
@@ -1204,6 +1276,7 @@ async function handleChat(payload) {
           types: fbp.types || [],
           primaryTypeLabel: fbpPrimaryType || undefined,
           photoRefs: fbpPhotos,
+          reason: fbReasons[fbi] || undefined,
         });
       }
     }
@@ -2471,11 +2544,12 @@ async function handleRankPlaces(payload) {
   const schema = [
     "{",
     '  "ranked": [',
-    '    { "index": 0, "score": 95, "reason": "One sentence." }',
+    '    { "index": 0, "score": 95, "reason": "One short phrase: why this fits you." }',
     "  ]",
     "}",
   ].join("\n");
 
+  const decisionPri = (profile.decisionPriorities ?? []).join(", ");
   const userArr = [
     "TRAVELER:",
     "Pace: " + String(profile.pace) +
@@ -2485,7 +2559,10 @@ async function handleRankPlaces(payload) {
     "Dietary: " + (
       (profile.dietaryRestrictions ?? []).join(", ") || "none"
     ),
-  ];
+    "Crowd tolerance: " + String(profile.crowdTolerance || "fine"),
+    "Food importance: " + String(profile.foodImportance || "moderate"),
+    decisionPri ? "Decision priorities: " + decisionPri : "",
+  ].filter(Boolean);
   if (tripContext) {
     userArr.push("", "TRIP CONTEXT:", tripContext);
   }
@@ -2544,6 +2621,238 @@ async function handleGooglePlaces(payload) {
       ? p.opening_hours.open_now : null,
   }));
   return { places };
+}
+
+// --- 7a. Flight Search (SerpAPI → Google Flights) ---
+
+// Maps common city/region names to their IATA city or airport codes.
+// SerpAPI Google Flights requires IATA codes, not full city names.
+var CITY_TO_IATA: Record<string, string> = {
+  // North America
+  "new york": "NYC", "new york city": "NYC", "nyc": "NYC",
+  "los angeles": "LAX", "la": "LAX",
+  "chicago": "ORD",
+  "san francisco": "SFO", "sf": "SFO",
+  "miami": "MIA", "hollywood": "FLL", "fort lauderdale": "FLL",
+  "toronto": "YYZ",
+  "vancouver": "YVR",
+  "montreal": "YUL",
+  "calgary": "YYC",
+  "ottawa": "YOW",
+  "washington": "DCA", "washington dc": "DCA",
+  "boston": "BOS",
+  "seattle": "SEA",
+  "dallas": "DFW",
+  "houston": "IAH",
+  "atlanta": "ATL",
+  "denver": "DEN",
+  "phoenix": "PHX",
+  "las vegas": "LAS",
+  "orlando": "MCO",
+  "san diego": "SAN",
+  "portland": "PDX",
+  "minneapolis": "MSP",
+  "detroit": "DTW",
+  "philadelphia": "PHL",
+  "charlotte": "CLT",
+  "salt lake city": "SLC",
+  "mexico city": "MEX",
+  "cancun": "CUN",
+  // Europe
+  "london": "LON",
+  "paris": "PAR",
+  "amsterdam": "AMS",
+  "frankfurt": "FRA",
+  "madrid": "MAD",
+  "barcelona": "BCN",
+  "rome": "FCO",
+  "milan": "MIL",
+  "zurich": "ZRH",
+  "vienna": "VIE",
+  "berlin": "BER",
+  "munich": "MUC",
+  "brussels": "BRU",
+  "lisbon": "LIS",
+  "athens": "ATH",
+  "oslo": "OSL",
+  "stockholm": "STO",
+  "copenhagen": "CPH",
+  "helsinki": "HEL",
+  "warsaw": "WAW",
+  "prague": "PRG",
+  "budapest": "BUD",
+  "dublin": "DUB",
+  "edinburgh": "EDI",
+  "manchester": "MAN",
+  "istanbul": "IST",
+  "moscow": "MOW",
+  // Middle East & Africa
+  "dubai": "DXB",
+  "abu dhabi": "AUH",
+  "doha": "DOH",
+  "riyadh": "RUH",
+  "tel aviv": "TLV",
+  "cairo": "CAI",
+  "casablanca": "CMN",
+  "nairobi": "NBO",
+  "johannesburg": "JNB",
+  "cape town": "CPT",
+  // Asia Pacific
+  "tokyo": "TYO",
+  "osaka": "KIX",
+  "seoul": "SEL",
+  "beijing": "BJS",
+  "shanghai": "SHA",
+  "hong kong": "HKG",
+  "singapore": "SIN",
+  "bangkok": "BKK",
+  "kuala lumpur": "KUL",
+  "jakarta": "CGK",
+  "manila": "MNL",
+  "taipei": "TPE",
+  "delhi": "DEL", "new delhi": "DEL",
+  "mumbai": "BOM",
+  "bangalore": "BLR",
+  "sydney": "SYD",
+  "melbourne": "MEL",
+  "brisbane": "BNE",
+  "auckland": "AKL",
+  // South America
+  "sao paulo": "SAO", "são paulo": "SAO",
+  "rio de janeiro": "RIO",
+  "buenos aires": "BUE",
+  "bogota": "BOG", "bogotá": "BOG",
+  "lima": "LIM",
+  "santiago": "SCL",
+};
+
+function cityToIata(cityName: string): string {
+  var lower = cityName.toLowerCase().trim();
+  // Direct match first
+  if (CITY_TO_IATA[lower]) return CITY_TO_IATA[lower];
+  // If already 3 chars, assume it's an IATA code — return uppercase
+  if (/^[a-z]{3}$/i.test(lower)) return lower.toUpperCase();
+  // Partial match — check if the city name contains a known key
+  for (var key of Object.keys(CITY_TO_IATA)) {
+    if (lower.includes(key) || key.includes(lower)) return CITY_TO_IATA[key];
+  }
+  // Fallback: return as-is (user may have typed an airport code)
+  return cityName.trim();
+}
+
+async function handleSearchFlights(payload) {
+  var origin = String(payload.origin || "");
+  var destination = String(payload.destination || "");
+  var departureDate = String(payload.departureDate || "");
+  var returnDate = String(payload.returnDate || "");
+
+  if (!origin || !destination) throw new Error("origin and destination are required");
+
+  // Convert city names to IATA codes for SerpAPI
+  origin = cityToIata(origin);
+  destination = cityToIata(destination);
+
+  var serpApiKey = Deno.env.get("SERPAPI_KEY");
+  if (!serpApiKey) throw new Error("SERPAPI_KEY not configured");
+
+  var params = new URLSearchParams({
+    engine: "google_flights",
+    departure_id: origin,
+    arrival_id: destination,
+    outbound_date: departureDate,
+    api_key: serpApiKey,
+    currency: "USD",
+    hl: "en",
+  });
+  if (returnDate) {
+    params.set("return_date", returnDate);
+    params.set("type", "1"); // round trip
+  } else {
+    params.set("type", "2"); // one way
+  }
+
+  var url = "https://serpapi.com/search?" + params.toString();
+  var resp = await fetch(url);
+  if (!resp.ok) {
+    var errText = await resp.text();
+    throw new Error("SerpAPI error: " + resp.status + " " + errText.substring(0, 200));
+  }
+  var data = await resp.json();
+
+  // Extract best_flights and other_flights, take top 3 total
+  var allFlights = [
+    ...(data.best_flights || []),
+    ...(data.other_flights || []),
+  ].slice(0, 3);
+
+  var flights = allFlights.map((f) => {
+    var leg = (f.flights || [])[0] || {};
+    return {
+      airline: leg.airline || f.airline || "",
+      flightNumber: leg.flight_number || "",
+      departureAirport: leg.departure_airport?.id || origin,
+      arrivalAirport: leg.arrival_airport?.id || destination,
+      departureTime: leg.departure_airport?.time || "",
+      arrivalTime: leg.arrival_airport?.time || "",
+      duration: f.total_duration || leg.duration || 0,
+      stops: (f.flights || []).length - 1,
+      price: f.price || null,
+      airlineLogo: leg.airline_logo || "",
+    };
+  });
+
+  return { flights };
+}
+
+// --- 7b. Destination Photo ---
+// Uses New Places API v1 Text Search to find a high-quality scenic photo
+// for a destination city. Returns the photo URL directly so the API key
+// never leaves the server.
+
+async function handleDestinationPhoto(payload) {
+  var destination = String(payload.destination || "");
+  if (!destination) throw new Error("destination is required");
+
+  var apiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
+  if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
+
+  // Use New Places API v1 Text Search — returns photos[i].name resource paths
+  var searchUrl = "https://places.googleapis.com/v1/places:searchText";
+  var searchBody = {
+    textQuery: destination + " landmark scenic",
+    maxResultCount: 5,
+  };
+  var searchResp = await fetch(searchUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "places.id,places.photos",
+    },
+    body: JSON.stringify(searchBody),
+  });
+  if (!searchResp.ok) {
+    var errText = await searchResp.text();
+    throw new Error("Places Text Search failed: " + searchResp.status + " " + errText);
+  }
+  var searchData = await searchResp.json();
+  var places = searchData.places || [];
+
+  // Walk results to find first usable photo resource name
+  var photoName = null;
+  for (var i = 0; i < places.length; i++) {
+    var photos = places[i].photos || [];
+    if (photos.length > 0 && photos[0].name) {
+      photoName = photos[0].name;
+      break;
+    }
+  }
+
+  if (!photoName) return { url: null };
+
+  // Build photo URL using Places API v1 media endpoint
+  var photoUrl = "https://places.googleapis.com/v1/" + photoName + "/media?maxWidthPx=1600&key=" + apiKey;
+  return { url: photoUrl };
 }
 
 // --- 8. Natural Language Place Search ---
@@ -2987,6 +3296,53 @@ async function handlePhotoCacheStore(payload) {
   return { url: permanentUrl, stored: true };
 }
 
+// --- Photo Street View Fallback ---
+
+async function handlePhotoStreetView(payload) {
+  var placeId = String(payload.placeId || "");
+  var lat = Number(payload.lat);
+  var lng = Number(payload.lng);
+
+  if (!placeId || isNaN(lat) || isNaN(lng)) throw new Error("placeId, lat, lng required");
+
+  var gKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || "";
+  if (!gKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
+
+  var sb = getSupabaseAdmin();
+
+  // Check shared cache first
+  var { data: cached } = await sb.from("photo_cache").select("photo_url").eq("place_id", placeId).maybeSingle();
+  if (cached?.photo_url) return { url: cached.photo_url, stored: true };
+
+  // Check Street View metadata (free endpoint — no charge)
+  var metaUrl = "https://maps.googleapis.com/maps/api/streetview/metadata?location=" + lat + "," + lng + "&source=outdoor&key=" + gKey;
+  var metaResp = await fetch(metaUrl);
+  if (!metaResp.ok) throw new Error("Street View metadata failed: " + metaResp.status);
+  var meta = await metaResp.json();
+  if (meta.status !== "OK") throw new Error("No Street View available at " + lat + "," + lng);
+
+  // Fetch the image (billed: $0.007 per call)
+  var svUrl = "https://maps.googleapis.com/maps/api/streetview?size=800x500&location=" + lat + "," + lng + "&source=outdoor&fov=80&pitch=10&key=" + gKey;
+  var imgResp = await fetch(svUrl);
+  if (!imgResp.ok) throw new Error("Street View image fetch failed: " + imgResp.status);
+
+  var imgBlob = await imgResp.blob();
+  var storagePath = "photos/" + placeId.replace(/[^a-zA-Z0-9_-]/g, "_") + "_sv.jpg";
+
+  var { error: uploadErr } = await sb.storage.from("photo-cache").upload(storagePath, imgBlob, { contentType: "image/jpeg", upsert: true });
+  if (uploadErr) {
+    console.error("[photo_sv] upload error:", uploadErr.message);
+    throw new Error("Upload failed: " + uploadErr.message);
+  }
+
+  var { data: publicUrlData } = sb.storage.from("photo-cache").getPublicUrl(storagePath);
+  var permanentUrl = publicUrlData.publicUrl;
+
+  await sb.from("photo_cache").upsert({ place_id: placeId, photo_url: permanentUrl }, { onConflict: "place_id" });
+
+  return { url: permanentUrl, stored: false };
+}
+
 // --- 9. Prepare Fix (Trip Pulse background solutions) ---
 
 async function handlePrepareFix(payload) {
@@ -3262,6 +3618,10 @@ Deno.serve(async (req) => {
       handler = handleImportBooking;
     } else if (action === "rank_places") {
       handler = handleRankPlaces;
+    } else if (action === "search_flights") {
+      handler = handleSearchFlights;
+    } else if (action === "destination_photo") {
+      handler = handleDestinationPhoto;
     } else if (action === "google_places") {
       handler = handleGooglePlaces;
     } else if (action === "natural_search") {
@@ -3280,6 +3640,8 @@ Deno.serve(async (req) => {
       handler = handlePhotoCacheLookup;
     } else if (action === "photo_cache_store") {
       handler = handlePhotoCacheStore;
+    } else if (action === "photo_street_view") {
+      handler = handlePhotoStreetView;
     } else if (action === "generate_description") {
       handler = async function() {
         return handleGenerateDescription(payload);
@@ -3345,6 +3707,30 @@ Deno.serve(async (req) => {
         var result = await resp.json();
         if (!resp.ok) throw new Error(result.error || "Gmail auth failed");
         return result.data || result;
+      };
+    } else if (action === "get_trip_alerts") {
+      handler = async function(p) {
+        var destination = p.destination || "the destination";
+        var startDate = p.startDate;
+        var endDate = p.endDate;
+        var dateRange = startDate && endDate
+          ? "from " + startDate + " to " + endDate
+          : startDate
+          ? "departing " + startDate
+          : "upcoming";
+
+        var alertsText = await claude(
+          "You are a travel safety and information assistant. Return ONLY valid JSON.",
+          "Generate real-world external alerts for a traveler visiting " + destination + " " + dateRange + ".\n\n" +
+          "Return 2-5 alerts covering what's genuinely relevant. Only include alerts based on well-established facts (seasonal patterns, entry requirements, known risks). Do NOT invent specific news events.\n\n" +
+          "Alert types: weather_risk, travel_advisory, entry_requirement, local_disruption, health_advisory\n" +
+          "Severity: urgent (safety risk requiring action), important (affects planning), info (good to know)\n\n" +
+          "Return ONLY valid JSON matching this schema exactly:\n" +
+          '{\n  "alerts": [\n    {\n      "id": "unique-string",\n      "type": "weather_risk",\n      "severity": "important",\n      "title": "Short title (max 8 words)",\n      "message": "2-3 sentence explanation with practical advice.",\n      "actionUrl": "https://... (optional, only include real official sources)"\n    }\n  ]\n}',
+          1024,
+          30000
+        );
+        return { alerts: alertsText.alerts ?? [] };
       };
     } else if (action === "gmail_sync") {
       // Gmail sync — proxy to gmail-sync edge function

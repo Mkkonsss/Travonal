@@ -68,6 +68,11 @@ export function TravelStyleCard({
   const dietary = profile.dietaryRestrictions.filter((d) => !d.includes('Nothing'));
   const mobility = profile.mobilityNeeds.filter((m) => !m.includes('Nothing'));
 
+  const crowdLabel: Record<string, string> = {
+    moderate: 'Prefers quieter spots',
+    avoid: 'Avoids tourist crowds',
+  };
+
   const content = (
     <>
       {showHeader && (
@@ -87,22 +92,12 @@ export function TravelStyleCard({
         </View>
       )}
 
-      {/* All chips in one flow when compact */}
+      {/* Interests chips when compact */}
       {compact ? (
         <View style={styles.chips}>
           {profile.interests.map((i) => (
             <View key={i} style={[styles.chip, { borderColor: theme.border }]}>
-              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(i)}</ThemedText>
-            </View>
-          ))}
-          {dietary.map((d) => (
-            <View key={d} style={[styles.chip, { borderColor: theme.border }]}>
-              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(d)}</ThemedText>
-            </View>
-          ))}
-          {mobility.map((m) => (
-            <View key={m} style={[styles.chip, { borderColor: theme.border }]}>
-              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(m)}</ThemedText>
+              <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{i.trim()}</ThemedText>
             </View>
           ))}
         </View>
@@ -118,6 +113,34 @@ export function TravelStyleCard({
                     <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(i)}</ThemedText>
                   </View>
                 ))}
+              </View>
+            </View>
+          )}
+
+          {/* Decision priorities */}
+          {(profile.decisionPriorities ?? []).length > 0 && (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>What matters to you</ThemedText>
+              <View style={styles.chips}>
+                {(profile.decisionPriorities ?? []).map((d) => (
+                  <View key={d} style={[styles.chip, { borderColor: theme.border }]}>
+                    <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>{stripEmoji(d)}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Crowd tolerance */}
+          {profile.crowdTolerance && profile.crowdTolerance !== 'fine' && (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Crowds</ThemedText>
+              <View style={styles.chips}>
+                <View style={[styles.chip, { borderColor: theme.border }]}>
+                  <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>
+                    {crowdLabel[profile.crowdTolerance] ?? profile.crowdTolerance}
+                  </ThemedText>
+                </View>
               </View>
             </View>
           )}

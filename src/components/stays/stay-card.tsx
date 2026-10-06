@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { Image as ExpoImage } from 'expo-image';
@@ -10,7 +10,7 @@ import type { Activity, Reservation } from '@/context/trips';
 import type { StayBlock } from '@/components/stays-section';
 import { formatShortDate, computeDateForDay } from '@/services/trip-helpers';
 
-const CARD_WIDTH = Dimensions.get('window').width - Spacing.four * 2;
+const FALLBACK_CARD_WIDTH = Dimensions.get('window').width - Spacing.four * 2;
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT = 260;
 const DEFAULT_HEIGHT = 180;
@@ -20,6 +20,7 @@ interface StayCardProps {
   tripStartDate: string;
   datesKnown: boolean;
   photoUrl?: string;
+  gridMode?: boolean;
   theme: {
     primary: string;
     background: string;
@@ -37,12 +38,14 @@ export const StayCard = memo(function StayCard({
   tripStartDate,
   datesKnown,
   photoUrl,
+  gridMode = false,
   theme,
   onViewStay,
 }: StayCardProps) {
   const b = block;
   const isCancelled = b.reservation?.cancelled;
   const [cardHeight, setCardHeight] = useState(DEFAULT_HEIGHT);
+  const measuredWidthRef = useRef(0);
 
   const booked = b.hotel.bookingStatus === 'booked' || !!b.reservation;
   const pending = b.hotel.bookingStatus === 'pending';
@@ -57,9 +60,10 @@ export const StayCard = memo(function StayCard({
   return (
     <Pressable
       onPress={() => onViewStay(b.hotel, b.reservation)}
+      onLayout={(e) => { measuredWidthRef.current = e.nativeEvent.layout.width; }}
       style={({ pressed }) => [
         s.card,
-        { height: cardHeight },
+        gridMode ? s.cardGrid : { height: cardHeight },
         pressed && { opacity: 0.85 },
         isCancelled && { opacity: 0.5 },
       ]}
@@ -74,9 +78,11 @@ export const StayCard = memo(function StayCard({
           contentFit="cover"
           cachePolicy="memory-disk"
           onLoad={(e) => {
+            if (gridMode) return;
             const { width: imgW, height: imgH } = e.source;
             if (imgW > 0 && imgH > 0) {
-              const natural = CARD_WIDTH / (imgW / imgH);
+              const w = measuredWidthRef.current || FALLBACK_CARD_WIDTH;
+              const natural = w / (imgW / imgH);
               setCardHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.round(natural))));
             }
           }}
@@ -128,6 +134,10 @@ const s = StyleSheet.create({
     marginTop: 0,
     borderRadius: Radius.sm,
     overflow: 'hidden',
+  },
+  cardGrid: {
+    width: '100%',
+    aspectRatio: 5 / 6,
   },
   placeholder: {
     alignItems: 'center',

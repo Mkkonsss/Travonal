@@ -88,6 +88,11 @@ export function ActivityCard({
               {TYPE_LABELS[activity.type]}
               {activity.cost && activity.cost !== 'free' ? ` \u00B7 ${activity.cost}` : ''}
             </ThemedText>
+            {activity.personalNote ? (
+              <ThemedText style={[styles.personalNote, { color: theme.textSecondary }]} numberOfLines={2}>
+                ✦ {activity.personalNote}
+              </ThemedText>
+            ) : null}
             {/* Book button — inline below meta for unbooked activities */}
             {showBookBtn && (
               <Pressable
@@ -180,6 +185,13 @@ const styles = StyleSheet.create({
   activityMeta: {
     fontSize: 13,
     marginTop: 2,
+  },
+  personalNote: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 2,
+    opacity: 0.8,
+    lineHeight: 15,
   },
   statusRow: {
     flexDirection: 'row',

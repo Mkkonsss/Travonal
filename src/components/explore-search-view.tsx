@@ -54,8 +54,10 @@ import {
 import {
   getPlacePhoto,
   prefetchPhotos,
+  categoryPlaceholderColors,
+  categoryPlaceholderEmoji,
 } from '@/services/free-photos';
-import { cityAutocompleteAI, type CityAutocompleteSuggestion } from '@/services/ai';
+import { cityAutocompleteAI, rankPlacesAI, type CityAutocompleteSuggestion } from '@/services/ai';
 import { getCategoryPathData } from '@/constants/map-icons';
 import { isBookablePlace, getBookableCTA, getPlaceBookingLinks, openBookingLink } from '@/services/booking-links';
 
@@ -159,9 +161,12 @@ function PlacePhotoImage({
   }
 
   return (
-    <View style={[styles.photoPlaceholder, { backgroundColor: theme.backgroundElement }, style]}>
-      <SymbolView name="camera" size={22} tintColor={theme.textSecondary} style={{ opacity: 0.4 }} />
-    </View>
+    <LinearGradient
+      colors={categoryPlaceholderColors(place.category)}
+      style={[styles.photoPlaceholder, style, { alignItems: 'center', justifyContent: 'center' }]}
+    >
+      <SymbolView name={categoryPlaceholderEmoji(place.category)} size={28} tintColor="rgba(255,255,255,0.5)" />
+    </LinearGradient>
   );
 }
 
@@ -261,6 +266,9 @@ function ExploreGridCard({
           )}
           <ThemedText style={styles.gridCardCat} numberOfLines={1}>{catLabel}</ThemedText>
         </View>
+        {place.matchReasons?.[0] ? (
+          <ThemedText style={styles.gridCardReason} numberOfLines={1}>{place.matchReasons[0]}</ThemedText>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -705,7 +713,7 @@ export function ExploreSearchView() {
   const cardWidth = (screenWidth - gridPadding * 2 - gridGap) / 2;
   const { showToast } = useToast();
   const { trips, addActivity, getTripState } = useTrips();
-  const { profile } = useProfile();
+  const { profile, loaded: profileLoaded } = useProfile();
   const { savedPlaces, savePlace, unsavePlace, isSaved } = useInbox();
   const { boards, addItemToBoard } = useBoards();
   const { user } = useAuth();
@@ -852,13 +860,18 @@ export function ExploreSearchView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Fetch places when location or category changes
+  // Fetch places when location, category, or profile changes
   useEffect(() => {
-    if (!exploreLocation) return;
+    if (!exploreLocation || !profileLoaded) return;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    fetchExplorePlaces(exploreLocation, activeCategory, { interests: profile.interests, crowdTolerance: profile.crowdTolerance })
+    fetchExplorePlaces(exploreLocation, activeCategory, {
+      interests: profile.interests,
+      crowdTolerance: profile.crowdTolerance,
+      decisionPriorities: profile.decisionPriorities,
+      pace: profile.pace,
+    })
       .then((results) => {
         if (cancelled) return;
         setPlaces(results);
@@ -872,6 +885,25 @@ export function ExploreSearchView() {
             category: p.category,
           })),
         );
+
+        // Background AI ranking — add reasons to cards, reorder by score
+        if (results.length > 1) {
+          rankPlacesAI({ places: results as Record<string, unknown>[], profile })
+            .then(({ ranked }) => {
+              if (cancelled) return;
+              const withReasons = results.map((p, i) => {
+                const r = ranked.find((x) => x.index === i);
+                return r ? { ...p, matchReasons: [r.reason] } : p;
+              });
+              const reordered = ranked
+                .slice()
+                .sort((a, b) => b.score - a.score)
+                .filter((r) => r.index >= 0 && r.index < withReasons.length)
+                .map((r) => withReasons[r.index]);
+              if (!cancelled && reordered.length > 0) setPlaces(reordered);
+            })
+            .catch(() => {}); // silent — places already shown without reasons
+        }
       })
       .catch((e) => {
         console.error('[Explore] fetch failed:', e?.message ?? e);
@@ -883,7 +915,7 @@ export function ExploreSearchView() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploreLocation, activeCategory]);
+  }, [exploreLocation, activeCategory, profileLoaded, profile.interests.join(','), profile.crowdTolerance ?? '', (profile.decisionPriorities ?? []).join(',')]);
 
   // Debounced search
   useEffect(() => {
@@ -934,7 +966,7 @@ export function ExploreSearchView() {
   }, [customCityInput]);
 
   const isSearching = search.trim().length > 0;
-  const displayPlaces = isSearching ? searchResults : places;
+  const displayPlaces = (isSearching ? searchResults : places).filter((p) => p.photos?.[0]?.reference);
 
   // ---- Location helpers ----
 
@@ -1654,6 +1686,7 @@ const styles = StyleSheet.create({
   gridCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   gridCardRating: { fontSize: 11, fontWeight: '700', color: '#fff' },
   gridCardCat: { fontSize: 11, color: 'rgba(255,255,255,0.75)', flex: 1 },
+  gridCardReason: { fontSize: 10, fontStyle: 'italic' as const, color: 'rgba(255,255,255,0.6)', lineHeight: 14 },
 
   // Sections
   sectionTitle: { marginTop: Spacing.three, marginBottom: 8 },

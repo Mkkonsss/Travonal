@@ -1,6 +1,6 @@
 import React from 'react';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
@@ -13,7 +13,7 @@ import { SymbolView } from 'expo-symbols';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
-import { getPlacePhotoAI, getPlacesNearbyAI } from '@/services/ai';
+import { getPlacePhotoAI, getPlacesNearbyAI, rankPlacesAI } from '@/services/ai';
 import { NormalizedPlace, normalizeGooglePlace, formatGoogleTypes, priceLevelLabel } from '@/services/place-model';
 import { ThemedView } from '@/components/themed-view';
 import { Fonts, Spacing, Radius, Shadow } from '@/constants/theme';
@@ -24,7 +24,7 @@ import { useInbox } from '@/context/inbox';
 import { useTheme } from '@/hooks/use-theme';
 import { SuitcaseIcon, BoardsIcon, BookingsIcon } from '@/components/icons';
 import { TripActionSheet } from '@/components/trip-action-sheet';
-import { prefetchPhotosFromCache, getCachedPhotoUrl } from '@/services/free-photos';
+import { prefetchPhotosFromCache, getCachedPhotoUrl, categoryPlaceholderColors, categoryPlaceholderEmoji } from '@/services/free-photos';
 
 import { formatDateRange } from '@/services/trip-helpers';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
@@ -268,28 +268,60 @@ function isInterestingPlace(place: NormalizedPlace, relaxed = false): boolean {
 
 function buildNearYouKeyword(profile: import('@/context/profile').TravelProfile): string {
   const interestMap: Record<string, string> = {
-    food: 'unique restaurant local cuisine', dining: 'fine dining local restaurant', coffee: 'specialty coffee roaster',
-    cafes: 'specialty coffee artisan cafe',
-    art: 'art gallery exhibition', museums: 'museum exhibit', history: 'historical landmark monument',
-    culture: 'cultural center heritage site', hiking: 'hiking trail scenic overlook',
-    outdoors: 'park nature reserve botanical garden', nature: 'botanical garden nature reserve scenic',
-    nightlife: 'cocktail bar live music speakeasy', shopping: 'artisan market boutique vintage',
-    wellness: 'spa wellness retreat', adventure: 'outdoor adventure rock climbing kayak',
-    sports: 'sports recreation stadium', music: 'live music venue concert hall',
-    photography: 'scenic viewpoint landmark', beach: 'beach waterfront promenade',
-    yoga: 'yoga studio wellness center',
+    '🍽️ Food & restaurants': 'local restaurant food',
+    '🌿 Nature & scenery': 'park nature scenic',
+    '🏖️ Beaches': 'beach waterfront coastal',
+    '🏛️ Museums & history': 'museum historic landmark',
+    '🎨 Art & culture': 'art gallery cultural',
+    '🏗️ Architecture': 'architectural landmark building',
+    '🛍️ Shopping': 'boutique market shop',
+    '🌃 Nightlife': 'bar live music cocktail',
+    '🧗 Adventure & outdoors': 'hiking trail outdoor adventure',
+    '🧘 Wellness & relaxation': 'spa wellness yoga',
+    '🌍 Local experiences': 'neighborhood local authentic',
+    '📍 Famous landmarks': 'landmark monument historic',
+    '💎 Hidden gems': 'hidden gem local cafe',
+    '☕ Cafés': 'specialty coffee artisan cafe',
+    '🎵 Live music & entertainment': 'live music venue entertainment',
+    '🏟️ Sports & events': 'sports stadium recreation',
   };
+
   const parts: string[] = [];
   for (const interest of profile.interests.slice(0, 3)) {
-    const kw = interestMap[interest.toLowerCase()];
-    if (kw) parts.push(kw);
+    const kw = interestMap[interest];
+    if (kw) {
+      parts.push(kw);
+    } else {
+      // Custom interest — strip emoji prefix and use the text directly as a keyword
+      const text = interest.replace(/^\p{Emoji}\s*/u, '').trim();
+      if (text) parts.push(text);
+    }
   }
+
+  // Crowd prefix steers Google toward quieter/local places
+  const crowdPrefix =
+    profile.crowdTolerance === 'avoid' ? 'hidden local neighborhood ' :
+    profile.crowdTolerance === 'moderate' ? 'local ' : '';
+
+  // Decision priority modifiers
+  const priorityKws: string[] = [];
+  for (const p of profile.decisionPriorities ?? []) {
+    if (p.includes('local & authentic')) priorityKws.push('authentic local');
+    else if (p.includes('beautiful')) priorityKws.push('scenic');
+    else if (p.includes('unique')) priorityKws.push('unique');
+    else if (p.includes('memorable')) priorityKws.push('unique experience');
+    else if (p.includes('popular for a reason')) priorityKws.push('popular');
+  }
+
   if (parts.length === 0) {
-    if (profile.pace === 'relaxed') return 'botanical garden scenic park artisan cafe';
-    if (profile.pace === 'active') return 'hiking trail adventure outdoor scenic viewpoint';
-    return 'landmark museum unique restaurant scenic viewpoint';
+    const fallback =
+      profile.pace === 'relaxed' ? 'scenic park artisan cafe' :
+      profile.pace === 'active' ? 'hiking trail outdoor adventure' :
+      'landmark unique restaurant scenic';
+    return crowdPrefix + fallback;
   }
-  return parts.join(' ');
+
+  return crowdPrefix + [...parts, ...priorityKws].join(' ');
 }
 
 // ── Per-card photo hook (uses persistent module-level cache) ──────────────────
@@ -343,7 +375,12 @@ function NearYouCard({ place, onPress }: { place: NormalizedPlace; onPress: () =
       {photoUrl ? (
         <ExpoImage source={{ uri: photoUrl }} style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
-        <View style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg, backgroundColor: theme.backgroundElement }]} />
+        <LinearGradient
+          colors={categoryPlaceholderColors(place.category)}
+          style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center' }]}
+        >
+          <SymbolView name={categoryPlaceholderEmoji(place.category)} size={36} tintColor="rgba(255,255,255,0.5)" />
+        </LinearGradient>
       )}
 
       <LinearGradient
@@ -363,6 +400,11 @@ function NearYouCard({ place, onPress }: { place: NormalizedPlace; onPress: () =
           )}
           {catLabel ? <ThemedText style={styles.nearYouCardCat}>{catLabel}</ThemedText> : null}
         </View>
+        {place.matchReasons?.[0] ? (
+          <ThemedText style={styles.nearYouCardReason} numberOfLines={1}>
+            {place.matchReasons[0]}
+          </ThemedText>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -370,15 +412,29 @@ function NearYouCard({ place, onPress }: { place: NormalizedPlace; onPress: () =
 
 // ── Section ───────────────────────────────────────────────────────────────────
 
-function NearYouSection({ profile }: { profile: import('@/context/profile').TravelProfile }) {
+function NearYouSection() {
   const theme = useTheme();
   const router = useRouter();
+  const { profile, loaded: profileLoaded } = useProfile();
+
+  // Stable key for recommendation-relevant fields — changes trigger a fresh fetch
+  const profileKey = profile.interests.join('|') + '::' + (profile.crowdTolerance ?? '');
 
   const [places, setPlaces] = useState<NormalizedPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
 
+  // Invalidate the 30-min cache whenever the profile's recommendation-relevant fields change
+  const prevProfileKeyRef = useRef('');
   useEffect(() => {
+    if (prevProfileKeyRef.current && prevProfileKeyRef.current !== profileKey) {
+      AsyncStorage.removeItem(NY_PLACES_KEY).catch(() => {});
+    }
+    prevProfileKeyRef.current = profileKey;
+  }, [profileKey]);
+
+  useEffect(() => {
+    if (!profileLoaded) return; // wait for profile to load from storage/Supabase
     let cancelled = false;
 
     async function run() {
@@ -460,22 +516,43 @@ function NearYouSection({ profile }: { profile: import('@/context/profile').Trav
       const withinRange = allPlaces.filter((p) => distKm(p.lat, p.lng) <= MAX_DISTANCE_KM);
 
       // Try strict filter first, fall back to relaxed if too few results
-      let normalized = withinRange.filter((p) => isInterestingPlace(p)).slice(0, 12);
+      let normalized = withinRange.filter((p) => isInterestingPlace(p) && p.photos?.[0]?.reference).slice(0, 12);
       if (normalized.length < 3) {
-        normalized = withinRange.filter((p) => isInterestingPlace(p, true)).slice(0, 12);
+        normalized = withinRange.filter((p) => isInterestingPlace(p, true) && p.photos?.[0]?.reference).slice(0, 12);
       }
 
       if (!cancelled) {
         setPlaces(normalized);
         setLoading(false);
         saveCachedNyPlaces(normalized);
+        // Background AI ranking — reorder by score and add reasons
+        if (normalized.length > 1) {
+          rankPlacesAI({ places: normalized as Record<string, unknown>[], profile })
+            .then(({ ranked }) => {
+              if (cancelled) return;
+              const withReasons = normalized.map((p, i) => {
+                const r = ranked.find((x) => x.index === i);
+                return r ? { ...p, matchReasons: [r.reason] } : p;
+              });
+              const reordered = ranked
+                .slice()
+                .sort((a, b) => b.score - a.score)
+                .filter((r) => r.index >= 0 && r.index < withReasons.length)
+                .map((r) => withReasons[r.index]);
+              if (!cancelled && reordered.length > 0) {
+                setPlaces(reordered);
+                saveCachedNyPlaces(reordered);
+              }
+            })
+            .catch(() => {}); // silent — places already shown without reasons
+        }
       }
     }
 
     run().catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profileKey, profileLoaded]);
 
   if (loading) {
     return (
@@ -787,7 +864,7 @@ export default function HomeScreen() {
 
             {/* Nearby inspiration */}
             <Animated.View entering={FadeInDown.delay(240).springify()}>
-              <NearYouSection profile={profile} />
+              <NearYouSection />
             </Animated.View>
 
             </View>
@@ -904,7 +981,7 @@ export default function HomeScreen() {
             )}
 
             {/* Worth a visit nearby */}
-            <NearYouSection profile={profile} />
+            <NearYouSection />
           </View>
           </>
         )}
@@ -1027,6 +1104,7 @@ const styles = StyleSheet.create({
   nearYouCardMetaRow: { flexDirection: 'row' as const, gap: 6, alignItems: 'center' as const },
   nearYouCardRating: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
   nearYouCardCat: { fontSize: 12, color: 'rgba(255,255,255,0.55)' },
+  nearYouCardReason: { fontSize: 10, fontStyle: 'italic' as const, color: 'rgba(255,255,255,0.65)', lineHeight: 14 },
   nearYouLocationPrompt: {
     flexDirection: 'row',
     alignItems: 'center',

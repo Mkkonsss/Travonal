@@ -32,8 +32,9 @@ import { generateTripAI } from '@/services/ai';
 import { normalizeActivity, deduplicateFixedActivities, ensureRequestedActivities, validateGeneratedActivities, repairActivities, generateActivityId } from '@/services/ai-utils';
 import { useSubscription } from '@/context/subscription';
 import type { Activity } from '@/context/trips';
-import { scheduleLocalNotification } from '@/services/notifications';
-import { getPlaceDetailsAI } from '@/services/ai';
+import { scheduleAlertCheckReminder } from '@/services/notifications';
+import { getTripAlertsAI, getPlaceDetailsAI } from '@/services/ai';
+import { saveTripExternalAlerts } from '@/services/storage';
 import { getPlacePhoto } from '@/services/free-photos';
 
 type Phase = 'generating' | 'done' | 'error' | 'usage_limit';
@@ -77,8 +78,6 @@ export default function GeneratingTripScreen() {
 
   // Pulsing pin animation
   const pinScale = useSharedValue(1);
-  const ripple1 = useSharedValue(0);
-  const ripple2 = useSharedValue(0);
 
   // Done state animations
   const statsReveal = useSharedValue(0);
@@ -88,27 +87,10 @@ export default function GeneratingTripScreen() {
     if (phase !== 'generating') return;
     pinScale.value = withRepeat(
       withSequence(
-        withTiming(1.15, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1.08, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
-    );
-    ripple1.value = withRepeat(
-      withSequence(
-        withTiming(0, { duration: 0 }),
-        withTiming(1, { duration: 2000, easing: Easing.out(Easing.ease) }),
-      ),
-      -1,
-    );
-    ripple2.value = withDelay(
-      1000,
-      withRepeat(
-        withSequence(
-          withTiming(0, { duration: 0 }),
-          withTiming(1, { duration: 2000, easing: Easing.out(Easing.ease) }),
-        ),
-        -1,
-      ),
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
@@ -282,6 +264,22 @@ export default function GeneratingTripScreen() {
         statsReveal.value = withDelay(400, withSpring(1, { damping: 12 }));
         setPhase('done');
 
+        // Fire-and-forget: fetch + cache external alerts, then schedule 7-day reminder
+        const alertTrip = trip!;
+        (async () => {
+          try {
+            const alertResult = await getTripAlertsAI({
+              destination: alertTrip.destination,
+              startDate: alertTrip.startDate,
+              endDate: alertTrip.endDate,
+            });
+            await saveTripExternalAlerts(alertTrip.id, alertResult.alerts ?? []);
+            if (alertTrip.startDate) {
+              await scheduleAlertCheckReminder(alertTrip.id, alertTrip.destination, alertTrip.startDate);
+            }
+          } catch { /* Best-effort — silently ignore */ }
+        })();
+
         // Prefetch photos for first 8 activities while user reads reveal screen.
         // Fire-and-forget — photos land in the shared cache so trip/[id].tsx
         // renders them immediately when the user navigates there.
@@ -301,15 +299,6 @@ export default function GeneratingTripScreen() {
           }
         })();
 
-        // Notify if user switched away while generating
-        if (appStateRef.current !== 'active') {
-          scheduleLocalNotification(
-            `Your ${trip!.destination} trip is ready!`,
-            'Tap to see your itinerary.',
-            { tripId: trip!.id },
-            'general',
-          );
-        }
       } catch (e) {
         console.error('[AI Generation] processResult error:', e);
         if (!cancelled) {
@@ -361,16 +350,6 @@ export default function GeneratingTripScreen() {
 
   const pinAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pinScale.value }],
-  }));
-
-  const ripple1Style = useAnimatedStyle(() => ({
-    opacity: 1 - ripple1.value,
-    transform: [{ scale: 1 + ripple1.value * 2.5 }],
-  }));
-
-  const ripple2Style = useAnimatedStyle(() => ({
-    opacity: 1 - ripple2.value,
-    transform: [{ scale: 1 + ripple2.value * 2.5 }],
   }));
 
   const statsAnimStyle = useAnimatedStyle(() => ({
@@ -592,14 +571,15 @@ export default function GeneratingTripScreen() {
       <View style={[styles.centered, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 40 }]}>
 
 
-        {/* Pulsing pin with ripple rings */}
-        <View style={styles.pinContainer}>
-          <Animated.View style={[styles.ripple, { borderColor: theme.primary }, ripple1Style]} />
-          <Animated.View style={[styles.ripple, { borderColor: theme.primary }, ripple2Style]} />
-          <Animated.View style={pinAnimStyle}>
-            <SymbolView name={"globe.americas.fill" as any} size={48} tintColor={theme.primary} />
-          </Animated.View>
-        </View>
+        {/* Pulsing image */}
+        <Animated.View style={[styles.pinContainer, pinAnimStyle]}>
+          <ExpoImage
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            source={require('@/assets/images/icon-chat-empty.png')}
+            style={{ width: 110, height: 110 }}
+            contentFit="contain"
+          />
+        </Animated.View>
 
         {/* Destination name */}
         <Animated.View entering={FadeIn.duration(400)}>
@@ -649,20 +629,21 @@ const styles = StyleSheet.create({
   },
 
 
-  // Generating — pulsing pin
+  // Generating — pulsing image
   pinContainer: {
-    width: 120,
-    height: 120,
+    width: 220,
+    height: 220,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 32,
   },
   ripple: {
     position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
   genDestName: {
     textAlign: 'center',

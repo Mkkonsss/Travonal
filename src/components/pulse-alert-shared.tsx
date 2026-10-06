@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
@@ -7,7 +8,14 @@ import { useTheme } from '@/hooks/use-theme';
 import { PulseAlert, PulseSeverity } from '@/services/trip-pulse';
 import { PulseHistoryEntry } from '@/services/storage';
 
-export const TYPE_ICONS: Record<PulseAlert['type'], string> = {
+export const TYPE_ICONS: Record<string, string> = {
+  // External alert types
+  weather_risk: 'cloud.bolt.rain.fill',
+  travel_advisory: 'shield.lefthalf.filled',
+  entry_requirement: 'doc.badge.plus',
+  local_disruption: 'exclamationmark.triangle.fill',
+  health_advisory: 'cross.case.fill',
+  // Internal (legacy)
   conflict: 'clock.badge.exclamationmark',
   closure: 'door.left.hand.closed',
   weather: 'cloud.rain',
@@ -66,16 +74,17 @@ export function PulseAlertCard({
 }) {
   const theme = useTheme();
   const iconColor = theme.textSecondary;
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <View style={[sharedStyles.alertCardOuter, { borderColor: theme.border }, resolved && { opacity: 0.45 }]}>
       <Pressable
-        onPress={() => { if (!resolved) onAction(alert); }}
+        onPress={() => setExpanded((e) => !e)}
         style={({ pressed }) => [
           sharedStyles.alertCard,
           {
             backgroundColor: theme.backgroundElement,
-            transform: [{ scale: pressed && !resolved ? 0.98 : 1 }],
+            transform: [{ scale: pressed ? 0.98 : 1 }],
           },
         ]}
         accessibilityRole="button"
@@ -85,22 +94,27 @@ export function PulseAlertCard({
           <View style={sharedStyles.alertTitleRow}>
             <SymbolView name={TYPE_ICONS[alert.type] ?? 'sparkles'} size={16} tintColor={iconColor} />
             <ThemedText style={[sharedStyles.alertTitle, resolved && { textDecorationLine: 'line-through' }]} numberOfLines={1}>{alert.title}</ThemedText>
-            {!resolved && (
-              <Pressable
-                onPress={() => onDismiss(alert.id)}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss notification"
-              >
-                <SymbolView name={"xmark" as any} size={14} tintColor={theme.textSecondary} />
-              </Pressable>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <SymbolView name={expanded ? 'chevron.up' : 'chevron.down'} size={12} tintColor={theme.textSecondary} />
+              {!resolved && (
+                <Pressable
+                  onPress={(e) => { e.stopPropagation(); onDismiss(alert.id); }}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss notification"
+                >
+                  <SymbolView name={"xmark" as any} size={14} tintColor={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
           </View>
-          <ThemedText style={[sharedStyles.alertMessage, { color: theme.textSecondary }]} numberOfLines={2}>{alert.message}</ThemedText>
-          {!resolved && (
+          <ThemedText style={[sharedStyles.alertMessage, { color: theme.textSecondary }]} numberOfLines={expanded ? undefined : 2}>
+            {alert.message}
+          </ThemedText>
+          {!resolved && expanded && alert.actionLabel ? (
             <View style={sharedStyles.alertActions}>
               <Pressable
-                onPress={() => onAction(alert)}
+                onPress={(e) => { e.stopPropagation(); onAction(alert); }}
                 accessibilityRole="button"
                 accessibilityLabel={alert.actionLabel}
               >
@@ -109,7 +123,7 @@ export function PulseAlertCard({
                 </ThemedText>
               </Pressable>
             </View>
-          )}
+          ) : null}
         </View>
       </Pressable>
     </View>

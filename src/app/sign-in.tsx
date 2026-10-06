@@ -243,7 +243,7 @@ export default function SignInScreen() {
             <View style={styles.footer}>
               <Text style={styles.footerText}>{"Don't have an account? "}</Text>
               <Pressable
-                onPress={() => router.push('/sign-up')}
+                onPress={() => router.push({ pathname: '/sign-up', params: { fromSignIn: '1' } } as any)}
                 accessibilityRole="button"
                 accessibilityLabel="Create account"
               >

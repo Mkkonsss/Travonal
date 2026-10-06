@@ -12,7 +12,7 @@ import { supabase } from './supabase';
 import type { Trip, Activity } from '@/context/trips';
 import type { TravelProfile } from '@/context/profile';
 
-const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-travonal`;
+const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-toveli`;
 
 // ─── Core fetch helper ────────────────────────────────────────────────────────
 
@@ -145,6 +145,7 @@ export interface ChatPlace {
   types?: string[];
   primaryTypeLabel?: string;
   photoRefs?: string[];
+  reason?: string;   // why this place fits the traveler
 }
 
 export interface ChatMemorySignal {
@@ -169,6 +170,7 @@ export async function chatAI(params: {
   profile: TravelProfile;
   activeTripId?: string;
   activeTrip?: Trip;
+  userLocation?: { lat: number; lng: number; city?: string };
 }): Promise<ChatResult> {
   return callEdgeFunction('chat', params);
 }
@@ -457,6 +459,56 @@ export async function dismissParsedBookingAI(id: string): Promise<void> {
 /** Mark a parsed booking as imported */
 export async function markBookingImportedAI(id: string): Promise<void> {
   return callEdgeFunction('mark_booking_imported', { id });
+}
+
+// ─── 18. Destination Photo ──────────────────────────────────────────────────
+
+/** Fetch a high-quality scenic photo URL for a destination city */
+export async function getDestinationPhotoAI(destination: string): Promise<{ url: string | null }> {
+  return callEdgeFunction('destination_photo', { destination });
+}
+
+// ─── 19. Flight Search ──────────────────────────────────────────────────────
+
+export interface FlightResult {
+  airline: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  departureTime: string;
+  arrivalTime: string;
+  duration: number; // minutes
+  stops: number;
+  price: number | null;
+  airlineLogo: string;
+}
+
+export async function searchFlightsAI(params: {
+  origin: string;
+  destination: string;
+  departureDate: string;
+  returnDate?: string;
+}): Promise<{ flights: FlightResult[] }> {
+  return callEdgeFunction('search_flights', params);
+}
+
+// ─── 20. Trip Alerts ────────────────────────────────────────────────────────
+
+export interface TripAlertResult {
+  id: string;
+  type: 'weather_risk' | 'travel_advisory' | 'entry_requirement' | 'local_disruption' | 'health_advisory' | 'closure';
+  severity: 'urgent' | 'important' | 'info';
+  title: string;
+  message: string;
+  actionUrl?: string;
+}
+
+export async function getTripAlertsAI(params: {
+  destination: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ alerts: TripAlertResult[] }> {
+  return callEdgeFunction('get_trip_alerts', params);
 }
 
 

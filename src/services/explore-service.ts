@@ -136,7 +136,7 @@ async function resolveCoordinates(
 
 import { supabase } from './supabase';
 
-const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-travonal`;
+const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-toveli`;
 
 async function callExploreEdge<T>(action: string, payload: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -176,32 +176,64 @@ function resultsCacheKey(lat: number, lng: number, keyword: string): string {
 // ── Interest → query mapping for For You personalization ──
 
 const INTEREST_QUERY_MAP: Record<string, string[]> = {
-  'Food & restaurants': ['best restaurants', 'local food market', 'top cafes'],
-  'Nature & scenery': ['parks nature scenery', 'gardens outdoor', 'hiking trails viewpoint'],
-  'Art & culture': ['museums art galleries', 'cultural landmarks', 'historic sites'],
-  'Beaches': ['beach waterfront', 'coastal spots', 'seaside'],
-  'Shopping': ['shopping markets', 'boutique stores', 'local shops'],
-  'Nightlife': ['bars nightlife', 'rooftop bars', 'cocktail bars'],
-  'Wellness & spa': ['spa wellness', 'yoga retreat'],
-  'Adventure & sports': ['outdoor adventure', 'sports activities'],
-  'History': ['historic sites monuments', 'heritage museums'],
-  'Architecture': ['architecture landmarks', 'iconic buildings'],
+  '🍽️ Food & restaurants': ['best restaurants', 'local food market'],
+  '🌿 Nature & scenery': ['parks nature scenery', 'gardens outdoor'],
+  '🏖️ Beaches': ['beach waterfront', 'coastal spots'],
+  '🏛️ Museums & history': ['museums history', 'historic landmarks'],
+  '🎨 Art & culture': ['art galleries', 'cultural landmarks'],
+  '🏗️ Architecture': ['architecture landmarks', 'iconic buildings'],
+  '🛍️ Shopping': ['shopping markets', 'boutique stores'],
+  '🌃 Nightlife': ['bars nightlife', 'cocktail bars'],
+  '🧗 Adventure & outdoors': ['outdoor adventure', 'hiking trails'],
+  '🧘 Wellness & relaxation': ['spa wellness', 'yoga retreat'],
+  '🌍 Local experiences': ['local neighborhood', 'authentic local spots'],
+  '📍 Famous landmarks': ['famous landmarks', 'top attractions'],
+  '💎 Hidden gems': ['hidden gem cafe', 'local neighborhood spot'],
+  '☕ Cafés': ['specialty coffee', 'artisan cafe'],
+  '🎵 Live music & entertainment': ['live music venue', 'entertainment'],
+  '🏟️ Sports & events': ['sports recreation', 'stadium events'],
 };
 
-/** Pick For You queries based on user interests, always mixing in some variety */
-function buildForYouQueries(interests: string[]): string[] {
+/** Pick For You queries based on user interests + crowd/priority preferences */
+function buildForYouQueries(options: {
+  interests: string[];
+  crowdTolerance?: string;
+  decisionPriorities?: string[];
+}): string[] {
+  const { interests, crowdTolerance, decisionPriorities = [] } = options;
+
   const interestQueries: string[] = [];
   for (const interest of interests) {
     const mapped = INTEREST_QUERY_MAP[interest];
-    if (mapped) interestQueries.push(...mapped.slice(0, 2)); // max 2 per interest
+    if (mapped) {
+      interestQueries.push(...mapped.slice(0, 2));
+    } else {
+      // Custom interest — strip emoji prefix and use the text directly as a search query
+      const text = interest.replace(/^\p{Emoji}\s*/u, '').trim();
+      if (text) interestQueries.push(text);
+    }
   }
 
-  // Fallback defaults to always mix in for variety (prevents over-personalization)
-  const defaults = ['top attractions', 'popular cafes'];
+  // Crowd modifier steers Google toward quieter places
+  const crowdQuery =
+    crowdTolerance === 'avoid' ? 'hidden gem local neighborhood' :
+    crowdTolerance === 'moderate' ? 'local spot' : null;
 
-  // Combine: up to 4 interest-based + 2 variety defaults, deduped
-  const combined = [...new Set([...interestQueries.slice(0, 4), ...defaults])];
-  return combined.length > 0 ? combined.slice(0, 5) : ['best places to visit', 'popular cafes', 'top attractions', 'boutique hotels'];
+  // Decision priority modifier
+  const priorityQuery = decisionPriorities.some((p) => p.includes('local & authentic'))
+    ? 'authentic local' : null;
+
+  const defaults = crowdTolerance === 'avoid'
+    ? ['local neighborhood cafe', 'hidden gem']
+    : ['top attractions', 'popular cafes'];
+
+  const combined = [
+    ...interestQueries.slice(0, 4),
+    ...(crowdQuery ? [crowdQuery] : []),
+    ...(priorityQuery ? [priorityQuery] : []),
+    ...defaults,
+  ];
+  return [...new Set(combined)].slice(0, 6);
 }
 
 /** Soft-sort for crowd-sensitive users: deprioritize very high review-count places */
@@ -217,7 +249,7 @@ function applyCrowdSort(places: NormalizedPlace[], crowdTolerance: string): Norm
 export async function fetchExplorePlaces(
   location: ExploreLocation,
   category: string,
-  options?: { interests?: string[]; crowdTolerance?: string },
+  options?: { interests?: string[]; crowdTolerance?: string; decisionPriorities?: string[]; pace?: string },
 ): Promise<NormalizedPlace[]> {
   const coords = await resolveCoordinates(location);
   if (!coords) return [];
@@ -229,7 +261,11 @@ export async function fetchExplorePlaces(
   const interestKey = category === 'for_you' && options?.interests?.length
     ? options.interests.slice().sort().join('|')
     : '';
-  const cKey = resultsCacheKey(lat, lng, catQuery.keyword) + (interestKey ? `:${interestKey}` : '');
+  const priorityKey = options?.decisionPriorities?.length
+    ? options.decisionPriorities.slice().sort().join('|') : '';
+  const cKey = resultsCacheKey(lat, lng, catQuery.keyword)
+    + (interestKey ? `:${interestKey}` : '')
+    + (priorityKey ? `:${priorityKey}` : '');
   const cached = resultsCache.get(cKey);
   if (cached && Date.now() - cached.ts < RESULTS_CACHE_TTL) {
     return cached.data;
@@ -240,7 +276,11 @@ export async function fetchExplorePlaces(
   // For You: pick queries based on user interests
   let keywords: string[];
   if (category === 'for_you' && options?.interests?.length) {
-    keywords = buildForYouQueries(options.interests);
+    keywords = buildForYouQueries({
+      interests: options.interests,
+      crowdTolerance: options.crowdTolerance,
+      decisionPriorities: options.decisionPriorities,
+    });
   } else {
     keywords = catQuery.multiQuery ?? [catQuery.keyword];
   }
@@ -283,8 +323,8 @@ export async function fetchExplorePlaces(
     places = rankStayResults(places);
   }
 
-  // For You: apply crowd tolerance soft-sort (deprioritize very busy places for avoid users)
-  if (category === 'for_you' && options?.crowdTolerance) {
+  // Apply crowd tolerance soft-sort across all categories
+  if (options?.crowdTolerance) {
     places = applyCrowdSort(places, options.crowdTolerance);
   }
 

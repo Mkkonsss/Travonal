@@ -40,4 +40,6 @@ export interface NativeMapProps {
   initialPadding?: { top: number; right: number; bottom: number; left: number };
   /** Force light or dark map appearance (iOS only). */
   userInterfaceStyle?: 'light' | 'dark';
+  /** Explicit initial region — used when there are no markers to fit. */
+  initialRegion?: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
 }

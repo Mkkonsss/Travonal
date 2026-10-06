@@ -3,6 +3,7 @@ import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -18,6 +19,7 @@ import { SymbolView } from 'expo-symbols';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 
 import { ThemedText } from '@/components/themed-text';
 import { ChatMarkdown } from '@/components/chat-markdown';
@@ -57,8 +59,6 @@ interface Message {
   pendingActions?: TripAction[];
   /** ID mapping from safe actions that ran before confirmation was requested. */
   pendingIdMap?: Record<string, string>;
-  /** Original user message to re-send after they pick a trip. */
-  tripPickerMessage?: string;
   timestamp?: number;
   failed?: boolean;
 }
@@ -79,55 +79,7 @@ function getContextualSuggestions(
   trips: ReturnType<typeof useTrips>['trips'],
   getTripState: ReturnType<typeof useTrips>['getTripState'],
   boards: ReturnType<typeof useBoards>['boards'],
-  selectedTripId?: string,
 ): { icon: string; text: string }[] {
-  // If a specific trip is selected, tailor suggestions to it
-  if (selectedTripId) {
-    const trip = trips.find((t) => t.id === selectedTripId);
-    if (trip) {
-      const state = getTripState(trip);
-      const dest = trip.destination;
-      const hasHotel = trip.activities.some((a) => a.type === 'hotel');
-      if (state === 'active') {
-        return [
-          { icon: 'fork.knife', text: `Dinner in ${dest}` },
-          { icon: 'sparkles', text: 'What to do tonight?' },
-          { icon: 'arrow.triangle.swap', text: "Change tomorrow" },
-        ];
-      }
-      if (state === 'upcoming') {
-        if (trip.activities.length === 0) {
-          const chips = [
-            { icon: 'sparkles', text: `Plan ${dest}` },
-            { icon: 'fork.knife', text: 'Add restaurants' },
-            { icon: 'mappin.and.ellipse', text: 'Hidden gems' },
-          ];
-          if (!hasHotel) chips.push({ icon: 'bed.double.fill', text: `Where to stay in ${dest}?` });
-          return chips;
-        }
-        const chips = !hasHotel
-          ? [
-              { icon: 'bed.double.fill', text: `Where to stay in ${dest}?` },
-              { icon: 'checklist', text: 'Review itinerary' },
-              { icon: 'mappin.and.ellipse', text: 'Hidden gems' },
-            ]
-          : [
-              { icon: 'checklist', text: 'Review itinerary' },
-              { icon: 'cloud.rain', text: 'Backup for rain' },
-              { icon: 'mappin.and.ellipse', text: 'Hidden gems' },
-            ];
-        return chips;
-      }
-      if (state === 'past') {
-        return [
-          { icon: 'airplane', text: `Like ${dest}` },
-          { icon: 'sparkles', text: 'What did I miss?' },
-          { icon: 'mappin.and.ellipse', text: 'Plan next trip' },
-        ];
-      }
-    }
-  }
-
   const activeTrips = trips.filter((t) => getTripState(t) === 'active');
   const upcomingTrips = trips.filter((t) => getTripState(t) === 'upcoming');
   const pastTrips = trips.filter((t) => getTripState(t) === 'past');
@@ -152,12 +104,12 @@ function getContextualSuggestions(
         { icon: 'fork.knife', text: 'Add restaurants' },
         { icon: 'mappin.and.ellipse', text: 'Hidden gems' },
       ];
-      if (!hasHotel) chips.push({ icon: 'bed.double.fill', text: `Where to stay in ${trip.destination}?` });
+      if (!hasHotel) chips.push({ icon: 'bed.double.fill', text: 'Where to stay?' });
       return chips;
     }
     if (!hasHotel) {
       return [
-        { icon: 'bed.double.fill', text: `Where to stay in ${trip.destination}?` },
+        { icon: 'bed.double.fill', text: 'Where to stay?' },
         { icon: 'checklist', text: 'Review itinerary' },
         { icon: 'mappin.and.ellipse', text: 'Hidden gems' },
       ];
@@ -181,56 +133,61 @@ function getContextualSuggestions(
     const lastDest = pastTrips[0].destination;
     return [
       { icon: 'airplane', text: 'Plan next trip' },
-      { icon: 'arrow.triangle.swap', text: `Like ${lastDest}` },
+      { icon: 'arrow.triangle.swap', text: 'Similar destination' },
       { icon: 'mappin.and.ellipse', text: 'Where to go?' },
     ];
   }
 
   return [
     { icon: 'airplane', text: 'Plan my first trip' },
-    { icon: 'mappin.and.ellipse', text: 'Where to go?' },
-    { icon: 'fork.knife', text: 'Find a restaurant' },
+    { icon: 'mappin.and.ellipse', text: 'Where should I go?' },
+    { icon: 'sparkles', text: 'Surprise me' },
   ];
 }
 
-function getGreeting(name: string): string {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return `Good morning, ${name}`;
-  if (hour >= 12 && hour < 17) return `Good afternoon, ${name}`;
-  if (hour >= 17 && hour < 24) return `Good evening, ${name}`;
-  return `Still planning, ${name}?`;
+const TRAVEL_GREETINGS = [
+  'Where to today',
+  "What's the plan",
+  'Ready to explore',
+  "Where are we headed",
+  "What's next",
+  "Let's go somewhere",
+  'Where to next',
+  'What are we doing',
+];
+
+// Stable per-session random index
+const _greetingIndex = Math.floor(Math.random() * TRAVEL_GREETINGS.length);
+
+function getGreeting(
+  name: string,
+  trips: ReturnType<typeof useTrips>['trips'],
+  getTripState: ReturnType<typeof useTrips>['getTripState'],
+): string {
+  const activeTrips = trips.filter((t) => getTripState(t) === 'active');
+  const upcomingTrips = trips.filter((t) => getTripState(t) === 'upcoming').sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  if (activeTrips.length > 0) {
+    const dest = activeTrips[0].destination.split(',')[0];
+    return `How's ${dest}, ${name}?`;
+  }
+  if (upcomingTrips.length > 0) {
+    const t = upcomingTrips[0];
+    const daysUntil = Math.ceil((new Date(t.startDate).getTime() - Date.now()) / 86400000);
+    const dest = t.destination.split(',')[0];
+    if (daysUntil <= 1) return `${dest} is tomorrow, ${name}!`;
+    if (daysUntil <= 7) return `${dest} in ${daysUntil} days, ${name}!`;
+    return `Planning ${dest}, ${name}?`;
+  }
+
+  return `${TRAVEL_GREETINGS[_greetingIndex]}, ${name}?`;
 }
 
 function getSubtitle(
   trips: ReturnType<typeof useTrips>['trips'],
   getTripState: ReturnType<typeof useTrips>['getTripState'],
   boards: ReturnType<typeof useBoards>['boards'],
-  selectedTripId?: string,
 ): string {
-  // If a specific trip is selected, show its status
-  if (selectedTripId) {
-    const trip = trips.find((t) => t.id === selectedTripId);
-    if (trip) {
-      const state = getTripState(trip);
-      if (state === 'active') {
-        const start = new Date(trip.startDate);
-        const today = new Date();
-        const dayNum = Math.floor((today.getTime() - start.getTime()) / 86400000) + 1;
-        const totalDays = Math.floor((new Date(trip.endDate).getTime() - start.getTime()) / 86400000) + 1;
-        return `Day ${dayNum} of ${totalDays} in ${trip.destination}. How's it going?`;
-      }
-      if (state === 'upcoming') {
-        const daysUntil = Math.ceil((new Date(trip.startDate).getTime() - Date.now()) / 86400000);
-        if (daysUntil <= 1) return `${trip.destination} is tomorrow. Need anything last-minute?`;
-        return `${daysUntil} days until ${trip.destination}. Need help with anything?`;
-      }
-      if (state === 'past') {
-        return `Your ${trip.destination} trip is complete. Want to reminisce?`;
-      }
-      return `Planning ${trip.destination}. How can I help?`;
-    }
-  }
-
   const activeTrips = trips.filter((t) => getTripState(t) === 'active');
   const upcomingTrips = trips.filter((t) => getTripState(t) === 'upcoming').sort((a, b) => a.startDate.localeCompare(b.startDate));
 
@@ -251,10 +208,10 @@ function getSubtitle(
   }
 
   if (boards.filter(b => b.items.length > 0).length > 0) {
-    return "You've saved some places. Let's put them to use.";
+    return "You've got places saved. Ask me anything — I know your boards, trips, and preferences.";
   }
 
-  return "Let's plan your next adventure.";
+  return "Ask me anything about travel. I know your whole account.";
 }
 
 function generateId() {
@@ -492,66 +449,6 @@ const actionStyles = StyleSheet.create({
 
 // ---------- Trip Picker Card ----------
 
-function TripPickerCard({
-  trips,
-  theme,
-  onSelect,
-}: {
-  trips: { id: string; title?: string; destination: string; country: string; emoji?: string; startDate?: string; endDate?: string }[];
-  theme: ReturnType<typeof useTheme>;
-  onSelect: (tripId: string) => void;
-}) {
-  return (
-    <View style={{
-      borderRadius: Radius.md,
-      borderWidth: 1,
-      borderColor: theme.border,
-      backgroundColor: theme.backgroundElement,
-      padding: 12,
-      marginTop: 8,
-      width: '92%',
-      alignSelf: 'flex-start',
-    }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <SymbolView name="mappin.and.ellipse" size={16} tintColor={theme.primary} />
-        <ThemedText style={{ fontSize: 14, fontWeight: '600' }}>Which trip?</ThemedText>
-      </View>
-      {trips.map((t) => {
-        const label = t.title || t.destination;
-        const sub = t.startDate ? `${t.destination} · ${t.startDate}` : t.destination;
-        return (
-          <Pressable
-            key={t.id}
-            onPress={() => onSelect(t.id)}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              paddingVertical: 10,
-              paddingHorizontal: 14,
-              borderRadius: Radius.sm,
-              borderWidth: 1,
-              borderColor: theme.border,
-              backgroundColor: pressed ? theme.border : 'transparent',
-              marginBottom: 6,
-            })}
-            accessibilityRole="button"
-            accessibilityLabel={`Select ${label}`}
-          >
-            <ThemedText style={{ fontSize: 18 }}>{t.emoji || '✈️'}</ThemedText>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <ThemedText style={{ fontSize: 14, fontWeight: '600' }} numberOfLines={1}>{label}</ThemedText>
-              {t.title && (
-                <ThemedText style={{ fontSize: 12, color: theme.textSecondary }} numberOfLines={1}>{sub}</ThemedText>
-              )}
-            </View>
-            <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
 
 function formatUserName(email?: string): string {
   if (!email) return 'Traveler';
@@ -589,12 +486,12 @@ function buildContext(
   const hr12 = hr % 12 || 12;
   lines.push(`Current time: ${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())} ${hr12}:${pad2(mn)} ${ampm} (${days[now.getDay()]})`);
 
-  // Full profile
-  const profileParts = [`pace=${profile.pace}`];
-  if (profile.flexibility) profileParts.push(`flexibility=${profile.flexibility}`);
+  // Full profile — only include fields the user explicitly set in the survey
+  const profileParts: string[] = [];
   if (profile.budget) profileParts.push(`budget=${profile.budget}`);
-  lines.push(`\nTraveler profile: ${profileParts.join(', ')}`);
-  if (profile.accommodationPreference) lines.push(`Accommodation preference: ${profile.accommodationPreference}`);
+  if (profileParts.length) lines.push(`\nTraveler profile: ${profileParts.join(', ')}`);
+  else lines.push(`\nTraveler profile:`);
+  // Note: pace, flexibility, accommodationPreference are legacy fields not shown in survey — omit from AI context
   if (profile.interests.length) lines.push(`Interests: ${profile.interests.join(', ')}`);
   if (profile.dislikes.length) lines.push(`Dislikes: ${profile.dislikes.join(', ')}`);
   if (profile.dietaryRestrictions.length) {
@@ -607,7 +504,7 @@ function buildContext(
   if (profile.crowdTolerance) lines.push(`Crowd tolerance: ${profile.crowdTolerance}`);
   if (profile.foodImportance) lines.push(`Food importance: ${profile.foodImportance}`);
   if (profile.spendingPriorities?.length) lines.push(`Spending priorities: ${profile.spendingPriorities.join(', ')}`);
-  if (profile.decisionPriorities?.length) lines.push(`Decision priorities: ${profile.decisionPriorities.join(', ')}`);
+  if (profile.decisionPriorities?.length) lines.push(`What they look for in a place: ${profile.decisionPriorities.join(', ')}`);
   if (profile.recommendationStyle) lines.push(`Recommendation style: ${profile.recommendationStyle}`);
   if (profile.absoluteRules?.length) lines.push(`Absolute rules: ${profile.absoluteRules.join(', ')}`);
   if (profile.travelWith) lines.push(`Traveling with: ${profile.travelWith}`);
@@ -744,14 +641,9 @@ function resolveMentionedTrip(
   userMessage: string,
   trips: ReturnType<typeof useTrips>['trips'],
   getTripState: ReturnType<typeof useTrips>['getTripState'],
-  selectedTripId?: string,
+  _unused?: string,
   lastActedTripId?: string,
 ): (typeof trips)[0] | undefined {
-  // If there's an explicitly selected trip (from selector UI), use it
-  if (selectedTripId) {
-    return trips.find((t) => t.id === selectedTripId);
-  }
-
   const lower = userMessage.toLowerCase();
   // Include all non-past trips: active, upcoming, planned (TBD dates), and draft
   const relevantTrips = trips.filter((t) => {
@@ -795,7 +687,7 @@ function resolveMentionedTrip(
 
 
 export default function ChatScreen() {
-  const { context: placeContext, tripId: initialTripId, message: initialMessage, autoFocus: autoFocusParam } = useLocalSearchParams<{ context?: string; tripId?: string; message?: string; autoFocus?: string }>();
+  const { context: placeContext, message: initialMessage, autoFocus: autoFocusParam } = useLocalSearchParams<{ context?: string; tripId?: string; message?: string; autoFocus?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -815,8 +707,7 @@ export default function ChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [selectedTripId, setSelectedTripId] = useState<string | undefined>(initialTripId);
-  const [showTripSelector, setShowTripSelector] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; city?: string } | undefined>();
   const [boardPickerVisible, setBoardPickerVisible] = useState(false);
   const [pendingBoardPlace, setPendingBoardPlace] = useState<ChatPlace | null>(null);
   const [lastActedTripId, setLastActedTripId] = useState<string | undefined>();
@@ -827,6 +718,7 @@ export default function ChatScreen() {
   const [threadOptionsId, setThreadOptionsId] = useState<string | null>(null);
   const [renameThreadId, setRenameThreadId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
+  const [threadOptionsRenaming, setThreadOptionsRenaming] = useState(false);
   const listRef = useRef<FlatList>(null);
   const chatInputRef = useRef<TextInput>(null);
   const chatSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -840,6 +732,16 @@ export default function ChatScreen() {
   const loadedMsgCount = useRef(0);
 
   const isEmptyState = messages.length === 0;
+
+  // Derive header title directly from first user message (raw truncation, no stripping)
+  const headerTitle = useMemo(() => {
+    const firstUserMsg = messages.find((m) => m.role === 'user');
+    if (firstUserMsg) {
+      const t = firstUserMsg.text.trim().replace(/\n[\s\S]*/s, '');
+      return t.length > 32 ? t.slice(0, 32).replace(/\s+\S*$/, '') + '\u2026' : t;
+    }
+    return 'Ask Tripseek';
+  }, [messages]);
 
   function handleSaveToBoard(place: ChatPlace) {
     setPendingBoardPlace(place);
@@ -979,7 +881,7 @@ export default function ChatScreen() {
     if (thread) {
       setRenameText(thread.title);
       setRenameThreadId(threadId);
-      setThreadOptionsId(null);
+      setThreadOptionsRenaming(true);
     }
   }
 
@@ -993,6 +895,8 @@ export default function ChatScreen() {
     });
     setRenameThreadId(null);
     setRenameText('');
+    setThreadOptionsRenaming(false);
+    setThreadOptionsId(null);
   }
 
   // Track keyboard for input bar padding
@@ -1002,7 +906,24 @@ export default function ChatScreen() {
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  // Load persisted threads — resume most recent on app reopen, then merge remote
+  // Fetch user location (best-effort, no prompt if already denied)
+  useEffect(() => {
+    Location.getForegroundPermissionsAsync().then(async ({ status }) => {
+      if (status !== 'granted') return;
+      try {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude: lat, longitude: lng } = pos.coords;
+        // Reverse-geocode to get city name
+        const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+        const city = geo?.city || geo?.subregion || geo?.region || undefined;
+        setUserLocation({ lat, lng, city });
+      } catch {
+        // Location unavailable — silently skip
+      }
+    });
+  }, []);
+
+  // Load persisted threads — always start fresh, previous chats accessible via history
   useEffect(() => {
     loadChatThreads<ChatThread[]>([]).then(async (savedThreads) => {
       let merged = savedThreads;
@@ -1020,15 +941,32 @@ export default function ChatScreen() {
       }
 
       setThreads(merged);
-      if (!placeContext && merged.length > 0) {
-        const mostRecent = merged[0];
-        loadedMsgCount.current = mostRecent.messages.length;
-        setMessages(mostRecent.messages as Message[]);
-        setActiveThreadId(mostRecent.id);
-      }
+      // Always open a fresh chat — previous threads are in history
       setLoaded(true);
     });
   }, [placeContext]);
+
+  // Clear to a new chat when app comes back from background (closed then reopened)
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const prev = appStateRef.current;
+      appStateRef.current = nextState;
+      // Only clear when transitioning from background/inactive → active
+      if (nextState === 'active' && (prev === 'background' || prev === 'inactive')) {
+        // Save current thread before clearing
+        if (messages.length > 0 && activeThreadId) {
+          saveCurrentThread();
+        }
+        loadedMsgCount.current = 0;
+        setMessages([]);
+        setActiveThreadId(null);
+        setIsTyping(false);
+      }
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-focus input when navigating from the Ask bar — wait for transition to finish
   useEffect(() => {
@@ -1439,31 +1377,6 @@ export default function ChatScreen() {
     });
   }
 
-  function handleTripPick(msgId: string, tripId: string) {
-    // Find the original message, clear the picker, then re-send with selected trip
-    const msg = messages.find((m) => m.id === msgId);
-    const originalText = msg?.tripPickerMessage ?? '';
-    const trip = trips.find((t) => t.id === tripId);
-    const tripLabel = trip?.title || trip?.destination || 'trip';
-
-    // Clear the picker card
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === msgId);
-      if (idx < 0) return prev;
-      const next = [...prev];
-      next[idx] = { ...prev[idx], tripPickerMessage: undefined, text: `Got it — ${tripLabel}!` };
-      return next;
-    });
-
-    // Update selected trip for future messages
-    setSelectedTripId(tripId);
-
-    // Re-send with the trip ID passed directly (don't rely on state update)
-    if (originalText) {
-      sendMessage(originalText, tripId);
-    }
-  }
-
   async function sendMessage(text: string, overrideTripId?: string, retryCount = 0) {
     if (!text.trim()) return;
     if (isTyping && retryCount === 0) return;
@@ -1498,26 +1411,7 @@ export default function ChatScreen() {
     }));
 
     // Resolve the trip most relevant to this message
-    const effectiveTripId = overrideTripId || selectedTripId;
-    const mentionedTrip = resolveMentionedTrip(text, trips, getTripState, effectiveTripId, lastActedTripId);
-
-    // If multiple trips and none resolved, ask the user to pick before calling AI
-    const relevantTrips = trips.filter((t) => {
-      const s = getTripState(t);
-      return s !== 'past';
-    });
-    if (!mentionedTrip && relevantTrips.length > 1) {
-      const pickerMsg: Message = {
-        id: generateId(),
-        role: 'assistant',
-        text: "Sure! Which trip is this for?",
-        tripPickerMessage: text.trim(),
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, pickerMsg]);
-      setIsTyping(false);
-      return;
-    }
+    const mentionedTrip = resolveMentionedTrip(text, trips, getTripState, undefined, lastActedTripId);
 
     try {
       const result = await chatAI({
@@ -1527,6 +1421,7 @@ export default function ChatScreen() {
         profile,
         activeTripId: mentionedTrip?.id,
         activeTrip: mentionedTrip,
+        userLocation,
       });
 
       // Process memory signals extracted by AI from the conversation
@@ -1800,15 +1695,6 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Trip picker card — shown when user needs to pick a trip first */}
-        {!isUser && item.tripPickerMessage && (
-          <TripPickerCard
-            trips={trips.filter((t) => getTripState(t) !== 'past')}
-            theme={theme}
-            onSelect={(tripId) => handleTripPick(item.id, tripId)}
-          />
-        )}
-
         {/* Follow-up suggestion chips — only on the last assistant message */}
         {isLastAssistant && item.suggestions && item.suggestions.length > 0 && !isTyping && (
           <View style={styles.followUpChipsWrap}>
@@ -1858,38 +1744,11 @@ export default function ChatScreen() {
         >
           <SymbolView name="square.and.pencil" size={20} tintColor={theme.primary} />
         </Pressable>
-        <Pressable
-          onPress={() => {
-            const relevant = trips.filter((t) => getTripState(t) !== 'past');
-            if (relevant.length >= 1) setShowTripSelector((v) => !v);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Select trip context"
-          style={styles.headerTitleBtn}
-        >
+        <View style={styles.headerTitleBtn}>
           <ThemedText style={styles.headerTitle} numberOfLines={1}>
-            {activeThreadId ? (threads.find((t) => t.id === activeThreadId)?.title ?? 'Ask Tripseek') : 'Ask Tripseek'}
+            {headerTitle}
           </ThemedText>
-          {(() => {
-            const sel = selectedTripId ? trips.find((t) => t.id === selectedTripId) : undefined;
-            const relevant = trips.filter((t) => getTripState(t) !== 'past');
-            return sel ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <ThemedText style={[styles.headerSubtitle, { color: theme.primary }]}>
-                  {sel.destination}
-                </ThemedText>
-                <SymbolView name="chevron.down" size={10} tintColor={theme.primary} />
-              </View>
-            ) : relevant.length >= 1 ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <ThemedText style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
-                  All trips
-                </ThemedText>
-                <SymbolView name="chevron.down" size={10} tintColor={theme.textSecondary} />
-              </View>
-            ) : null;
-          })()}
-        </Pressable>
+        </View>
         <Pressable
           onPress={() => setShowThreadList(true)}
           style={styles.newChatButton}
@@ -1901,39 +1760,6 @@ export default function ChatScreen() {
         </Pressable>
       </View>
 
-      {/* Trip selector dropdown */}
-      {showTripSelector && (
-        <>
-          <Pressable
-            style={styles.tripSelectorBackdrop}
-            onPress={() => setShowTripSelector(false)}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss trip selector"
-          />
-          <Animated.View entering={FadeIn.duration(150)} style={[styles.tripSelector, { backgroundColor: theme.backgroundElement, borderColor: theme.border, top: insets.top + 52 }]}>
-            <Pressable
-              onPress={() => { setSelectedTripId(undefined); setShowTripSelector(false); }}
-              style={[styles.tripSelectorRow, { borderBottomColor: theme.border }]}
-            >
-              <ThemedText style={[styles.tripSelectorText, !selectedTripId && { color: theme.primary, fontWeight: '700' }]}>
-                All trips
-              </ThemedText>
-            </Pressable>
-            {trips.filter((t) => getTripState(t) !== 'past').map((t) => (
-              <Pressable
-                key={t.id}
-                onPress={() => { setSelectedTripId(t.id); setShowTripSelector(false); }}
-                style={[styles.tripSelectorRow, { borderBottomColor: theme.border }]}
-              >
-                <ThemedText style={[styles.tripSelectorText, selectedTripId === t.id && { color: theme.primary, fontWeight: '700' }]}>
-                  {t.destination}
-                </ThemedText>
-              </Pressable>
-            ))}
-          </Animated.View>
-        </>
-      )}
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1943,9 +1769,15 @@ export default function ChatScreen() {
         <View style={{ flex: 1 }}>
           {/* Empty state or message thread */}
           {isEmptyState && loaded ? (() => {
-            const suggestions = getContextualSuggestions(trips, getTripState, boards, selectedTripId);
+            const suggestions = getContextualSuggestions(trips, getTripState, boards);
             return (
-            <Pressable style={styles.emptyState} onPress={() => Keyboard.dismiss()}>
+            <ScrollView
+              style={styles.emptyState}
+              contentContainerStyle={styles.emptyStateContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Pressable onPress={() => Keyboard.dismiss()}>
               <Animated.View entering={FadeIn.duration(400)} style={styles.emptyContent}>
                 <ExpoImage
                   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1954,12 +1786,8 @@ export default function ChatScreen() {
                   contentFit="contain"
                 />
                 <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-                  {getGreeting(userName)}
+                  {getGreeting(userName, trips, getTripState)}
                 </ThemedText>
-                <ThemedText style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-                  {getSubtitle(trips, getTripState, boards, selectedTripId)}
-                </ThemedText>
-
                 <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.emptySuggestionsWrap}>
                   <View style={styles.emptySuggestionsRow}>
                     {suggestions.slice(0, 2).map((s) => (
@@ -1994,7 +1822,8 @@ export default function ChatScreen() {
                   )}
                 </Animated.View>
               </Animated.View>
-            </Pressable>
+              </Pressable>
+            </ScrollView>
             );
           })() : (
             <FlatList
@@ -2038,7 +1867,7 @@ export default function ChatScreen() {
             style={[styles.textInput, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask anything about your trips..."
+            placeholder="Ask me anything..."
             placeholderTextColor={theme.textSecondary}
             multiline
             blurOnSubmit={false}
@@ -2090,8 +1919,6 @@ export default function ChatScreen() {
                 <ThemedText style={[styles.threadEmpty, { color: theme.textSecondary }]}>No previous chats</ThemedText>
               )}
               {[...threads].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((thread) => {
-                const isExpanded = threadOptionsId === thread.id;
-                const isRenaming = renameThreadId === thread.id;
                 return (
                 <View
                   key={thread.id}
@@ -2117,7 +1944,7 @@ export default function ChatScreen() {
                       </View>
                     </Pressable>
                     <Pressable
-                      onPress={() => setThreadOptionsId(isExpanded ? null : thread.id)}
+                      onPress={() => { setThreadOptionsRenaming(false); setRenameText(''); setRenameThreadId(null); setThreadOptionsId(thread.id); }}
                       style={styles.threadDotsBtn}
                       hitSlop={8}
                       accessibilityRole="button"
@@ -2127,70 +1954,94 @@ export default function ChatScreen() {
                     </Pressable>
                   </View>
 
-                  {/* Options inside the card */}
-                  {isExpanded && (
-                    <Animated.View entering={FadeIn.duration(150)}>
-                      <View style={[styles.threadOptionDivider, { backgroundColor: theme.border }]} />
-                      <Pressable
-                        onPress={() => startRenameThread(thread.id)}
-                        style={({ pressed }) => [styles.threadOptionBtn, pressed && { opacity: 0.7 }]}
-                        accessibilityRole="button"
-                      >
-                        <SymbolView name="pencil" size={15} tintColor={theme.text} />
-                        <ThemedText style={styles.threadOptionText}>Rename</ThemedText>
-                      </Pressable>
-                      <View style={[styles.threadOptionDivider, { backgroundColor: theme.border }]} />
-                      <Pressable
-                        onPress={() => togglePinThread(thread.id)}
-                        style={({ pressed }) => [styles.threadOptionBtn, pressed && { opacity: 0.7 }]}
-                        accessibilityRole="button"
-                      >
-                        <SymbolView name={thread.pinned ? 'pin.slash' : 'pin'} size={15} tintColor={theme.text} />
-                        <ThemedText style={styles.threadOptionText}>{thread.pinned ? 'Unpin' : 'Pin'}</ThemedText>
-                      </Pressable>
-                      <View style={[styles.threadOptionDivider, { backgroundColor: theme.border }]} />
-                      <Pressable
-                        onPress={() => {
-                          Alert.alert('Delete chat?', `"${thread.title}"`, [
-                            { text: 'Cancel', style: 'cancel', onPress: () => setThreadOptionsId(null) },
-                            { text: 'Delete', style: 'destructive', onPress: () => deleteThread(thread.id) },
-                          ]);
-                        }}
-                        style={({ pressed }) => [styles.threadOptionBtn, pressed && { opacity: 0.7 }]}
-                        accessibilityRole="button"
-                      >
-                        <SymbolView name="trash" size={15} tintColor="#E53935" />
-                        <ThemedText style={[styles.threadOptionText, { color: '#E53935' }]}>Delete</ThemedText>
-                      </Pressable>
-                    </Animated.View>
-                  )}
+                </View>
+              );})}
+            </ScrollView>
 
-                  {/* Rename inline input inside the card */}
-                  {isRenaming && (
-                    <Animated.View entering={FadeIn.duration(150)}>
-                      <View style={[styles.threadOptionDivider, { backgroundColor: theme.border }]} />
-                      <View style={styles.threadRenameRow}>
+            {/* Thread options overlay — rendered inside this modal so it appears on top */}
+            {threadOptionsId && (() => {
+              const optThread = threads.find((t) => t.id === threadOptionsId);
+              if (!optThread) return null;
+              const dismiss = () => { setThreadOptionsId(null); setThreadOptionsRenaming(false); setRenameThreadId(null); setRenameText(''); };
+              return (
+                <Pressable style={styles.optionsBackdrop} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Dismiss">
+                  <Pressable style={[styles.optionsCard, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()} accessibilityRole="button">
+                    {/* Chat name header */}
+                    <ThemedText style={[styles.optionsTitle, { color: theme.textSecondary }]} numberOfLines={1}>{optThread.title}</ThemedText>
+                    <View style={[styles.optionsDivider, { backgroundColor: theme.border }]} />
+
+                    {threadOptionsRenaming ? (
+                      /* Rename input */
+                      <View style={styles.optionsRenameRow}>
                         <TextInput
                           value={renameText}
                           onChangeText={setRenameText}
-                          style={[styles.threadRenameInput, { color: theme.text }]}
+                          style={[styles.optionsRenameInput, { color: theme.text, borderColor: theme.border }]}
                           autoFocus
                           returnKeyType="done"
                           onSubmitEditing={confirmRename}
                           selectTextOnFocus
+                          placeholder="Chat name"
+                          placeholderTextColor={theme.textSecondary}
                         />
-                        <Pressable onPress={confirmRename} disabled={!renameText.trim()} accessibilityRole="button">
-                          <SymbolView name="checkmark.circle.fill" size={26} tintColor={renameText.trim() ? theme.primary : theme.border} />
-                        </Pressable>
-                        <Pressable onPress={() => { setRenameThreadId(null); setRenameText(''); }} accessibilityRole="button">
-                          <SymbolView name="xmark.circle.fill" size={26} tintColor={theme.textSecondary} />
+                        <Pressable
+                          onPress={confirmRename}
+                          disabled={!renameText.trim()}
+                          style={({ pressed }) => [styles.optionsRenameConfirm, { backgroundColor: theme.primary, opacity: !renameText.trim() ? 0.4 : pressed ? 0.8 : 1 }]}
+                          accessibilityRole="button"
+                        >
+                          <ThemedText style={[styles.optionsRenameConfirmText, { color: theme.primaryText }]}>Save</ThemedText>
                         </Pressable>
                       </View>
-                    </Animated.View>
-                  )}
-                </View>
-              );})}
-            </ScrollView>
+                    ) : (
+                      /* Action rows */
+                      <>
+                        <Pressable
+                          onPress={() => startRenameThread(optThread.id)}
+                          style={({ pressed }) => [styles.optionsRow, pressed && { opacity: 0.6 }]}
+                          accessibilityRole="button"
+                        >
+                          <SymbolView name="pencil" size={18} tintColor={theme.text} />
+                          <ThemedText style={styles.optionsRowText}>Rename</ThemedText>
+                        </Pressable>
+                        <View style={[styles.optionsDivider, { backgroundColor: theme.border }]} />
+                        <Pressable
+                          onPress={() => togglePinThread(optThread.id)}
+                          style={({ pressed }) => [styles.optionsRow, pressed && { opacity: 0.6 }]}
+                          accessibilityRole="button"
+                        >
+                          <SymbolView name={optThread.pinned ? 'pin.slash' : 'pin'} size={18} tintColor={theme.text} />
+                          <ThemedText style={styles.optionsRowText}>{optThread.pinned ? 'Unpin' : 'Pin'}</ThemedText>
+                        </Pressable>
+                        <View style={[styles.optionsDivider, { backgroundColor: theme.border }]} />
+                        <Pressable
+                          onPress={() => {
+                            Alert.alert('Delete chat?', `"${optThread.title}"`, [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Delete', style: 'destructive', onPress: () => deleteThread(optThread.id) },
+                            ]);
+                          }}
+                          style={({ pressed }) => [styles.optionsRow, pressed && { opacity: 0.6 }]}
+                          accessibilityRole="button"
+                        >
+                          <SymbolView name="trash" size={18} tintColor="#E53935" />
+                          <ThemedText style={[styles.optionsRowText, { color: '#E53935' }]}>Delete</ThemedText>
+                        </Pressable>
+                      </>
+                    )}
+
+                    <View style={[styles.optionsDivider, { backgroundColor: theme.border }]} />
+                    <Pressable
+                      onPress={dismiss}
+                      style={({ pressed }) => [styles.optionsRow, styles.optionsCancel, pressed && { opacity: 0.6 }]}
+                      accessibilityRole="button"
+                    >
+                      <ThemedText style={[styles.optionsRowText, { fontWeight: '600' }]}>Cancel</ThemedText>
+                    </Pressable>
+                  </Pressable>
+                </Pressable>
+              );
+            })()}
           </Pressable>
         </Pressable>
         </KeyboardAvoidingView>
@@ -2222,29 +2073,6 @@ const styles = StyleSheet.create({
   headerTitleBtn: { alignItems: 'center', flex: 1 },
   headerTitle: { fontSize: 17, fontWeight: '700' },
   headerSubtitle: { fontSize: 12, marginTop: 1 },
-  tripSelectorBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 99,
-  },
-  tripSelector: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  tripSelectorRow: {
-    paddingHorizontal: Spacing.four,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  tripSelectorText: { fontSize: 15 },
-
   // Messages
   messageList: {
     paddingHorizontal: Spacing.four,
@@ -2276,17 +2104,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   messageBubble: {
-    maxWidth: '78%',
     borderRadius: Radius.md,
     padding: 14,
     gap: 4,
   },
   userBubble: {
     alignSelf: 'flex-end',
+    maxWidth: '78%',
     borderBottomRightRadius: 4,
   },
   assistantBubble: {
-    alignSelf: 'flex-start',
+    // flex: 1 fills the row after the avatar, giving list-item text a defined width
+    // to wrap against — prevents the "tall and narrow" collapse bug
+    flex: 1,
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -2363,8 +2193,13 @@ const styles = StyleSheet.create({
   // Empty state
   emptyState: {
     flex: 1,
+  },
+  emptyStateContent: {
+    flexGrow: 1,
     justifyContent: 'flex-start',
-    paddingTop: '25%',
+    paddingHorizontal: Spacing.four,
+    paddingTop: '15%',
+    paddingBottom: 24,
   },
   emptyContent: {
     alignItems: 'center',
@@ -2515,6 +2350,72 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     paddingVertical: 4,
+  },
+
+  // Thread options centered modal
+  optionsBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    zIndex: 100,
+  },
+  optionsCard: {
+    width: '100%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  optionsTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  optionsDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  optionsCancel: {
+    justifyContent: 'center',
+  },
+  optionsRowText: {
+    fontSize: 16,
+  },
+  optionsRenameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  optionsRenameInput: {
+    flex: 1,
+    fontSize: 15,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  optionsRenameConfirm: {
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  optionsRenameConfirmText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 
   // Input

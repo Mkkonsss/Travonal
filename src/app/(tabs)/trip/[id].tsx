@@ -17,7 +17,6 @@ import { SwipeableActivityRow } from '@/components/swipeable-activity-row';
 import { AskToveli, ToveliCommand, COMMANDS as AI_COMMANDS, parseTextToCommand } from '@/components/ask-toveli';
 import { DatePickerModal, formatDisplayDate } from '@/components/date-picker-modal';
 import { PulseAlertList } from '@/components/pulse-alert-list';
-import { TYPE_ICONS } from '@/components/pulse-alert-shared';
 import { TimePickerButton, formatTimeDisplay, defaultTimeForType, HOURS_12, MINUTES_5, parseTime, formatTime } from '@/components/time-picker';
 import { TransformationReveal, SmartReplacePicker } from '@/components/transformation-reveal';
 import { ThemedText } from '@/components/themed-text';
@@ -33,14 +32,17 @@ import { useDestinationPhoto } from '@/hooks/use-destination-photo';
 import { checkConflicts, getTripDayCount, computeChangePreview, ChangePreview, timeToMinutes, suggestTimeForActivity, reflowFromTime, compareByTime } from '@/services/itinerary-engine';
 import { getDrivingDistance, formatDrivingDistance } from '@/services/driving-distance';
 import { transformTrip, findTopReplacements, TransformScope, validateLockedProtection, findSemanticDuplicates, detectNoChange } from '@/services/transformation-service';
-import { getBookingLinks, getPrimaryBookingLink, getTripReadiness, isBookableActivity, openBookingLink, platformDisplayName, getPlaceBookingLinks } from '@/services/booking-links';
+import { getBookingLinks, getPrimaryBookingLink, getTripReadiness, openBookingLink, platformDisplayName, getPlaceBookingLinks } from '@/services/booking-links';
 import { fetchExplorePlaces, searchExplorePlaces } from '@/services/explore-service';
 import { getPlacePhoto, prefetchPhotos } from '@/services/free-photos';
 import { categoryToActivityType, type NormalizedPlace } from '@/services/place-model';
 import { hasDestinationData } from '@/services/alternatives-pool';
-import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getBookingEmailAI, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI } from '@/services/ai';
-import { AddBookingModal, TYPE_SYMBOLS, TYPE_LABELS, formatBookingDate } from '@/components/add-booking-modal';
+import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI, getTripAlertsAI, TripAlertResult } from '@/services/ai';
+import { AddBookingModal } from '@/components/add-booking-modal';
+import { FlightsStrip } from '@/components/flights-strip';
 import { ConfirmedBookingSheet } from '@/components/confirmed-booking-sheet';
+import { UnbookedStaySheet } from '@/components/unbooked-stay-sheet';
+import { TripBookingsTab } from '@/components/trip-bookings-tab';
 import { ChatPlaceCard, placeStyles as chatPlaceStyles } from '@/components/chat-place-card';
 import { ChatMarkdown } from '@/components/chat-markdown';
 import { useGate } from '@/hooks/use-gate';
@@ -48,13 +50,13 @@ import { UpgradePrompt } from '@/components/upgrade-prompt';
 import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
-import { useTripPulse, shouldRunTripPulse } from '@/context/trip-pulse';
-import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads } from '@/services/storage';
+import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats } from '@/services/sync';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
+import { usePulseHistory } from '@/context/pulse-history';
 import { type StayBlock, type StaysData } from '@/components/stays-section';
 import { StaysStrip } from '@/components/stays-strip';
-import { usePulseHistory } from '@/context/pulse-history';
+import { useTripPulse } from '@/context/trip-pulse';
 import { useToast } from '@/context/toast';
 import { TripMap } from '@/components/trip-map';
 import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings } from '@/services/notifications';
@@ -560,19 +562,30 @@ export default function TripWorkspace() {
       detail: string;
     };
   } | null>(null);
-  // Trip Pulse dismissed state — persisted with trip-scoped keys (tripId:alertId)
+  // Alerts toggle (persisted via TripPulseProvider)
+  const { enabled: alertsEnabled, loaded: alertsLoaded, setEnabled: setAlertsEnabled } = useTripPulse();
+  // Internal pulse dismissed/seen state
   const [dismissedPulse, setDismissedPulse] = useState<Set<string>>(new Set());
-  const { enabled: tripPulseEnabled, loaded: tripPulseLoaded, setEnabled: setTripPulseEnabled } = useTripPulse();
-  const pulseHistory = usePulseHistory();
-  // Track which pulse alerts the user has already seen (for new-issue badge)
   const [seenPulse, setSeenPulse] = useState<Set<string>>(new Set());
+  const pulseHistory = usePulseHistory();
+  // External trip alerts state
+  const [tripAlerts, setTripAlerts] = useState<TripAlertResult[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+  const alertsFetchedForRef = useRef<string | null>(null);
   // Switch to alerts tab when navigated from a notification tap
   useEffect(() => {
     if (openPulseParam === '1') {
       setViewMode('alerts');
-      handlePulseOpen();
+      handleAlertsOpen();
     }
   }, [openPulseParam]);
+
+  // Load persisted dismissed/seen pulse state
+  useEffect(() => {
+    loadDismissedPulse().then((ids) => { if (ids.length > 0) setDismissedPulse(new Set(ids)); });
+    loadSeenPulse().then((ids) => { if (ids.length > 0) setSeenPulse(new Set(ids)); });
+  }, []);
 
   // Scroll to highlighted activity after navigating from an alert
   useEffect(() => {
@@ -589,35 +602,6 @@ export default function TripWorkspace() {
     return () => { clearTimeout(timer); clearTimeout(clearTimer); };
   }, [highlightedActivityId, filterDay]);
 
-  useEffect(() => {
-    loadDismissedPulse().then((ids) => {
-      if (ids.length > 0) setDismissedPulse(new Set(ids));
-    });
-    loadSeenPulse().then((ids) => {
-      if (ids.length > 0) setSeenPulse(new Set(ids));
-    });
-    // Pull from cloud and merge
-    if (user?.id) {
-      pullUserSettings(user.id).then((remote) => {
-        if (!remote) return;
-        if (Array.isArray(remote.dismissedPulse) && (remote.dismissedPulse as string[]).length > 0) {
-          setDismissedPulse((prev) => {
-            const merged = new Set([...prev, ...(remote.dismissedPulse as string[])]);
-            saveDismissedPulse([...merged]);
-            return merged;
-          });
-        }
-        if (Array.isArray(remote.seenPulse) && (remote.seenPulse as string[]).length > 0) {
-          setSeenPulse((prev) => {
-            const merged = new Set([...prev, ...(remote.seenPulse as string[])]);
-            saveSeenPulse([...merged]);
-            return merged;
-          });
-        }
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Trip editing
   const [showTripEdit, setShowTripEdit] = useState(false);
@@ -647,21 +631,15 @@ export default function TripWorkspace() {
   // Booking modal (AddBookingModal — shared with My Bookings & stay-detail)
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingEditRes, setBookingEditRes] = useState<{ res: Reservation; tripId: string } | null>(null);
+  const [bookingModalFixedType, setBookingModalFixedType] = useState<ReservationType | undefined>(undefined);
 
   // Confirmed booking bottom sheet (replaces /stay-detail navigation)
   const [bookingSheetData, setBookingSheetData] = useState<{ res: Reservation; trip: Trip; photoUrl?: string } | null>(null);
-
-  // Email forwarding for bookings
-  const [bookingEmail, setBookingEmail] = useState('');
-  const [emailCopied, setEmailCopied] = useState(false);
+  const [unbookedStayData, setUnbookedStayData] = useState<{ activity: Activity; trip: Trip; photoUrl?: string } | null>(null);
 
   // Pending bookings from email
   const [pendingBookings, setPendingBookings] = useState<ParsedBooking[]>([]);
   const [pendingImportData, setPendingImportData] = useState<ParsedBooking | null>(null);
-
-  // Expandable card tracking + photos for booked items
-  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
-  const [bookingPhotoMap, setBookingPhotoMap] = useState<Map<string, string>>(new Map());
 
   // Members tab form
 
@@ -827,11 +805,6 @@ export default function TripWorkspace() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, tripHasHotel]);
 
-  // Fetch booking forwarding email on mount
-  useEffect(() => {
-    getBookingEmailAI().then((r) => setBookingEmail(r.email)).catch(() => {});
-  }, []);
-
   // Fetch pending bookings from email (refresh when modal closes)
   useEffect(() => {
     getParsedBookingsAI()
@@ -906,11 +879,6 @@ export default function TripWorkspace() {
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, trip?.startDate, trip?.endDate]);
-
-  // Pre-compute pulse alerts for the solutions hook (needs to be before early returns)
-  const prePulseAlerts = (trip && shouldRunTripPulse(tripPulseLoaded, tripPulseEnabled))
-    ? runTripPulse(trip, profile, memoryEntries, 5, weatherForecast)
-    : [];
 
   // Notification scheduling is handled centrally by AppPulseEvaluator — no local scheduling here.
 
@@ -998,31 +966,6 @@ export default function TripWorkspace() {
   const currentTrip = trip;
   const totalDays = getTripDayCount(currentTrip.startDate, currentTrip.endDate);
 
-  // Fetch photos for booked reservations
-  const reservationCount = (currentTrip.reservations ?? []).length;
-  useEffect(() => {
-    const reservations = currentTrip.reservations ?? [];
-    if (reservations.length === 0) return;
-    const fetchPhotos = async () => {
-      const newMap = new Map(bookingPhotoMap);
-      let changed = false;
-      for (const res of reservations) {
-        if (newMap.has(res.id) || res.cancelled) continue;
-        try {
-          const photo = await getPlacePhoto({
-            cacheKey: `booking-${res.id}`,
-            name: res.title,
-            category: res.type === 'hotel' ? 'stay' : res.type === 'restaurant' ? 'food' : 'activity',
-          });
-          if (photo?.url) { newMap.set(res.id, photo.url); changed = true; }
-        } catch { /* ignore */ }
-      }
-      if (changed) setBookingPhotoMap(new Map(newMap));
-    };
-    fetchPhotos();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reservationCount]);
-
   // Stays data — compute night-by-night hotel coverage
   const staysData = useMemo((): StaysData => {
     const hotelActivities = currentTrip.activities
@@ -1079,64 +1022,102 @@ export default function TripWorkspace() {
     return { blocks, uncoveredRanges, hasAnyStay: blocks.length > 0 };
   }, [currentTrip.activities, currentTrip.reservations, currentTrip.startDate, currentTrip.datesKnown, totalDays]);
 
-  // Monotonic revision counter — scopes pulse dismissals so they expire when activities change
+  // ── Internal pulse alerts (conflicts, weather, flight timing, etc.) ──
   const itineraryRevision = currentTrip.itineraryRevision ?? 0;
+  const allPulseAlerts = (alertsEnabled && alertsLoaded)
+    ? runTripPulse(currentTrip, profile, memoryEntries, Infinity, weatherForecast)
+    : [];
+  const activePulseAlerts = allPulseAlerts.filter(
+    (a) => !isPulseDismissed(dismissedPulse, currentTrip.id, a.id, itineraryRevision)
+  );
 
-  // Pulse alerts — reuse pre-computed alerts (already computed before early returns for hook ordering)
-  const allPulseAlerts = prePulseAlerts;
-  const activePulseAlerts = allPulseAlerts
-    .filter((a) => !isPulseDismissed(dismissedPulse, currentTrip.id, a.id, itineraryRevision));
-  // Compute new-issue badge count: active alerts not yet seen (trip-scoped)
+  // ── Closure alerts — activity opening hours vs scheduled day ──
+  const closureAlerts: TripAlertResult[] = useMemo(() => {
+    if (!alertsEnabled || currentTrip.datesKnown === false || !currentTrip.startDate) return [];
+    const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const results: TripAlertResult[] = [];
+    const start = new Date(currentTrip.startDate + 'T00:00:00');
+    for (const activity of currentTrip.activities) {
+      if (!activity.openingHours || activity.openingHours.length === 0) continue;
+      if (activity.type === 'flight' || activity.type === 'hotel') continue;
+      const actDate = new Date(start);
+      actDate.setDate(actDate.getDate() + activity.day - 1);
+      const dow = actDate.getDay();
+      const dayPeriod = activity.openingHours.find((p) => p.startsWith(DAY_ABBR[dow]));
+      if (dayPeriod && dayPeriod.toLowerCase().includes('closed')) {
+        results.push({
+          id: `closure-${activity.id}`,
+          type: 'closure',
+          severity: 'urgent',
+          title: `${activity.title} may be closed`,
+          message: `"${activity.title}" appears to be closed on ${DAY_FULL[dow]}s. Consider rescheduling or confirming before your visit.`,
+        });
+      }
+    }
+    return results;
+  }, [currentTrip.activities, currentTrip.startDate, currentTrip.datesKnown, alertsEnabled]);
+
+  // ── Combined alert count for badge ──
   const makeSeenKey = (alertId: string) => `${currentTrip.id}:${alertId}`;
-  const newIssueCount = activePulseAlerts.filter((a) => !seenPulse.has(makeSeenKey(a.id))).length;
-  // Resolved history entries for this trip from centralized context
-  const resolvedHistoryForTrip = pulseHistory.getResolvedForTrip(currentTrip.id);
+  const activeClosureAndExternal = [
+    ...closureAlerts.filter((a) => !dismissedAlerts.has(a.id)),
+    ...tripAlerts.filter((a) => !dismissedAlerts.has(a.id)),
+  ];
+  const newIssueCount = activePulseAlerts.length + activeClosureAndExternal.length;
 
   function syncPulseState(dismissed: Set<string>, seen: Set<string>) {
-    if (!user?.id) return;
-    const userId = user.id;
     if (pulseSyncTimerRef.current) clearTimeout(pulseSyncTimerRef.current);
     pulseSyncTimerRef.current = setTimeout(() => {
-      mergeUserSettings(userId, {
-        dismissedPulse: [...dismissed],
-        seenPulse: [...seen],
+      saveDismissedPulse([...dismissed]);
+      saveSeenPulse([...seen]);
+    }, 500);
+  }
+
+  async function fetchTripAlerts() {
+    if (!currentTrip.destination) return;
+    setAlertsLoading(true);
+    try {
+      const result = await getTripAlertsAI({
+        destination: currentTrip.destination,
+        startDate: currentTrip.startDate && !currentTrip.startDate.startsWith('2099') ? currentTrip.startDate : undefined,
+        endDate: currentTrip.endDate && !currentTrip.endDate.startsWith('2099') ? currentTrip.endDate : undefined,
       });
-    }, 2000);
+      const alerts = result.alerts ?? [];
+      setTripAlerts(alerts);
+      setDismissedAlerts(new Set());
+      alertsFetchedForRef.current = currentTrip.id;
+      // Persist to cache so next visit is instant
+      saveTripExternalAlerts(currentTrip.id, alerts).catch(() => {});
+    } catch {
+      // silently fail
+    } finally {
+      setAlertsLoading(false);
+    }
   }
 
-  function handlePulseOpen() {
-    // Mark all current active pulse alerts as "seen" (trip-scoped)
+  // Load cached external alerts on mount (instant — no spinner for first visit after trip creation)
+  useEffect(() => {
+    if (!currentTrip?.id || alertsFetchedForRef.current === currentTrip.id) return;
+    loadTripExternalAlerts(currentTrip.id).then((cached) => {
+      if (cached && cached.alerts.length > 0 && alertsFetchedForRef.current !== currentTrip.id) {
+        setTripAlerts(cached.alerts);
+        alertsFetchedForRef.current = currentTrip.id;
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTrip?.id]);
+
+  function handleAlertsOpen() {
+    if (!alertsEnabled) return;
+    // Mark pulse alerts as seen
     const newSeen = new Set(seenPulse);
-    for (const a of activePulseAlerts) {
-      newSeen.add(makeSeenKey(a.id));
-    }
+    for (const a of activePulseAlerts) newSeen.add(makeSeenKey(a.id));
     setSeenPulse(newSeen);
-    saveSeenPulse([...newSeen]);
     syncPulseState(dismissedPulse, newSeen);
-
-    // Update centralized pulse history: mark viewed alerts as "seen"
-    pulseHistory.markSeen(currentTrip.id, activePulseAlerts.map((a) => a.id));
-  }
-
-  function dismissPulseAlert(alertId: string) {
-    const scopedKey = makePulseDismissalKey(currentTrip.id, alertId, itineraryRevision);
-    const next = new Set(dismissedPulse).add(scopedKey);
-    setDismissedPulse(next);
-    saveDismissedPulse([...next]);
-    syncPulseState(next, seenPulse);
-
-    // Resolve in centralized pulse history
-    pulseHistory.resolveAlert(currentTrip.id, alertId);
-  }
-
-  function handlePulseAction(alert: PulseAlert) {
-    // Navigate to the problem in the itinerary
-    setViewMode('itinerary');
-    if (alert.day != null) {
-      setFilterDay(alert.day);
-    }
-    if (alert.activityId) {
-      setHighlightedActivityId(alert.activityId);
+    // Fetch external alerts if not yet loaded for this trip
+    if (alertsFetchedForRef.current !== currentTrip.id) {
+      fetchTripAlerts();
     }
   }
 
@@ -1144,11 +1125,17 @@ export default function TripWorkspace() {
     const scopedKey = makePulseDismissalKey(currentTrip.id, alertId, itineraryRevision);
     const next = new Set(dismissedPulse).add(scopedKey);
     setDismissedPulse(next);
-    saveDismissedPulse([...next]);
     syncPulseState(next, seenPulse);
-
-    // Also resolve in centralized pulse history (Issue 7: dismiss = resolve in history)
     pulseHistory.resolveAlert(currentTrip.id, alertId);
+  }
+
+  function handleAlertDismiss(alertId: string) {
+    // Route to the right dismiss handler
+    if (allPulseAlerts.some((a) => a.id === alertId)) {
+      handlePulseDismiss(alertId);
+    } else {
+      setDismissedAlerts((prev) => new Set([...prev, alertId]));
+    }
   }
 
   // Activity reaction handler — saves memory signal + triggers smart replace
@@ -1227,14 +1214,6 @@ export default function TripWorkspace() {
     return link?.shortLabel ?? 'Book';
   }
 
-  // Email forwarding — copy booking email address
-  async function handleCopyBookingEmail() {
-    if (!bookingEmail) return;
-    await Clipboard.setStringAsync(bookingEmail);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setEmailCopied(true);
-    setTimeout(() => setEmailCopied(false), 2000);
-  }
 
   // Import a pending booking from email — auto-match hotels to activities in this trip
   function handleImportPendingBooking(booking: ParsedBooking) {
@@ -2800,6 +2779,7 @@ export default function TripWorkspace() {
             activities={currentTrip.activities}
             destination={currentTrip.destination}
             totalDays={totalDays}
+            topInset={insets.top}
           />
           {/* Back button to return to itinerary */}
           <Pressable
@@ -2874,7 +2854,7 @@ export default function TripWorkspace() {
                 accessibilityRole="button"
                 accessibilityLabel="Edit trip details"
               >
-                <SymbolView name="pencil" size={18} tintColor="#fff" />
+                <SymbolView name="pencil" size={18} tintColor="#fff" weight="thin" />
               </Pressable>
               <Pressable
                 onPress={() => router.push(`/trip-members?id=${currentTrip.id}` as any)}
@@ -2884,15 +2864,6 @@ export default function TripWorkspace() {
                 accessibilityLabel="Trip members"
               >
                 <SymbolView name="person.2" size={18} tintColor="#fff" />
-              </Pressable>
-              <Pressable
-                onPress={handleShareItinerary}
-                hitSlop={8}
-                style={styles.heroIconBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Share itinerary"
-              >
-                <SymbolView name="square.and.arrow.up" size={18} tintColor="#fff" />
               </Pressable>
             </View>
           </View>
@@ -2943,7 +2914,7 @@ export default function TripWorkspace() {
               const tabLabel = mode === 'itinerary' ? 'Itinerary' : mode === 'prep' ? 'Prep' : mode === 'budget' ? 'Budget' : mode === 'reservations' ? 'Bookings' : mode === 'alerts' ? 'Alerts' : 'Map';
               return (
                 <Fragment key={mode}>
-                  <Pressable onPress={() => { setViewMode(mode); if (mode === 'alerts') handlePulseOpen(); }} style={styles.toggleItem} accessibilityRole="button" accessibilityLabel={`${tabLabel} tab`}>
+                  <Pressable onPress={() => { setViewMode(mode); if (mode === 'alerts') handleAlertsOpen(); }} style={styles.toggleItem} accessibilityRole="button" accessibilityLabel={`${tabLabel} tab`}>
                     <View style={styles.toggleTabContent}>
                       <ThemedText style={[styles.toggleText, { color: viewMode === mode ? theme.primary : theme.textSecondary }]}>
                         {tabLabel}
@@ -3596,44 +3567,67 @@ export default function TripWorkspace() {
               );
             })}
 
-            {/* Stays section — below days */}
-            {totalDays >= 1 && filterDay === null && staysData.hasAnyStay && (
+            {/* Stays + Flights side by side */}
+            {totalDays >= 1 && filterDay === null && (staysData.hasAnyStay || (currentTrip.reservations ?? []).some((r) => r.type === 'flight')) && (
               <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
             )}
             {totalDays >= 1 && filterDay === null && (
-              <StaysStrip
-                trip={currentTrip}
-                staysData={staysData}
-                totalDays={totalDays}
-                hotelSuggestions={hotelSuggestions}
-                hotelPhotoUrls={hotelPhotoUrls}
-                activityPhotos={activityPhotos}
-                onAddStay={() => setShowStaySearchModal(true)}
-                onViewStay={(activity, reservation) => {
-                  if (reservation) {
-                    setBookingSheetData({
-                      res: reservation,
-                      trip: currentTrip,
-                      photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
-                    });
-                  } else {
-                    // No booking yet — open add booking modal
-                    setShowBookingModal(true);
-                  }
-                }}
-                onBookSuggestion={(hotel) => {
-                  let url = `/place-detail?name=${encodeURIComponent(hotel.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(hotel.category ?? 'stay/hotel')}&fromStaySearch=1`;
-                  if (hotel.placeId) url += `&placeId=${encodeURIComponent(hotel.placeId)}`;
-                  if (hotel.address) url += `&address=${encodeURIComponent(hotel.address)}`;
-                  if (hotel.lat != null) url += `&lat=${hotel.lat}`;
-                  if (hotel.lng != null) url += `&lng=${hotel.lng}`;
-                  if (hotel.rating != null) url += `&rating=${hotel.rating}`;
-                  if (hotel.reviewCount != null) url += `&reviewCount=${hotel.reviewCount}`;
-                  if (hotel.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(hotel.photos[0].reference)}`;
-                  router.push(url as any);
-                }}
-                onBrowseMore={() => setShowStaySearchModal(true)}
-              />
+              <View style={styles.staysFlightsRow}>
+                <View style={styles.staysFlightsCol}>
+                  <StaysStrip
+                    trip={currentTrip}
+                    staysData={staysData}
+                    totalDays={totalDays}
+                    hotelSuggestions={hotelSuggestions}
+                    hotelPhotoUrls={hotelPhotoUrls}
+                    activityPhotos={activityPhotos}
+                    onAddStay={() => setShowStaySearchModal(true)}
+                    onViewStay={(activity, reservation) => {
+                      if (reservation) {
+                        setBookingSheetData({
+                          res: reservation,
+                          trip: currentTrip,
+                          photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
+                        });
+                      } else {
+                        setUnbookedStayData({
+                          activity,
+                          trip: currentTrip,
+                          photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
+                        });
+                      }
+                    }}
+                    onBookSuggestion={(hotel) => {
+                      let url = `/place-detail?name=${encodeURIComponent(hotel.name)}&destination=${encodeURIComponent(currentTrip.destination)}&tripId=${currentTrip.id}&category=${encodeURIComponent(hotel.category ?? 'stay/hotel')}&fromStaySearch=1`;
+                      if (hotel.placeId) url += `&placeId=${encodeURIComponent(hotel.placeId)}`;
+                      if (hotel.address) url += `&address=${encodeURIComponent(hotel.address)}`;
+                      if (hotel.lat != null) url += `&lat=${hotel.lat}`;
+                      if (hotel.lng != null) url += `&lng=${hotel.lng}`;
+                      if (hotel.rating != null) url += `&rating=${hotel.rating}`;
+                      if (hotel.reviewCount != null) url += `&reviewCount=${hotel.reviewCount}`;
+                      if (hotel.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(hotel.photos[0].reference)}`;
+                      router.push(url as any);
+                    }}
+                    onBrowseMore={() => setShowStaySearchModal(true)}
+                  />
+                </View>
+                <View style={styles.staysFlightsCol}>
+                  <FlightsStrip
+                    trip={currentTrip}
+                    reservations={(currentTrip.reservations ?? []).filter((r) => r.type === 'flight')}
+                    departureCity={currentTrip.departurePoint}
+                    onAddFlight={() => {
+                      setBookingModalFixedType('flight');
+                      setBookingEditRes(null);
+                      setPendingImportData(null);
+                      setShowBookingModal(true);
+                    }}
+                    onViewFlight={(res) => {
+                      setBookingSheetData({ res, trip: currentTrip, photoUrl: undefined });
+                    }}
+                  />
+                </View>
+              </View>
             )}
           </View>
         ) : viewMode === 'ai' ? (
@@ -3641,7 +3635,6 @@ export default function TripWorkspace() {
             <View style={styles.editChatList}>
               {/* Welcome message */}
               <View style={[styles.editChatBubble, styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-                <ThemedText style={styles.editChatAssistantLabel}>Tripseek</ThemedText>
                 <ThemedText style={styles.editChatBubbleText}>{"\uD83D\uDC4B Hey! I\u2019m your trip assistant. I can:"}</ThemedText>
                 <View style={styles.editChatWelcomeList}>
                   {[
@@ -3674,20 +3667,31 @@ export default function TripWorkspace() {
                       </ThemedText>
                     </View>
                   )}
-                  <View style={[
-                    styles.editChatBubble,
-                    msg.role === 'user'
-                      ? [styles.editChatBubbleUser, { backgroundColor: theme.primary }]
-                      : [styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
-                    isCompactMsg && styles.editChatBubbleCompact,
-                  ]}>
+                  <View style={msg.role === 'user' ? styles.editChatRowUser : styles.editChatRowAssistant}>
                     {msg.role === 'assistant' && (
-                      <ThemedText style={styles.editChatAssistantLabel}>Tripseek</ThemedText>
+                      <View style={[styles.editChatAvatar, { backgroundColor: theme.text }]}>
+                        <ThemedText style={[styles.editChatAvatarLabel, { color: theme.background }]}>TS</ThemedText>
+                      </View>
                     )}
-                    {msg.role === 'user' ? (
-                      <ThemedText style={[styles.editChatBubbleText, { color: '#fff' }]}>{msg.text}</ThemedText>
-                    ) : (
-                      <ChatMarkdown text={msg.text} />
+                    <View style={[
+                      styles.editChatBubble,
+                      msg.role === 'user'
+                        ? [styles.editChatBubbleUser, { backgroundColor: theme.primary }]
+                        : [styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
+                      isCompactMsg && styles.editChatBubbleCompact,
+                    ]}>
+                      {msg.role === 'user' ? (
+                        <ThemedText style={[styles.editChatBubbleText, { color: '#fff' }]}>{msg.text}</ThemedText>
+                      ) : (
+                        <ChatMarkdown text={msg.text} />
+                      )}
+                    </View>
+                    {msg.role === 'user' && (
+                      <View style={[styles.editChatAvatar, { backgroundColor: theme.primaryMuted }]}>
+                        <ThemedText style={[styles.editChatAvatarLabel, { color: theme.primary }]}>
+                          {((user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
+                        </ThemedText>
+                      </View>
                     )}
                   </View>
                   {msg.timestamp && (
@@ -3887,8 +3891,12 @@ export default function TripWorkspace() {
                   {/* Empty state */}
                   {prepItems.length === 0 && !showAddPrep && (
                     <Animated.View entering={FadeIn.duration(200)} style={styles.prepEmptyCard}>
-                      <SymbolView name={"checklist" as any} size={36} tintColor={theme.textSecondary} />
-                      <ThemedText style={{ fontSize: 17, fontWeight: '700', marginTop: 12 }}>Trip Prep Checklist</ThemedText>
+                      <ExpoImage
+                        source={require('@/assets/images/prep-image.png')}
+                        style={{ width: 180, height: 180, marginBottom: 8 }}
+                        contentFit="contain"
+                      />
+                      <ThemedText style={{ fontSize: 17, fontWeight: '700' }}>Trip Prep Checklist</ThemedText>
                       <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginTop: 4, lineHeight: 20 }}>
                         Track documents, bookings, packing, and everything you need before your trip.
                       </ThemedText>
@@ -4065,6 +4073,73 @@ export default function TripWorkspace() {
               const dailyBudgetTarget = budgetTotal > 0 && totalDays > 0 ? budgetTotal / totalDays : 0;
               const dailyAverage = totalSpent > 0 && totalDays > 0 ? totalSpent / totalDays : 0;
 
+              // ── SPLASH STATE — no budget set yet ──
+              if (budgetTotal === 0 && !editBudgetTotal) {
+                return (
+                  <View style={styles.budgetSplash}>
+                    <ExpoImage
+                      source={require('@/assets/images/budget-image.png')}
+                      style={styles.budgetSplashImage}
+                      contentFit="contain"
+                    />
+                    <ThemedText style={styles.budgetSplashTitle}>Plan your spend</ThemedText>
+                    <ThemedText style={[styles.budgetSplashDesc, { color: theme.textSecondary }]}>
+                      Set a total budget and we'll track your spending across bookings and expenses automatically.
+                    </ThemedText>
+                    <Pressable
+                      onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(''); }}
+                      style={[styles.budgetSplashCTA, { backgroundColor: theme.text }]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Set budget"
+                    >
+                      <ThemedText style={[styles.budgetSplashCTAText, { color: theme.background }]}>Set Budget</ThemedText>
+                    </Pressable>
+                  </View>
+                );
+              }
+
+              // ── BUDGET INPUT — shown inline when no budget yet ──
+              if (editBudgetTotal && budgetTotal === 0) {
+                return (
+                  <View style={styles.budgetSplash}>
+                    <ExpoImage
+                      source={require('@/assets/images/budget-image.png')}
+                      style={styles.budgetSplashImage}
+                      contentFit="contain"
+                    />
+                    <ThemedText style={styles.budgetSplashTitle}>Set your budget</ThemedText>
+                    <Animated.View entering={FadeIn.duration(200)} style={[styles.budgetEditRow, { borderColor: theme.border, marginTop: 8 }]}>
+                      <TextInput
+                        style={[styles.budgetInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={budgetTotalInput}
+                        onChangeText={setBudgetTotalInput}
+                        placeholder="Enter budget amount"
+                        placeholderTextColor={theme.textSecondary}
+                        keyboardType="number-pad"
+                        autoFocus
+                        accessibilityLabel="Budget amount"
+                      />
+                      <Pressable
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          const val = parseInt(budgetTotalInput, 10);
+                          if (val > 0) updateTripBudget(currentTrip.id, val);
+                          setEditBudgetTotal(false);
+                        }}
+                        style={[styles.budgetSaveBtn, { backgroundColor: theme.primary }]}
+                        accessibilityRole="button"
+                        accessibilityLabel="Save budget"
+                      >
+                        <ThemedText style={[styles.budgetSaveBtnText, { color: theme.primaryText }]}>Save</ThemedText>
+                      </Pressable>
+                    </Animated.View>
+                    <Pressable onPress={() => setEditBudgetTotal(false)} style={{ marginTop: 12 }}>
+                      <ThemedText style={[styles.budgetEstNote, { color: theme.textSecondary }]}>Cancel</ThemedText>
+                    </Pressable>
+                  </View>
+                );
+              }
+
               return (
                 <>
                   {/* Currency selector */}
@@ -4090,25 +4165,8 @@ export default function TripWorkspace() {
                     </ScrollView>
                   </View>
 
-                  {/* Hero budget card — empty state */}
-                  {budgetTotal === 0 && totalSpent === 0 ? (
-                    <Pressable
-                      onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(''); }}
-                      style={[styles.budgetCard, { backgroundColor: theme.backgroundElement, padding: 24, alignItems: 'center' as const, gap: 12 }]}
-                      accessibilityRole="button"
-                      accessibilityLabel="Set total budget"
-                    >
-                      <SymbolView name={"banknote" as any} size={32} tintColor={theme.textSecondary} />
-                      <ThemedText style={[styles.budgetAmount, { fontSize: 18 }]}>Set a Trip Budget</ThemedText>
-                      <ThemedText style={{ color: theme.textSecondary, textAlign: 'center', fontSize: 13, lineHeight: 20 }}>
-                        Track spending across bookings and expenses.{'\n'}
-                        {totalDays > 0 ? `For a ${totalDays}-day trip, a starting point might be ${currencySymbol}${(totalDays * 100).toLocaleString()} (${currencySymbol}100/day).` : 'Tap to get started.'}
-                      </ThemedText>
-                      <View style={[styles.budgetSaveBtn, { backgroundColor: theme.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: Radius.sm, marginTop: 4 }]}>
-                        <ThemedText style={[styles.budgetSaveBtnText, { color: theme.primaryText }]}>Set Budget</ThemedText>
-                      </View>
-                    </Pressable>
-                  ) : (
+                  {/* Hero budget card — with data */}
+                  {(
                     /* Hero budget card — with data */
                     <Pressable
                       onPress={() => { setEditBudgetTotal(true); setBudgetTotalInput(budgetTotal ? String(budgetTotal) : ''); }}
@@ -4524,590 +4582,72 @@ export default function TripWorkspace() {
             })()}
           </View>
         ) : viewMode === 'reservations' ? (
-          <View style={styles.itinerary}>
-            {/* Section 1: Email forwarding hero */}
-            <View style={[styles.bookingEmailHero, { backgroundColor: theme.primaryMuted, borderColor: theme.primary + '30' }]}>
-              <View style={styles.bookingEmailHeroContent}>
-                <SymbolView name="envelope.badge.fill" size={28} tintColor={theme.primary} />
-                <View style={{ flex: 1, gap: 4 }}>
-                  <ThemedText style={styles.bookingEmailHeroTitle}>Forward your confirmations</ThemedText>
-                  <ThemedText style={[styles.bookingEmailHeroSub, { color: theme.textSecondary }]}>
-                    Forward confirmation emails to add bookings automatically
-                  </ThemedText>
-                </View>
-              </View>
-              {bookingEmail ? (
-                <Pressable
-                  onPress={handleCopyBookingEmail}
-                  style={[styles.bookingEmailBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy forwarding email address"
-                >
-                  <ThemedText style={[styles.bookingEmailText, { color: theme.primary }]} numberOfLines={1}>{bookingEmail}</ThemedText>
-                  <SymbolView name={emailCopied ? 'checkmark' : ("square.on.square" as any)} size={14} tintColor={emailCopied ? '#10B981' : theme.textSecondary} />
-                </Pressable>
-              ) : (
-                <ThemedText style={[styles.bookingEmailLoading, { color: theme.textSecondary }]}>Loading email...</ThemedText>
-              )}
-            </View>
-
-            {/* Section 2: Pending bookings from email */}
-            {pendingBookings.length > 0 && (
-              <View style={styles.bookingPendingSection}>
-                <View style={styles.bookingSectionHeader}>
-                  <SymbolView name={"envelope.open.fill" as any} size={18} tintColor={theme.primary} />
-                  <ThemedText style={styles.bookingSectionTitle}>New from Email</ThemedText>
-                  <View style={[styles.bookingPendingBadge, { backgroundColor: theme.primary + '20' }]}>
-                    <ThemedText style={[styles.bookingPendingBadgeText, { color: theme.primary }]}>{pendingBookings.length}</ThemedText>
-                  </View>
-                </View>
-                {pendingBookings.map((booking) => {
-                  const data = booking.booking_data;
-                  const resTypeKey = data.reservationType ?? 'other';
-                  return (
-                    <Animated.View key={booking.id} entering={FadeInDown.duration(200)}>
-                      <Pressable
-                        onPress={() => handleImportPendingBooking(booking)}
-                        style={[styles.bookingPendingCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Import ${data.name} booking`}
-                      >
-                        <View style={styles.bookingPendingRow}>
-                          <View style={[styles.bookingPendingIcon, { backgroundColor: theme.primaryMuted }]}>
-                            <SymbolView name={(TYPE_SYMBOLS[resTypeKey] ?? 'doc.text.fill') as any} size={22} tintColor={theme.primary} />
-                          </View>
-                          <View style={{ flex: 1, gap: 3 }}>
-                            <ThemedText style={styles.bookingPendingName} numberOfLines={1}>{data.name || 'Unknown booking'}</ThemedText>
-                            <ThemedText style={[styles.bookingPendingMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                              {[data.bookingDate ? formatBookingDate(data.bookingDate) : null, data.confirmationNumber].filter(Boolean).join(' \u00B7 ') || (booking.source_email_subject ?? 'Tap to review')}
-                            </ThemedText>
-                          </View>
-                          <Pressable onPress={(e) => { e.stopPropagation?.(); handleDismissPendingBooking(booking); }} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Dismiss">
-                            <SymbolView name="xmark" size={14} tintColor={theme.textSecondary} />
-                          </Pressable>
-                          <SymbolView name="chevron.right" size={14} tintColor={theme.primary} />
-                        </View>
-                      </Pressable>
-                    </Animated.View>
-                  );
-                })}
-              </View>
-            )}
-
-            {/* Section 3: Progress summary */}
-            {(() => {
-              const readiness = getTripReadiness(currentTrip.activities);
-              if (readiness.total === 0) return null;
-              const pct = readiness.percentage;
-              const barColor = pct === 100 ? '#10B981' : theme.primary;
-              return (
-                <View style={[styles.bookingSummary, { backgroundColor: theme.backgroundElement }]}>
-                  <View style={styles.bookingSummaryRow}>
-                    <ThemedText style={styles.bookingSummaryTitle}>
-                      {pct === 100 ? 'All booked!' : `${readiness.booked} of ${readiness.total} booked`}
-                    </ThemedText>
-                    <ThemedText style={[styles.bookingSummaryPct, { color: barColor }]}>{pct}%</ThemedText>
-                  </View>
-                  <View style={[styles.bookingSummaryTrack, { backgroundColor: theme.border }]}>
-                    <View style={[styles.bookingSummaryFill, { width: `${pct}%`, backgroundColor: barColor }]} />
-                  </View>
-                  {readiness.pending > 0 && (
-                    <ThemedText style={[styles.bookingSummaryMeta, { color: theme.textSecondary }]}>
-                      {readiness.pending} pending confirmation
-                    </ThemedText>
-                  )}
-                </View>
-              );
-            })()}
-
-            {/* Section 4: Grouped sections by type — booked (expandable) + unbooked */}
-            {(() => {
-              const typeSymbol: Record<string, string> = {
-                hotel: 'bed.double.fill',
-                flight: 'airplane',
-                food: 'fork.knife',
-                activity: 'star.fill',
-                train: 'tram.fill',
-                other: 'doc.text.fill',
-              };
-              const typeLabel: Record<string, string> = {
-                hotel: 'Hotels',
-                flight: 'Flights',
-                food: 'Restaurants',
-                activity: 'Activities',
-                train: 'Transport',
-                other: 'Other',
-              };
-              const resToActivityType: Record<ReservationType, string> = {
-                hotel: 'hotel',
-                flight: 'flight',
-                restaurant: 'food',
-                activity: 'activity',
-                train: 'train',
-                other: 'other',
-              };
-
-              const bookableActivities = currentTrip.activities.filter(isBookableActivity);
-              const sectionOrder = ['hotel', 'flight', 'food', 'activity', 'train', 'other'];
-              const reservations = currentTrip.reservations ?? [];
-
-              return sectionOrder.map((sectionType) => {
-                const sectionActivities = bookableActivities.filter((a) => a.type === sectionType);
-                const sectionReservations = reservations.filter((r) => resToActivityType[r.type] === sectionType && !sectionActivities.some((a) => a.reservationId === r.id));
-                const totalItems = sectionActivities.length + sectionReservations.length;
-                if (totalItems === 0) return null;
-
-                const bookedActivities = sectionActivities.filter((a) => a.bookingStatus === 'booked').sort((a, b) => a.day - b.day);
-                const unbookedActivities = sectionActivities.filter((a) => a.bookingStatus !== 'booked').sort((a, b) => a.day - b.day);
-                const bookedCount = bookedActivities.length + sectionReservations.filter((r) => !r.cancelled).length;
-
-                return (
-                  <View key={sectionType} style={styles.bookingSection}>
-                    {/* Section header */}
-                    <View style={styles.bookingSectionHeader}>
-                      <SymbolView name={typeSymbol[sectionType] as any} size={18} tintColor={theme.textSecondary} />
-                      <ThemedText style={styles.bookingSectionTitle}>{typeLabel[sectionType]}</ThemedText>
-                      <ThemedText style={[styles.bookingSectionCount, { color: theme.textSecondary }]}>
-                        {bookedCount}/{totalItems}
-                      </ThemedText>
-                    </View>
-
-                    {/* Booked activities — expandable cards */}
-                    {bookedActivities.map((activity) => {
-                      const linkedRes = activity.reservationId ? reservations.find((r) => r.id === activity.reservationId) : undefined;
-                      const isExpanded = expandedBookingId === activity.id;
-                      const photoUrl = linkedRes ? bookingPhotoMap.get(linkedRes.id) : undefined;
-                      return (
-                        <Pressable
-                          key={activity.id}
-                          onPress={() => setExpandedBookingId(isExpanded ? null : activity.id)}
-                          style={[styles.bookedCardContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${activity.title} booking${isExpanded ? ', tap to collapse' : ', tap to expand'}`}
-                        >
-                          {/* Compact row */}
-                          <View style={styles.bookedCardCompact}>
-                            <View style={[styles.bookedCardPhoto, { backgroundColor: theme.backgroundSelected }]}>
-                              {photoUrl ? (
-                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardPhotoImg} contentFit="cover" />
-                              ) : (
-                                <SymbolView name={(typeSymbol[sectionType] ?? 'doc.text.fill') as any} size={22} tintColor={theme.textSecondary} />
-                              )}
-                            </View>
-                            <View style={styles.bookedCardInfo}>
-                              <ThemedText style={styles.bookedCardTitle} numberOfLines={1}>{activity.title}</ThemedText>
-                              <ThemedText style={[styles.bookedCardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {[
-                                  linkedRes?.date ? formatBookingDate(linkedRes.date) : `Day ${activity.day}`,
-                                  linkedRes?.confirmationNumber,
-                                ].filter(Boolean).join(' \u00B7 ')}
-                              </ThemedText>
-                            </View>
-                            {linkedRes?.confirmationNumber ? (
-                              <View style={[styles.bookedCardConfirmedBadge, { backgroundColor: '#10B981' + '20' }]}>
-                                <SymbolView name="checkmark" size={12} tintColor="#10B981" />
-                              </View>
-                            ) : null}
-                            <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={theme.textSecondary} />
-                          </View>
-
-                          {/* Expanded section */}
-                          {isExpanded && (
-                            <Animated.View entering={FadeIn.duration(200)} style={styles.bookedCardExpanded}>
-                              {photoUrl && (
-                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardExpandedPhoto} contentFit="cover" />
-                              )}
-
-                              {/* Type badge */}
-                              <View style={[styles.bookedCardTypeBadge, { backgroundColor: theme.primaryMuted }]}>
-                                <SymbolView name={(typeSymbol[sectionType] ?? 'doc.text.fill') as any} size={14} tintColor={theme.primary} />
-                                <ThemedText style={[styles.bookedCardTypeText, { color: theme.primary }]}>{typeLabel[sectionType] ?? 'Booking'}</ThemedText>
-                              </View>
-
-                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
-
-                              {/* Detail rows */}
-                              {linkedRes?.confirmationNumber ? (
-                                <Pressable
-                                  onPress={() => handleCopyConfirmationNumber(linkedRes.confirmationNumber!)}
-                                  style={styles.bookedCardDetailRow}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Copy confirmation number"
-                                >
-                                  <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Confirmation</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary }]}>{linkedRes.confirmationNumber}</ThemedText>
-                                  <SymbolView name="doc.on.doc" size={14} tintColor={theme.textSecondary} />
-                                </Pressable>
-                              ) : null}
-
-                              {linkedRes?.date ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="calendar" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Date</ThemedText>
-                                  <ThemedText style={styles.bookedCardDetailValue}>
-                                    {formatBookingDate(linkedRes.date)}{linkedRes.checkOutDate ? ` \u2013 ${formatBookingDate(linkedRes.checkOutDate)}` : ''}
-                                  </ThemedText>
-                                </View>
-                              ) : null}
-
-                              {linkedRes?.time ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="clock" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Time</ThemedText>
-                                  <ThemedText style={styles.bookedCardDetailValue}>{formatTimeDisplay(linkedRes.time)}</ThemedText>
-                                </View>
-                              ) : null}
-
-                              {linkedRes?.price != null ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Price</ThemedText>
-                                  <ThemedText style={styles.bookedCardDetailValue}>{getCurrSymbol(linkedRes.currency ?? 'USD')}{linkedRes.price.toLocaleString()}</ThemedText>
-                                </View>
-                              ) : null}
-
-                              {linkedRes?.address ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Address</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={2}>{linkedRes.address}</ThemedText>
-                                </View>
-                              ) : null}
-
-                              {linkedRes?.bookingUrl ? (
-                                <Pressable
-                                  onPress={() => { if (linkedRes.bookingUrl) Linking.openURL(linkedRes.bookingUrl); }}
-                                  style={styles.bookedCardDetailRow}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Open booking link"
-                                >
-                                  <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Link</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
-                                    {linkedRes.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...
-                                  </ThemedText>
-                                  <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
-                                </Pressable>
-                              ) : null}
-
-                              {linkedRes?.notes && !linkedRes.notes.startsWith('Check-out:') ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="note.text" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Notes</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={3}>
-                                    {linkedRes.notes.split('\nCheck-out:')[0]}
-                                  </ThemedText>
-                                </View>
-                              ) : null}
-
-                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
-
-                              {/* Action buttons */}
-                              <View style={styles.bookedCardActions}>
-                                {activity.type === 'hotel' && (
-                                  <Pressable
-                                    onPress={() => setBookingSheetData({ res: linkedRes, trip: currentTrip, photoUrl: activityPhotos.get(activity.placeId ?? activity.id) })}
-                                    style={[styles.bookedCardActionBtn, { backgroundColor: theme.primaryMuted }]}
-                                    accessibilityRole="button"
-                                    accessibilityLabel="View stay details"
-                                  >
-                                    <SymbolView name="building.2.fill" size={16} tintColor={theme.primary} />
-                                    <ThemedText style={[styles.bookedCardActionText, { color: theme.primary }]}>View Stay</ThemedText>
-                                  </Pressable>
-                                )}
-                                <Pressable
-                                  onPress={() => {
-                                    if (linkedRes) {
-                                      setBookingEditRes({ res: linkedRes, tripId: currentTrip.id });
-                                    }
-                                    setShowBookingModal(true);
-                                  }}
-                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Edit booking"
-                                >
-                                  <SymbolView name="pencil" size={16} tintColor={theme.text} />
-                                  <ThemedText style={styles.bookedCardActionText}>Edit</ThemedText>
-                                </Pressable>
-                                <Pressable
-                                  onPress={() => {
-                                    if (linkedRes) {
-                                      Alert.alert('Remove booking?', `Remove "${linkedRes.title}"?`, [
-                                        { text: 'Cancel', style: 'cancel' },
-                                        { text: 'Remove', style: 'destructive', onPress: () => { removeReservation(currentTrip.id, linkedRes.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } },
-                                      ]);
-                                    }
-                                  }}
-                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Delete booking"
-                                >
-                                  <SymbolView name="trash" size={16} tintColor={theme.danger} />
-                                  <ThemedText style={[styles.bookedCardActionText, { color: theme.danger }]}>Delete</ThemedText>
-                                </Pressable>
-                              </View>
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      );
-                    })}
-
-                    {/* Standalone reservations (not linked to an activity) */}
-                    {sectionReservations.map((res) => {
-                      const isExpanded = expandedBookingId === `res-${res.id}`;
-                      const photoUrl = bookingPhotoMap.get(res.id);
-                      return (
-                        <Pressable
-                          key={res.id}
-                          onPress={() => setExpandedBookingId(isExpanded ? null : `res-${res.id}`)}
-                          style={[styles.bookedCardContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-                          accessibilityRole="button"
-                          accessibilityLabel={`${res.title} booking`}
-                        >
-                          <View style={styles.bookedCardCompact}>
-                            <View style={[styles.bookedCardPhoto, { backgroundColor: theme.backgroundSelected }]}>
-                              {photoUrl ? (
-                                <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardPhotoImg} contentFit="cover" />
-                              ) : (
-                                <SymbolView name={(TYPE_SYMBOLS[res.type] ?? 'doc.text.fill') as any} size={22} tintColor={theme.textSecondary} />
-                              )}
-                            </View>
-                            <View style={styles.bookedCardInfo}>
-                              <ThemedText style={[styles.bookedCardTitle, res.cancelled && { textDecorationLine: 'line-through', opacity: 0.5 }]} numberOfLines={1}>
-                                {res.title}{res.cancelled ? ' (cancelled)' : ''}
-                              </ThemedText>
-                              <ThemedText style={[styles.bookedCardMeta, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {[res.date ? formatBookingDate(res.date) : null, res.confirmationNumber].filter(Boolean).join(' \u00B7 ') || (TYPE_LABELS[res.type] ?? 'Booking')}
-                              </ThemedText>
-                            </View>
-                            {res.confirmationNumber ? (
-                              <View style={[styles.bookedCardConfirmedBadge, { backgroundColor: '#10B981' + '20' }]}>
-                                <SymbolView name="checkmark" size={12} tintColor="#10B981" />
-                              </View>
-                            ) : null}
-                            <SymbolView name={isExpanded ? 'chevron.up' : 'chevron.down'} size={14} tintColor={theme.textSecondary} />
-                          </View>
-
-                          {isExpanded && (
-                            <Animated.View entering={FadeIn.duration(200)} style={styles.bookedCardExpanded}>
-                              {photoUrl && <ExpoImage source={{ uri: photoUrl }} style={styles.bookedCardExpandedPhoto} contentFit="cover" />}
-
-                              <View style={[styles.bookedCardTypeBadge, { backgroundColor: theme.primaryMuted }]}>
-                                <SymbolView name={(TYPE_SYMBOLS[res.type] ?? 'doc.text.fill') as any} size={14} tintColor={theme.primary} />
-                                <ThemedText style={[styles.bookedCardTypeText, { color: theme.primary }]}>{TYPE_LABELS[res.type] ?? 'Booking'}</ThemedText>
-                              </View>
-
-                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
-
-                              {res.confirmationNumber ? (
-                                <Pressable onPress={() => handleCopyConfirmationNumber(res.confirmationNumber!)} style={styles.bookedCardDetailRow} accessibilityRole="button" accessibilityLabel="Copy confirmation number">
-                                  <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Confirmation</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary }]}>{res.confirmationNumber}</ThemedText>
-                                  <SymbolView name="doc.on.doc" size={14} tintColor={theme.textSecondary} />
-                                </Pressable>
-                              ) : null}
-                              {res.date ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="calendar" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Date</ThemedText>
-                                  <ThemedText style={styles.bookedCardDetailValue}>{formatBookingDate(res.date)}{res.checkOutDate ? ` \u2013 ${formatBookingDate(res.checkOutDate)}` : ''}</ThemedText>
-                                </View>
-                              ) : null}
-                              {res.price != null ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Price</ThemedText>
-                                  <ThemedText style={styles.bookedCardDetailValue}>{getCurrSymbol(res.currency ?? 'USD')}{res.price.toLocaleString()}</ThemedText>
-                                </View>
-                              ) : null}
-                              {res.address ? (
-                                <View style={styles.bookedCardDetailRow}>
-                                  <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Address</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { flex: 1 }]} numberOfLines={2}>{res.address}</ThemedText>
-                                </View>
-                              ) : null}
-                              {res.bookingUrl ? (
-                                <Pressable onPress={() => { if (res.bookingUrl) Linking.openURL(res.bookingUrl); }} style={styles.bookedCardDetailRow} accessibilityRole="button" accessibilityLabel="Open booking link">
-                                  <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
-                                  <ThemedText style={styles.bookedCardDetailLabel}>Link</ThemedText>
-                                  <ThemedText style={[styles.bookedCardDetailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>{res.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...</ThemedText>
-                                  <SymbolView name={"arrow.up.right.square" as any} size={14} tintColor={theme.primary} />
-                                </Pressable>
-                              ) : null}
-
-                              <View style={[styles.bookedCardDivider, { backgroundColor: theme.border }]} />
-
-                              <View style={styles.bookedCardActions}>
-                                <Pressable
-                                  onPress={() => { setBookingEditRes({ res, tripId: currentTrip.id }); setShowBookingModal(true); }}
-                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Edit booking"
-                                >
-                                  <SymbolView name="pencil" size={16} tintColor={theme.text} />
-                                  <ThemedText style={styles.bookedCardActionText}>Edit</ThemedText>
-                                </Pressable>
-                                <Pressable
-                                  onPress={() => {
-                                    Alert.alert('Remove booking?', `Remove "${res.title}"?`, [
-                                      { text: 'Cancel', style: 'cancel' },
-                                      { text: 'Remove', style: 'destructive', onPress: () => { removeReservation(currentTrip.id, res.id); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } },
-                                    ]);
-                                  }}
-                                  style={[styles.bookedCardActionBtn, { backgroundColor: theme.backgroundSelected }]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel="Delete booking"
-                                >
-                                  <SymbolView name="trash" size={16} tintColor={theme.danger} />
-                                  <ThemedText style={[styles.bookedCardActionText, { color: theme.danger }]}>Delete</ThemedText>
-                                </Pressable>
-                              </View>
-                            </Animated.View>
-                          )}
-                        </Pressable>
-                      );
-                    })}
-
-                    {/* Unbooked activities — nudge to forward confirmation */}
-                    {unbookedActivities.map((activity) => (
-                      <View key={activity.id} style={[styles.bookingItemCard, { backgroundColor: theme.backgroundElement }]}>
-                        <View style={styles.bookingItemRow}>
-                          <View style={[styles.bookingStatusDot, { backgroundColor: activity.bookingStatus === 'pending' ? '#F59E0B' : theme.border }]} />
-                          <View style={styles.bookingItemInfo}>
-                            <ThemedText style={styles.bookingItemTitle}>{activity.title}</ThemedText>
-                            <ThemedText style={[styles.bookingItemMeta, { color: theme.textSecondary }]}>
-                              Day {activity.day} · {formatTimeDisplay(activity.time)}
-                            </ThemedText>
-                            <ThemedText style={[styles.bookingUnbookedNudge, { color: theme.textSecondary }]}>
-                              Forward your confirmation email to add
-                            </ThemedText>
-                          </View>
-                          <View style={styles.bookingItemPlatforms}>
-                            {activity.type === 'hotel' && (
-                              <Pressable
-                                onPress={() => setShowBookingModal(true)}
-                                style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
-                                accessibilityRole="button"
-                                accessibilityLabel="Add booking info"
-                              >
-                                <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>Add Booking Info</ThemedText>
-                              </Pressable>
-                            )}
-                            {getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers)
-                              .filter((l) => l.platform !== 'google_maps')
-                              .slice(0, activity.type === 'hotel' ? 1 : 2)
-                              .map((link) => (
-                                <Pressable
-                                  key={link.platform}
-                                  onPress={() => openBookingLink(link.url)}
-                                  style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={link.label}
-                                >
-                                  <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>{platformDisplayName(link.platform)}</ThemedText>
-                                </Pressable>
-                              ))}
-                            {activity.type !== 'hotel' && getBookingLinks(activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination, currentTrip.travelers).filter((l) => l.platform !== 'google_maps').length === 0 && (
-                              <Pressable
-                                onPress={() => handleBookActivity(activity)}
-                                style={({ pressed }) => [styles.bookingItemBookBtn, { borderColor: theme.primary + '40' }, pressed && { opacity: 0.7 }]}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Book ${activity.title}`}
-                              >
-                                <ThemedText style={[styles.bookingItemBookText, { color: theme.primary }]}>{getBookLabel(activity)}</ThemedText>
-                              </Pressable>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                );
-              });
-            })()}
-
-            {/* Empty state */}
-            {getTripReadiness(currentTrip.activities).total === 0 && (currentTrip.reservations ?? []).length === 0 && (
-              <View style={styles.reservationsEmpty}>
-                <SymbolView name="envelope.badge.fill" size={40} tintColor={theme.textSecondary} />
-                <ThemedText style={[styles.reservationsEmptyText, { color: theme.textSecondary, marginTop: 12 }]}>
-                  No bookable activities yet. Add hotels, flights, or restaurants to your itinerary, then forward your confirmation emails to start tracking.
-                </ThemedText>
-              </View>
-            )}
-
-            {/* View all bookings link */}
-            <Pressable
-              onPress={() => router.push('/bookings' as any)}
-              style={[styles.viewAllBookingsBtn, { backgroundColor: theme.backgroundElement }]}
-              accessibilityRole="button"
-              accessibilityLabel="View all bookings"
-            >
-              <SymbolView name="doc.text.fill" size={16} tintColor={theme.primary} />
-              <ThemedText style={[styles.viewAllBookingsText, { color: theme.primary }]}>View all bookings</ThemedText>
-              <SymbolView name="chevron.right" size={12} tintColor={theme.primary} />
-            </Pressable>
-
-            {/* Manual entry fallback — de-emphasized */}
-            <Pressable
-              onPress={() => { setBookingEditRes(null); setPendingImportData(null); setShowBookingModal(true); }}
-              style={styles.manualEntryLink}
-              accessibilityRole="button"
-              accessibilityLabel="Enter a booking manually"
-            >
-              <ThemedText style={[styles.manualEntryText, { color: theme.textSecondary }]}>
-                Or enter a booking manually
-              </ThemedText>
-            </Pressable>
-          </View>
+          <TripBookingsTab
+            trip={currentTrip}
+            onReservationPress={(res, photoUrl) =>
+              setBookingSheetData({ res, trip: currentTrip, photoUrl })
+            }
+          />
         ) : viewMode === 'alerts' ? (
           <View style={styles.itinerary}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 }}>
+            {/* Toggle row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 16 }}>
               <ThemedText style={{ fontSize: 14, color: theme.textSecondary }}>Trip alerts</ThemedText>
               <Switch
-                value={tripPulseEnabled}
-                onValueChange={setTripPulseEnabled}
+                value={alertsEnabled}
+                onValueChange={(val) => {
+                  setAlertsEnabled(val);
+                  if (val && alertsFetchedForRef.current !== currentTrip.id) {
+                    fetchTripAlerts();
+                  }
+                }}
                 trackColor={{ false: theme.border, true: theme.primary }}
               />
             </View>
-            {!tripPulseEnabled ? (
-              <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
-                <SymbolView name="bell.slash" size={40} tintColor={theme.textSecondary} />
-                <ThemedText style={{ fontSize: 15, color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 32 }}>
-                  Alerts are turned off. Turn them on to get notified about schedule conflicts, weather, and other issues.
+
+            {!alertsEnabled ? (
+              <View style={styles.alertsEmptyState}>
+                <ExpoImage
+                  source={require('@/assets/images/alerts-image.png')}
+                  style={styles.alertsEmptyImage}
+                  contentFit="contain"
+                />
+                <ThemedText style={styles.alertsEmptyTitle}>Stay in the know</ThemedText>
+                <ThemedText style={[styles.alertsEmptyDesc, { color: theme.textSecondary }]}>
+                  Turn on alerts to monitor schedule conflicts, weather, venue closures, travel advisories, and more.
                 </ThemedText>
               </View>
-            ) : activePulseAlerts.length === 0 ? (
-              <View style={{ alignItems: 'center', paddingVertical: 60, gap: 16 }}>
-                <SymbolView name="checkmark.seal.fill" size={48} tintColor={theme.primary} />
-                <ThemedText style={{ fontSize: 18, fontWeight: '600' }}>All clear</ThemedText>
-                <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 32 }}>
-                  We're monitoring your trip for:
+            ) : (activePulseAlerts.length + activeClosureAndExternal.length) === 0 && !alertsLoading ? (
+              <View style={styles.alertsEmptyState}>
+                <ExpoImage
+                  source={require('@/assets/images/alerts-image.png')}
+                  style={styles.alertsEmptyImage}
+                  contentFit="contain"
+                />
+                <ThemedText style={styles.alertsEmptyTitle}>All clear</ThemedText>
+                <ThemedText style={[styles.alertsEmptyDesc, { color: theme.textSecondary }]}>
+                  No issues detected for {currentTrip.destination}. We'll notify you if anything comes up.
                 </ThemedText>
-                <View style={{ gap: 10, paddingHorizontal: 32 }}>
-                  {([
-                    { type: 'conflict' as const, label: 'Schedule conflicts' },
-                    { type: 'closure' as const, label: 'Venue closures' },
-                    { type: 'weather' as const, label: 'Weather disruptions' },
-                    { type: 'flight_conflict' as const, label: 'Flight timing issues' },
-                    { type: 'duplicate' as const, label: 'Duplicate activities' },
-                  ]).map((item) => (
-                    <View key={item.type} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <SymbolView name={TYPE_ICONS[item.type]} size={15} tintColor={theme.textSecondary} />
-                      <ThemedText style={{ fontSize: 14, color: theme.textSecondary }}>{item.label}</ThemedText>
-                    </View>
-                  ))}
-                </View>
               </View>
             ) : (
-              <PulseAlertList
-                alerts={activePulseAlerts}
-                onAction={handlePulseAction}
-                onDismiss={handlePulseDismiss}
-              />
+              <>
+                {/* Internal pulse alerts */}
+                {activePulseAlerts.length > 0 && (
+                  <PulseAlertList
+                    alerts={activePulseAlerts}
+                    onAction={() => {}}
+                    onDismiss={handleAlertDismiss}
+                  />
+                )}
+                {/* Closure + external alerts */}
+                {activeClosureAndExternal.length > 0 && (
+                  <PulseAlertList
+                    alerts={activeClosureAndExternal.map((a) => ({ ...a, actionLabel: '' })) as any}
+                    onAction={() => {}}
+                    onDismiss={handleAlertDismiss}
+                  />
+                )}
+              </>
             )}
           </View>
         ) : (
@@ -5115,6 +4655,7 @@ export default function TripWorkspace() {
             activities={currentTrip.activities}
             destination={currentTrip.destination}
             totalDays={totalDays}
+            topInset={insets.top}
           />
         )}
       </ScrollView>
@@ -5630,185 +5171,200 @@ export default function TripWorkspace() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+              {(() => {
+                const isAITrip = !!currentTrip.generatedAt;
+                if (isAITrip) {
+                  // AI-generated trip: survey fields only
+                  return (
+                    <>
+                      {/* ─── Destination & Dates ─── */}
+                      <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Trip Details</ThemedText>
 
-              {/* ─── Trip Info ─── */}
-              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Trip Info</ThemedText>
+                      <ThemedText style={styles.modalLabel}>Trip name</ThemedText>
+                      <TextInput
+                        style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={editTripTitle}
+                        onChangeText={setEditTripTitle}
+                        placeholder="Trip name"
+                        placeholderTextColor={theme.textSecondary}
+                        autoCapitalize="words"
+                        returnKeyType="next"
+                        accessibilityLabel="Trip name"
+                      />
 
-              <ThemedText style={styles.modalLabel}>Trip name</ThemedText>
-              <TextInput
-                style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                value={editTripTitle}
-                onChangeText={setEditTripTitle}
-                placeholder="Trip name"
-                placeholderTextColor={theme.textSecondary}
-                autoCapitalize="words"
-                returnKeyType="next"
-                accessibilityLabel="Trip name"
-              />
+                      <ThemedText style={styles.modalLabel}>Destination</ThemedText>
+                      <TextInput
+                        style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={editDest}
+                        onChangeText={setEditDest}
+                        placeholder="Destination"
+                        placeholderTextColor={theme.textSecondary}
+                        returnKeyType="done"
+                        blurOnSubmit
+                        accessibilityLabel="Destination"
+                      />
 
-              <ThemedText style={styles.modalLabel}>Destination</ThemedText>
-              <TextInput
-                style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                value={editDest}
-                onChangeText={setEditDest}
-                placeholder="Destination"
-                placeholderTextColor={theme.textSecondary}
-                returnKeyType="done"
-                blurOnSubmit
-                accessibilityLabel="Destination"
-              />
+                      <View style={styles.modalDateRow}>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.modalLabel}>Start date</ThemedText>
+                          <Pressable
+                            onPress={() => setShowEditStartPicker(true)}
+                            style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            accessibilityRole="button"
+                            accessibilityLabel="Set start date"
+                          >
+                            <ThemedText style={[styles.modalDateBtnText, { color: editStartDate ? theme.text : theme.textSecondary }]}>
+                              {editStartDate ? formatDisplayDate(editStartDate) : 'Tap to set'}
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.modalLabel}>End date</ThemedText>
+                          <Pressable
+                            onPress={() => setShowEditEndPicker(true)}
+                            style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            accessibilityRole="button"
+                            accessibilityLabel="Set end date"
+                          >
+                            <ThemedText style={[styles.modalDateBtnText, { color: editEndDate ? theme.text : theme.textSecondary }]}>
+                              {editEndDate ? formatDisplayDate(editEndDate) : 'Tap to set'}
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                      </View>
 
-              <View style={styles.modalDateRow}>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.modalLabel}>Start date</ThemedText>
-                  <Pressable
-                    onPress={() => setShowEditStartPicker(true)}
-                    style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Set start date"
-                  >
-                    <ThemedText style={[styles.modalDateBtnText, { color: editStartDate ? theme.text : theme.textSecondary }]}>
-                      {editStartDate ? formatDisplayDate(editStartDate) : 'Tap to set'}
-                    </ThemedText>
-                  </Pressable>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.modalLabel}>End date</ThemedText>
-                  <Pressable
-                    onPress={() => setShowEditEndPicker(true)}
-                    style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Set end date"
-                  >
-                    <ThemedText style={[styles.modalDateBtnText, { color: editEndDate ? theme.text : theme.textSecondary }]}>
-                      {editEndDate ? formatDisplayDate(editEndDate) : 'Tap to set'}
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              </View>
+                      {/* ─── Travel Preferences ─── */}
+                      <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
+                      <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Travel Preferences</ThemedText>
 
-              {/* ─── Travel Details ─── */}
-              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
-              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Travel Details</ThemedText>
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.modalLabel}>Travelers</ThemedText>
+                          <TextInput
+                            style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            value={editTravelers}
+                            onChangeText={(text) => {
+                              const num = text.replace(/[^0-9]/g, '');
+                              const val = parseInt(num, 10);
+                              if (num === '' || (val >= 1 && val <= 20)) setEditTravelers(num);
+                            }}
+                            placeholder="#"
+                            placeholderTextColor={theme.textSecondary}
+                            keyboardType="number-pad"
+                            accessibilityLabel="Number of travelers"
+                          />
+                        </View>
+                        <View style={{ flex: 2 }}>
+                          <ThemedText style={styles.modalLabel}>Departing from</ThemedText>
+                          <TextInput
+                            style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            value={editDepartureFrom}
+                            onChangeText={setEditDepartureFrom}
+                            placeholder="e.g. New York"
+                            placeholderTextColor={theme.textSecondary}
+                            accessibilityLabel="Departing from"
+                          />
+                        </View>
+                      </View>
 
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.modalLabel}>Travelers</ThemedText>
-                  <TextInput
-                    style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                    value={editTravelers}
-                    onChangeText={(text) => {
-                      const num = text.replace(/[^0-9]/g, '');
-                      const val = parseInt(num, 10);
-                      if (num === '' || (val >= 1 && val <= 20)) setEditTravelers(num);
-                    }}
-                    placeholder="#"
-                    placeholderTextColor={theme.textSecondary}
-                    keyboardType="number-pad"
-                    accessibilityLabel="Number of travelers"
-                  />
-                </View>
-                <View style={{ flex: 2 }}>
-                  <ThemedText style={styles.modalLabel}>Departing from</ThemedText>
-                  <TextInput
-                    style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                    value={editDepartureFrom}
-                    onChangeText={setEditDepartureFrom}
-                    placeholder="e.g. New York"
-                    placeholderTextColor={theme.textSecondary}
-                    accessibilityLabel="Departing from"
-                  />
-                </View>
-              </View>
+                      <ThemedText style={styles.modalLabel}>Budget</ThemedText>
+                      <View style={styles.editChipRow}>
+                        {(['$', '$$', '$$$', '$$$$'] as const).map((v) => (
+                          <Pressable
+                            key={v}
+                            onPress={() => setEditBudget(v)}
+                            style={[styles.editChip, { backgroundColor: editBudget === v ? theme.primary : theme.backgroundElement, borderColor: editBudget === v ? theme.primary : theme.border }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Select ${v} budget`}
+                          >
+                            <ThemedText style={[styles.editChipText, editBudget === v && { color: theme.primaryText }]}>{v}</ThemedText>
+                          </Pressable>
+                        ))}
+                      </View>
 
-              <ThemedText style={styles.modalLabel}>Budget</ThemedText>
-              <View style={styles.editChipRow}>
-                {(['$', '$$', '$$$', '$$$$'] as const).map((v) => (
-                  <Pressable
-                    key={v}
-                    onPress={() => setEditBudget(v)}
-                    style={[styles.editChip, { backgroundColor: editBudget === v ? theme.primary : theme.backgroundElement, borderColor: editBudget === v ? theme.primary : theme.border }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Select ${v} budget`}
-                  >
-                    <ThemedText style={[styles.editChipText, editBudget === v && { color: theme.primaryText }]}>{v}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
+                    </>
+                  );
+                } else {
+                  // Manual trip: basic info fields
+                  return (
+                    <>
+                      {/* ─── Trip Info ─── */}
+                      <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Trip Info</ThemedText>
 
-              <ThemedText style={styles.modalLabel}>Pace</ThemedText>
-              <View style={styles.editChipRow}>
-                {(['relaxed', 'moderate', 'active'] as const).map((v) => (
-                  <Pressable
-                    key={v}
-                    onPress={() => setEditPace(v)}
-                    style={[styles.editChip, { backgroundColor: editPace === v ? theme.primary : theme.backgroundElement, borderColor: editPace === v ? theme.primary : theme.border }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Select ${v} pace`}
-                  >
-                    <ThemedText style={[styles.editChipText, editPace === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
+                      <ThemedText style={styles.modalLabel}>Trip name</ThemedText>
+                      <TextInput
+                        style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={editTripTitle}
+                        onChangeText={setEditTripTitle}
+                        placeholder="Trip name"
+                        placeholderTextColor={theme.textSecondary}
+                        autoCapitalize="words"
+                        returnKeyType="next"
+                        accessibilityLabel="Trip name"
+                      />
 
-              <ThemedText style={styles.modalLabel}>Traveling with</ThemedText>
-              <View style={styles.editChipRow}>
-                {(['solo', 'partner', 'family', 'friends', 'group'] as const).map((v) => (
-                  <Pressable
-                    key={v}
-                    onPress={() => setEditTravelWith(v)}
-                    style={[styles.editChip, { backgroundColor: editTravelWith === v ? theme.primary : theme.backgroundElement, borderColor: editTravelWith === v ? theme.primary : theme.border }]}
-                  >
-                    <ThemedText style={[styles.editChipText, editTravelWith === v && { color: theme.primaryText }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
+                      <ThemedText style={styles.modalLabel}>Destination</ThemedText>
+                      <TextInput
+                        style={[styles.modalInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={editDest}
+                        onChangeText={setEditDest}
+                        placeholder="Destination"
+                        placeholderTextColor={theme.textSecondary}
+                        returnKeyType="done"
+                        blurOnSubmit
+                        accessibilityLabel="Destination"
+                      />
 
-              {/* ─── Notes & Instructions ─── */}
-              <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
-              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Notes & Instructions</ThemedText>
+                      <View style={styles.modalDateRow}>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.modalLabel}>Start date</ThemedText>
+                          <Pressable
+                            onPress={() => setShowEditStartPicker(true)}
+                            style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            accessibilityRole="button"
+                            accessibilityLabel="Set start date"
+                          >
+                            <ThemedText style={[styles.modalDateBtnText, { color: editStartDate ? theme.text : theme.textSecondary }]}>
+                              {editStartDate ? formatDisplayDate(editStartDate) : 'Tap to set'}
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.modalLabel}>End date</ThemedText>
+                          <Pressable
+                            onPress={() => setShowEditEndPicker(true)}
+                            style={[styles.modalDateBtn, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                            accessibilityRole="button"
+                            accessibilityLabel="Set end date"
+                          >
+                            <ThemedText style={[styles.modalDateBtnText, { color: editEndDate ? theme.text : theme.textSecondary }]}>
+                              {editEndDate ? formatDisplayDate(editEndDate) : 'Tap to set'}
+                            </ThemedText>
+                          </Pressable>
+                        </View>
+                      </View>
 
-              <ThemedText style={styles.modalLabel}>Restrictions / accessibility</ThemedText>
-              <TextInput
-                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                value={editRestrictions}
-                onChangeText={setEditRestrictions}
-                placeholder="e.g. Wheelchair access needed, no stairs..."
-                placeholderTextColor={theme.textSecondary}
-                multiline
-                textAlignVertical="top"
-                returnKeyType="done"
-                blurOnSubmit
-                accessibilityLabel="Trip restrictions and accessibility needs"
-              />
+                      {/* ─── Notes ─── */}
+                      <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 24 }} />
+                      <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Notes</ThemedText>
 
-              <ThemedText style={styles.modalLabel}>Special instructions</ThemedText>
-              <TextInput
-                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                value={editTripInstructions}
-                onChangeText={setEditTripInstructions}
-                placeholder="e.g. Prefer walking routes, avoid tourist traps..."
-                placeholderTextColor={theme.textSecondary}
-                multiline
-                textAlignVertical="top"
-                returnKeyType="done"
-                blurOnSubmit
-                accessibilityLabel="Trip special instructions"
-              />
-
-              <ThemedText style={styles.modalLabel}>Notes</ThemedText>
-              <TextInput
-                style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
-                value={editNotes}
-                onChangeText={setEditNotes}
-                placeholder="Trip notes..."
-                placeholderTextColor={theme.textSecondary}
-                multiline
-                textAlignVertical="top"
-                returnKeyType="done"
-                blurOnSubmit
-                accessibilityLabel="Trip notes"
-              />
+                      <ThemedText style={styles.modalLabel}>Trip notes</ThemedText>
+                      <TextInput
+                        style={[styles.modalInput, styles.modalInputMulti, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                        value={editNotes}
+                        onChangeText={setEditNotes}
+                        placeholder="Trip notes..."
+                        placeholderTextColor={theme.textSecondary}
+                        multiline
+                        textAlignVertical="top"
+                        returnKeyType="done"
+                        blurOnSubmit
+                        accessibilityLabel="Trip notes"
+                      />
+                    </>
+                  );
+                }
+              })()}
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -6499,6 +6055,12 @@ export default function TripWorkspace() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Unbooked Stay Sheet */}
+      <UnbookedStaySheet
+        data={unbookedStayData}
+        onClose={() => setUnbookedStayData(null)}
+      />
+
       {/* Confirmed Booking Sheet */}
       <ConfirmedBookingSheet
         data={bookingSheetData}
@@ -6524,11 +6086,12 @@ export default function TripWorkspace() {
         {showBookingModal && (
           <AddBookingModal
             visible={showBookingModal}
-            onClose={() => { setShowBookingModal(false); setBookingEditRes(null); setPendingImportData(null); }}
+            onClose={() => { setShowBookingModal(false); setBookingEditRes(null); setPendingImportData(null); setBookingModalFixedType(undefined); }}
             editRes={bookingEditRes}
             pendingImport={pendingImportData}
             trips={trips}
             fixedTripId={currentTrip.id}
+            fixedType={bookingModalFixedType}
             onAdd={addReservation}
             onUpdate={updateReservation}
             onDelete={(res, tripId) => {
@@ -6767,6 +6330,14 @@ const styles = StyleSheet.create({
     marginTop: Spacing.three,
     marginBottom: Spacing.four + 8,
   },
+
+  // Stays + Flights side-by-side row
+  staysFlightsRow: {
+    flexDirection: 'column',
+    gap: 12,
+  },
+  staysFlightsCol: {},
+
 
   // Day section
   daySection: { marginBottom: Spacing.four },
@@ -7655,6 +7226,61 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   // Budget currency row
+  alertsEmptyState: {
+    alignItems: 'center' as const,
+    paddingVertical: 32,
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  alertsEmptyImage: {
+    width: 180,
+    height: 180,
+    marginBottom: 8,
+  },
+  alertsEmptyTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    textAlign: 'center' as const,
+  },
+  alertsEmptyDesc: {
+    fontSize: 14,
+    textAlign: 'center' as const,
+    lineHeight: 21,
+  },
+  budgetSplash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    gap: 12,
+  },
+  budgetSplashImage: {
+    width: 180,
+    height: 180,
+    marginBottom: 8,
+    transform: [{ rotate: '12deg' }],
+  },
+  budgetSplashTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  budgetSplashDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+  budgetSplashCTA: {
+    marginTop: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 14,
+  },
+  budgetSplashCTAText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
   budgetCurrencyRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -7721,14 +7347,36 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     paddingBottom: 120,
   },
+  editChatRowAssistant: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    gap: 8,
+  },
+  editChatRowUser: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    justifyContent: 'flex-end' as const,
+    gap: 8,
+  },
+  editChatAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    flexShrink: 0,
+  },
+  editChatAvatarLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
   editChatBubble: {
-    maxWidth: '82%' as any,
+    maxWidth: '75%' as any,
     borderRadius: Radius.md,
     padding: 14,
     marginBottom: 10,
   },
   editChatBubbleUser: {
-    alignSelf: 'flex-end' as const,
     borderBottomRightRadius: 4,
   },
   editChatBubbleCompact: {
@@ -7748,7 +7396,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic' as const,
   },
   editChatBubbleAssistant: {
-    alignSelf: 'flex-start' as const,
     borderBottomLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
   },
@@ -8166,5 +7813,63 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '500' as const,
+  },
+});
+
+const bStyles = StyleSheet.create({
+  emailStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
+  emailStripLabel: { fontSize: 12, fontWeight: '600' },
+  emailStripAddress: { fontSize: 12, fontWeight: '700', flex: 1 },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  sortChipText: { fontSize: 13, fontWeight: '600' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  gridCard: {
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    backgroundColor: '#1a1e28',
+  },
+  cardPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 10,
+  },
+  cardName: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  cardMeta: { fontSize: 11, fontWeight: '500', color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  cardTypeIcon: { position: 'absolute', top: 10, right: 10 },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  countBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  addMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    borderWidth: 1,
   },
 });

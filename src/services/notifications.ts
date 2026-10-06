@@ -127,11 +127,11 @@ export async function openNotificationSettings(): Promise<void> {
 // ---------- Booking reminder notifications ----------
 
 const BOOKING_REMINDER_KEY = 'booking_reminder_ids';
+const BOOKING_REMINDER_FP_KEY = 'booking_reminder_fp';
 
 /**
- * Schedule booking reminder notifications for a trip.
- * Schedules at 14 days and 7 days before the trip start date.
- * Cancels any existing reminders for this trip first.
+ * Schedule a booking reminder notification 7 days before the trip.
+ * Skips rescheduling if the same tripId + startDate + unbookedCount were already scheduled.
  */
 export async function scheduleBookingReminders(
   tripId: string,
@@ -141,6 +141,11 @@ export async function scheduleBookingReminders(
 ): Promise<void> {
   if (Platform.OS === 'web' || !permissionGranted || unbookedCount === 0) return;
 
+  // Skip if nothing changed since last schedule
+  const fp = `${tripId}:${tripStartDate}:${unbookedCount}`;
+  const storedFp = await AsyncStorage.getItem(`${BOOKING_REMINDER_FP_KEY}_${tripId}`).catch(() => null);
+  if (storedFp === fp) return;
+
   // Cancel existing reminders for this trip
   await cancelBookingReminders(tripId);
 
@@ -148,26 +153,13 @@ export async function scheduleBookingReminders(
   const now = new Date();
   const ids: string[] = [];
 
-  const triggers = [
-    { days: 14, label: '2 weeks' },
-    { days: 7, label: '1 week' },
-    { days: 1, label: '1 day' },
-  ];
-
-  for (const { days, label } of triggers) {
-    const triggerDate = new Date(start.getTime() - days * 24 * 60 * 60 * 1000);
-    if (triggerDate <= now) continue;
-
+  const triggerDate = new Date(start.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days before at 9 AM
+  if (triggerDate > now) {
     try {
-      const isLastDay = days === 1;
       const id = await Notifications.scheduleNotificationAsync({
         content: {
-          title: isLastDay
-            ? `Leaving tomorrow — ${unbookedCount} item${unbookedCount > 1 ? 's' : ''} still unbooked`
-            : `${destination} trip in ${label}`,
-          body: isLastDay
-            ? `Your ${destination} trip starts tomorrow. Tap to review unbooked items.`
-            : `${unbookedCount} item${unbookedCount > 1 ? 's' : ''} still need${unbookedCount === 1 ? 's' : ''} booking. Tap to review.`,
+          title: `${destination} trip in 1 week`,
+          body: `${unbookedCount} item${unbookedCount > 1 ? 's' : ''} still need${unbookedCount === 1 ? 's' : ''} booking. Tap to review.`,
           data: { category: 'trip_reminder', tripId },
           categoryIdentifier: 'trip_reminder',
         },
@@ -181,6 +173,7 @@ export async function scheduleBookingReminders(
 
   if (ids.length > 0) {
     await saveReminderIds(tripId, ids);
+    await AsyncStorage.setItem(`${BOOKING_REMINDER_FP_KEY}_${tripId}`, fp);
   }
 }
 
@@ -202,6 +195,7 @@ export async function cancelBookingReminders(tripId: string): Promise<void> {
 
   delete allReminders[tripId];
   await AsyncStorage.setItem(BOOKING_REMINDER_KEY, JSON.stringify(allReminders));
+  await AsyncStorage.removeItem(`${BOOKING_REMINDER_FP_KEY}_${tripId}`).catch(() => {});
 }
 
 async function saveReminderIds(tripId: string, ids: string[]): Promise<void> {
@@ -222,10 +216,11 @@ async function loadAllReminderIds(): Promise<Record<string, string[]>> {
 // ---------- Departure reminder ----------
 
 const DEPARTURE_REMINDER_KEY = 'departure_reminder_ids';
+const DEPARTURE_REMINDER_FP_KEY = 'departure_reminder_fp';
 
 /**
  * Schedule a "Your trip starts tomorrow!" notification at 6 PM the day before.
- * Cancels any existing departure reminder for this trip first.
+ * Skips rescheduling if the same tripId + startDate were already scheduled.
  */
 export async function scheduleDepartureReminder(
   tripId: string,
@@ -233,6 +228,10 @@ export async function scheduleDepartureReminder(
   tripStartDate: string,
 ): Promise<void> {
   if (Platform.OS === 'web' || !permissionGranted) return;
+
+  const fp = `${tripId}:${tripStartDate}`;
+  const storedFp = await AsyncStorage.getItem(`${DEPARTURE_REMINDER_FP_KEY}_${tripId}`).catch(() => null);
+  if (storedFp === fp) return;
 
   await cancelDepartureReminder(tripId);
 
@@ -254,6 +253,7 @@ export async function scheduleDepartureReminder(
     const all = await loadDepartureIds();
     all[tripId] = id;
     await AsyncStorage.setItem(DEPARTURE_REMINDER_KEY, JSON.stringify(all));
+    await AsyncStorage.setItem(`${DEPARTURE_REMINDER_FP_KEY}_${tripId}`, fp);
   } catch {
     // Trigger date invalid
   }
@@ -270,6 +270,7 @@ export async function cancelDepartureReminder(tripId: string): Promise<void> {
   }
   delete all[tripId];
   await AsyncStorage.setItem(DEPARTURE_REMINDER_KEY, JSON.stringify(all));
+  await AsyncStorage.removeItem(`${DEPARTURE_REMINDER_FP_KEY}_${tripId}`).catch(() => {});
 }
 
 async function loadDepartureIds(): Promise<Record<string, string>> {
@@ -284,11 +285,12 @@ async function loadDepartureIds(): Promise<Record<string, string>> {
 // ---------- Daily trip briefing ----------
 
 const BRIEFING_KEY = 'daily_briefing_ids';
+const BRIEFING_FP_KEY = 'daily_briefing_fp';
 
 /**
  * Schedule a morning briefing notification for each day of the trip.
  * Fires at 8 AM local time with a summary of today's activities.
- * Cancels any existing briefings for this trip first.
+ * Skips rescheduling if the same tripId + dates + activity count were already scheduled.
  */
 export async function scheduleDailyBriefings(
   tripId: string,
@@ -298,6 +300,11 @@ export async function scheduleDailyBriefings(
   activitiesByDay: Map<number, string[]>,
 ): Promise<void> {
   if (Platform.OS === 'web' || !permissionGranted) return;
+
+  const totalActivities = Array.from(activitiesByDay.values()).reduce((s, a) => s + a.length, 0);
+  const fp = `${tripId}:${tripStartDate}:${tripEndDate}:${totalActivities}`;
+  const storedFp = await AsyncStorage.getItem(`${BRIEFING_FP_KEY}_${tripId}`).catch(() => null);
+  if (storedFp === fp) return;
 
   await cancelDailyBriefings(tripId);
 
@@ -338,6 +345,7 @@ export async function scheduleDailyBriefings(
     const all = await loadBriefingIds();
     all[tripId] = ids;
     await AsyncStorage.setItem(BRIEFING_KEY, JSON.stringify(all));
+    await AsyncStorage.setItem(`${BRIEFING_FP_KEY}_${tripId}`, fp);
   }
 }
 
@@ -354,11 +362,79 @@ export async function cancelDailyBriefings(tripId: string): Promise<void> {
   }
   delete all[tripId];
   await AsyncStorage.setItem(BRIEFING_KEY, JSON.stringify(all));
+  await AsyncStorage.removeItem(`${BRIEFING_FP_KEY}_${tripId}`).catch(() => {});
 }
 
 async function loadBriefingIds(): Promise<Record<string, string[]>> {
   try {
     const raw = await AsyncStorage.getItem(BRIEFING_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+// ---------- Alert check reminder ----------
+
+const ALERT_REMINDER_KEY = 'alert_reminder_ids';
+const ALERT_REMINDER_FP_KEY = 'alert_reminder_fp';
+
+/**
+ * Schedule a local notification 7 days before the trip start date reminding
+ * the user to review alerts for their trip. Skips if already scheduled for same date.
+ */
+export async function scheduleAlertCheckReminder(
+  tripId: string,
+  destination: string,
+  tripStartDate: string,
+): Promise<void> {
+  if (Platform.OS === 'web' || !permissionGranted) return;
+
+  const fp = `${tripId}:${tripStartDate}`;
+  const storedFp = await AsyncStorage.getItem(`${ALERT_REMINDER_FP_KEY}_${tripId}`).catch(() => null);
+  if (storedFp === fp) return;
+
+  await cancelAlertCheckReminder(tripId);
+
+  const start = new Date(tripStartDate + 'T09:00:00');
+  const triggerDate = new Date(start.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days before at 9 AM
+  const now = new Date();
+  if (triggerDate <= now) return;
+
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${destination} trip in 1 week`,
+        body: 'Review the latest alerts and advisories for your upcoming trip.',
+        data: { category: 'pulse_alert', tripId, openPulse: '1' },
+        categoryIdentifier: 'pulse_alert',
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+    });
+    const all = await loadAlertReminderIds();
+    all[tripId] = id;
+    await AsyncStorage.setItem(ALERT_REMINDER_KEY, JSON.stringify(all));
+    await AsyncStorage.setItem(`${ALERT_REMINDER_FP_KEY}_${tripId}`, fp);
+  } catch {
+    // Trigger date invalid
+  }
+}
+
+export async function cancelAlertCheckReminder(tripId: string): Promise<void> {
+  const all = await loadAlertReminderIds();
+  const id = all[tripId];
+  if (!id) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {}
+  delete all[tripId];
+  await AsyncStorage.setItem(ALERT_REMINDER_KEY, JSON.stringify(all));
+  await AsyncStorage.removeItem(`${ALERT_REMINDER_FP_KEY}_${tripId}`).catch(() => {});
+}
+
+async function loadAlertReminderIds(): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(ALERT_REMINDER_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};

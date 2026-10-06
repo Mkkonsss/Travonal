@@ -87,6 +87,11 @@ export const ChatPlaceCard = memo(function ChatPlaceCard({
             </ThemedText>
           ) : null}
         </View>
+        {place.reason ? (
+          <ThemedText style={[placeStyles.cardReason, { color: theme.textSecondary }]} numberOfLines={2}>
+            {place.reason}
+          </ThemedText>
+        ) : null}
       </View>
       <View style={[placeStyles.actionRow, { borderTopColor: theme.border }]}>
         <Pressable
@@ -156,6 +161,12 @@ export const placeStyles = StyleSheet.create({
   },
   typeText: {
     fontSize: 11,
+  },
+  cardReason: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 4,
+    lineHeight: 15,
   },
   actionRow: {
     flexDirection: 'row',

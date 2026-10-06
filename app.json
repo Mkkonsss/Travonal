@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Tripseek",
-    "slug": "toveli",
-    "owner": "toveli",
+    "slug": "travonal",
+    "owner": "travonal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -10,8 +10,18 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.tripseek.app",
+      "deploymentTarget": "16.4",
+      "associatedDomains": [
+        "applinks:tripseekapp.com"
+      ],
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": [
+          "Default",
+          "Default"
+        ]
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -36,6 +46,14 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
       "expo-router",
       "expo-apple-authentication",
       [

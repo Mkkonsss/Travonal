@@ -321,7 +321,7 @@ export default function ProfileScreen() {
             resetProfile();
             resetMemory();
             await clearOnboardingComplete();
-            router.replace('/onboarding' as any);
+            router.replace({ pathname: '/onboarding', params: { survey: '1' } } as any);
           },
         },
       ]
@@ -772,7 +772,7 @@ export default function ProfileScreen() {
                       onPress={() => {
                         Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
                           { text: 'Cancel', style: 'cancel' },
-                          { text: 'Sign Out', style: 'destructive', onPress: signOut },
+                          { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); router.replace('/onboarding' as any); } },
                         ]);
                       }}
                       theme={theme}
@@ -797,6 +797,7 @@ export default function ProfileScreen() {
                                     return;
                                   }
                                   await resetAllData();
+                                  await clearLastUserId();
                                   resetProfile();
                                   resetMemory();
                                   resetTrips();

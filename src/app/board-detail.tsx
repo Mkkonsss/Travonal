@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -18,7 +18,7 @@ import { useBoards, BoardItem } from '@/context/boards';
 import { useTrips } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
-import { searchExplorePlaces, fetchPlaceDetails } from '@/services/explore-service';
+import { searchPlaceByName, fetchPlaceDetails } from '@/services/explore-service';
 import { normalizeGooglePlace, type NormalizedPlace } from '@/services/place-model';
 import { prefetchPhotosFromCache, getCachedPhotoUrl } from '@/services/free-photos';
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
@@ -441,6 +441,12 @@ export default function BoardDetailScreen() {
   const [showMovePicker, setShowMovePicker] = useState(false);
   const moveItemRef = useRef<BoardItem | null>(null);
 
+  // Place search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<NormalizedPlace[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Analyzing animation (for link/screenshot/text imports)
   const IMPORT_STEPS_MAP: Record<string, string[]> = {
     link: ['Reading post', 'Finding the place', 'Getting details'],
@@ -822,6 +828,47 @@ export default function BoardDetailScreen() {
     ], 'plain-text');
   }
 
+  function handleSearchChange(text: string) {
+    setSearchQuery(text);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!text.trim()) { setSearchResults([]); return; }
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const results = await searchPlaceByName(text, dominantDest);
+        setSearchResults(results.slice(0, 5));
+      } catch { setSearchResults([]); }
+      finally { setSearchLoading(false); }
+    }, 350);
+  }
+
+  function handleAddSearchResult(place: NormalizedPlace) {
+    const destination = place.city ?? place.address?.split(',').slice(-2, -1)[0]?.trim();
+    addItemToBoard(boardId_, {
+      title: place.name,
+      destination,
+      category: place.category,
+      type: (place.category?.startsWith('food') ? 'food' : 'activity') as BoardItem['type'],
+      placeId: place.placeId,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      reviewCount: place.reviewCount,
+      openNow: place.openNow,
+      openingHours: place.openingHours,
+      website: place.website,
+      phone: place.phone,
+      priceLevel: place.priceLevel,
+      googleMapsUri: place.googleMapsUri,
+      sourceType: 'explore',
+    });
+    setSearchQuery('');
+    setSearchResults([]);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast(`Added ${place.name}`, 'success');
+  }
+
   function handleItemPress(item: BoardItem) {
     // Use cached details if available (by placeId or by item ID)
     const cached = (item.placeId && detailsCache.current[item.placeId])
@@ -1055,142 +1102,127 @@ export default function BoardDetailScreen() {
           </Animated.View>
         )}
 
-        {!importing && board.items.length === 0 ? (
-          /* ── Empty board ── */
-          <Animated.View entering={FadeIn.duration(400)} style={styles.emptyState}>
-            <ThemedText style={[styles.emptyDesc, { color: theme.textSecondary }]}>
-              Add places to get started.
-            </ThemedText>
-
-            <View style={styles.emptyOptionsList}>
-              <Pressable
-                onPress={() => handlePasteLink()}
-                style={({ pressed }) => [styles.emptyOption, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
-                accessibilityRole="button"
-              >
-                <View style={[styles.emptyOptionIcon, { backgroundColor: theme.primaryMuted }]}>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6 }}>
-                    <FontAwesome5 name="instagram" size={13} color="#E4405F" />
-                    <FontAwesome5 name="tiktok" size={13} color="#000000" />
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 4 }}>
-                    <FontAwesome5 name="youtube" size={13} color="#FF0000" />
-                  </View>
-                </View>
-                <View style={styles.emptyOptionText}>
-                  <ThemedText style={styles.emptyOptionTitle}>Save a post</ThemedText>
-                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>Paste a link from social media and AI finds the place</ThemedText>
-                </View>
-                <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-              </Pressable>
-              <Pressable
-                onPress={() => handleAddScreenshot()}
-                style={({ pressed }) => [styles.emptyOption, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
-                accessibilityRole="button"
-              >
-                <View style={[styles.emptyOptionIcon, { backgroundColor: theme.primaryMuted }]}>
-                  <SymbolView name="photo" size={20} tintColor={theme.primary} />
-                </View>
-                <View style={styles.emptyOptionText}>
-                  <ThemedText style={styles.emptyOptionTitle}>Add a screenshot</ThemedText>
-                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>AI identifies the place for you</ThemedText>
-                </View>
-                <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-              </Pressable>
-              <Pressable
-                onPress={() => handleAddNote()}
-                style={({ pressed }) => [styles.emptyOption, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
-                accessibilityRole="button"
-              >
-                <View style={[styles.emptyOptionIcon, { backgroundColor: theme.primaryMuted }]}>
-                  <SymbolView name="text.bubble" size={20} tintColor={theme.primary} />
-                </View>
-                <View style={styles.emptyOptionText}>
-                  <ThemedText style={styles.emptyOptionTitle}>Paste text</ThemedText>
-                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>Type or paste a place name or idea</ThemedText>
-                </View>
-                <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('/(tabs)/explore' as any)}
-                style={({ pressed }) => [styles.emptyOption, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
-                accessibilityRole="button"
-              >
-                <View style={[styles.emptyOptionIcon, { backgroundColor: theme.primaryMuted }]}>
-                  <SymbolView name="magnifyingglass" size={20} tintColor={theme.primary} />
-                </View>
-                <View style={styles.emptyOptionText}>
-                  <ThemedText style={styles.emptyOptionTitle}>Explore places</ThemedText>
-                  <ThemedText style={[styles.emptyOptionDesc, { color: theme.textSecondary }]}>Search and browse destinations</ThemedText>
-                </View>
-                <SymbolView name="chevron.right" size={12} tintColor={theme.textSecondary} />
-              </Pressable>
-            </View>
-          </Animated.View>
-        ) : !importing ? (
+        {!importing && (
           <>
-            {/* Compact add row */}
-            <View style={styles.addRow}>
+            {/* Search bar */}
+            <View style={[styles.searchBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              <SymbolView name="magnifyingglass" size={15} tintColor={theme.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.text }]}
+                placeholder="Search any place to add..."
+                placeholderTextColor={theme.textSecondary}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                returnKeyType="search"
+              />
+              {searchLoading
+                ? <ActivityIndicator size="small" color={theme.textSecondary} />
+                : searchQuery.length > 0
+                  ? <Pressable onPress={() => { setSearchQuery(''); setSearchResults([]); }} hitSlop={8}>
+                      <SymbolView name="xmark.circle.fill" size={16} tintColor={theme.textSecondary} />
+                    </Pressable>
+                  : null}
+            </View>
+
+            {/* Search results dropdown */}
+            {searchResults.length > 0 && (
+              <View style={[styles.searchDropdown, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                {searchResults.map((place, i) => (
+                  <Pressable
+                    key={place.placeId ?? i}
+                    onPress={() => handleAddSearchResult(place)}
+                    style={({ pressed }) => [
+                      styles.searchResultRow,
+                      i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <SymbolView name="mappin" size={13} tintColor={theme.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={styles.searchResultName} numberOfLines={1}>{place.name}</ThemedText>
+                      {place.address && (
+                        <ThemedText style={[styles.searchResultAddr, { color: theme.textSecondary }]} numberOfLines={1}>{place.address}</ThemedText>
+                      )}
+                    </View>
+                    <SymbolView name="plus.circle.fill" size={18} tintColor={theme.primary} />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* 3 square action buttons */}
+            <View style={styles.addSquares}>
               <Pressable
-                onPress={() => handlePasteLink()}
-                style={({ pressed }) => [styles.addBtn, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
+                onPress={handlePasteLink}
+                style={({ pressed }) => [styles.addSquare, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.8 : 1 }]}
                 accessibilityRole="button"
               >
-                <View style={{ alignItems: 'center' }}>
-                  <View style={{ flexDirection: 'row', gap: 3 }}>
-                    <FontAwesome5 name="instagram" size={10} color="#E4405F" />
-                    <FontAwesome5 name="tiktok" size={10} color="#000000" />
+                <View style={{ alignItems: 'center', gap: 2 }}>
+                  <View style={{ flexDirection: 'row', gap: 4 }}>
+                    <FontAwesome5 name="instagram" size={14} color="#E4405F" />
+                    <FontAwesome5 name="tiktok" size={14} color={theme.text} />
                   </View>
-                  <FontAwesome5 name="youtube" size={10} color="#FF0000" style={{ marginTop: 2 }} />
+                  <FontAwesome5 name="youtube" size={14} color="#FF0000" />
                 </View>
-                <ThemedText style={styles.addBtnLabel}>Post</ThemedText>
+                <ThemedText style={styles.addSquareLabel}>Save a post</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => handleAddScreenshot()}
-                style={({ pressed }) => [styles.addBtn, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleAddScreenshot}
+                style={({ pressed }) => [styles.addSquare, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.8 : 1 }]}
                 accessibilityRole="button"
               >
-                <SymbolView name="photo" size={16} tintColor={theme.text} />
-                <ThemedText style={styles.addBtnLabel}>Photo</ThemedText>
+                <SymbolView name="photo.on.rectangle" size={24} tintColor={theme.text} />
+                <ThemedText style={styles.addSquareLabel}>Screenshot</ThemedText>
               </Pressable>
               <Pressable
-                onPress={() => handleAddNote()}
-                style={({ pressed }) => [styles.addBtn, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}
+                onPress={handleAddNote}
+                style={({ pressed }) => [styles.addSquare, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.8 : 1 }]}
                 accessibilityRole="button"
               >
-                <SymbolView name="text.bubble" size={16} tintColor={theme.text} />
-                <ThemedText style={styles.addBtnLabel}>Text</ThemedText>
+                <SymbolView name="text.bubble" size={24} tintColor={theme.text} />
+                <ThemedText style={styles.addSquareLabel}>Text</ThemedText>
               </Pressable>
             </View>
 
-            {/* Plan a trip button */}
-            <Pressable
-              onPress={() => setShowTripActions(true)}
-              style={({ pressed }) => [styles.planTripBtn, { backgroundColor: theme.primary, opacity: pressed ? 0.9 : 1 }]}
-              accessibilityRole="button"
-            >
-              <SymbolView name="sparkles" size={16} tintColor="#fff" />
-              <ThemedText style={styles.planTripText}>Plan a trip</ThemedText>
-            </Pressable>
+            {board.items.length === 0 ? (
+              <Animated.View entering={FadeIn.duration(400)} style={styles.emptyState}>
+                <ThemedText style={[styles.emptyDesc, { color: theme.textSecondary }]}>
+                  Search a place above or save from social media, a screenshot, or text.
+                </ThemedText>
+              </Animated.View>
+            ) : (
+              <>
+                {/* Plan a trip button */}
+                <Pressable
+                  onPress={() => setShowTripActions(true)}
+                  style={({ pressed }) => [styles.planTripBtn, { backgroundColor: theme.primary, opacity: pressed ? 0.9 : 1 }]}
+                  accessibilityRole="button"
+                >
+                  <SymbolView name="sparkles" size={16} tintColor="#fff" />
+                  <ThemedText style={styles.planTripText}>Plan a trip</ThemedText>
+                </Pressable>
 
-            {/* Item count */}
-            <ThemedText style={[styles.itemCount, { color: theme.textSecondary }]}>
-              {board.items.length} {board.items.length === 1 ? 'pin' : 'pins'}
-            </ThemedText>
+                {/* Item count */}
+                <ThemedText style={[styles.itemCount, { color: theme.textSecondary }]}>
+                  {board.items.length} {board.items.length === 1 ? 'pin' : 'pins'}
+                </ThemedText>
 
-            {/* Pinterest-style grid with drag-and-drop */}
-            <DraggablePinGrid
-              items={displayItems}
-              pinWidth={pinWidth}
-              onItemPress={handleItemPress}
-              onItemLongPress={handleItemLongPress}
-              onReorder={(ids) => setBoardItemOrder(boardId_, ids)}
-              resolvedPhotos={resolvedPhotos}
-              scrollRef={scrollViewRef}
-              scrollOffsetRef={scrollOffsetRef}
-            />
+                {/* Pinterest-style grid with drag-and-drop */}
+                <DraggablePinGrid
+                  items={displayItems}
+                  pinWidth={pinWidth}
+                  onItemPress={handleItemPress}
+                  onItemLongPress={handleItemLongPress}
+                  onReorder={(ids) => setBoardItemOrder(boardId_, ids)}
+                  resolvedPhotos={resolvedPhotos}
+                  scrollRef={scrollViewRef}
+                  scrollOffsetRef={scrollOffsetRef}
+                />
+              </>
+            )}
           </>
-        ) : null}
+        )}
       </ScrollView>
 
       {/* ─── Trip Actions Sheet ─── */}
@@ -1675,37 +1707,62 @@ const styles = StyleSheet.create({
   scrollContent: { padding: Spacing.four },
 
 
+  // Search bar
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: 0,
+  },
+  searchDropdown: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  searchResultName: { fontSize: 14, fontWeight: '600' },
+  searchResultAddr: { fontSize: 12, marginTop: 1 },
+
+  // 3 square add buttons
+  addSquares: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  addSquare: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  addSquareLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+
   // Empty state
   emptyState: {
     alignItems: 'center',
-    paddingTop: 32,
+    paddingTop: 16,
     gap: 6,
   },
-  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20, marginBottom: 12 },
-  emptyOptionsList: {
-    width: '100%',
-    gap: 10,
-  },
-  emptyOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: Radius.md,
-    gap: 12,
-  },
-  emptyOptionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyOptionText: {
-    flex: 1,
-    gap: 2,
-  },
-  emptyOptionTitle: { fontSize: 15, fontWeight: '600' },
-  emptyOptionDesc: { fontSize: 13, lineHeight: 17 },
+  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20, color: undefined },
 
   // Analyzing progress
   analyzingSection: { alignItems: 'center' as const, paddingVertical: 60, paddingHorizontal: 20, gap: 12 },
@@ -1735,23 +1792,6 @@ const styles = StyleSheet.create({
   revealDismissBtnText: { fontSize: 16, fontWeight: '600' as const },
   revealConfirmBtn: { flex: 2, flexDirection: 'row' as const, paddingVertical: 14, borderRadius: 12, alignItems: 'center' as const, justifyContent: 'center' as const, gap: 6 },
   revealConfirmBtnText: { fontSize: 16, fontWeight: '600' as const, color: '#fff' },
-
-  // Compact add row
-  addRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  addBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: Radius.sm,
-    paddingVertical: 10,
-  },
-  addBtnLabel: { fontSize: 13, fontWeight: '600' },
 
   // Plan a trip inline button
   planTripBtn: {

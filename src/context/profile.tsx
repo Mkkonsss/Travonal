@@ -27,6 +27,8 @@ export interface TravelProfile {
   /** Up to 2 categories where the user is happy to spend more. */
   spendingPriorities?: string[];
   recommendationStyle?: 'best' | 'few' | 'explore';
+  /** Home city/airport for flight search (e.g. "New York" or "JFK") */
+  departureCity?: string;
 }
 
 const DEFAULT_PROFILE: TravelProfile = {

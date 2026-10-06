@@ -1,0 +1,15 @@
+diff --git a/node_modules/expo-store-review/ios/StoreReviewModule.swift b/node_modules/expo-store-review/ios/StoreReviewModule.swift
+index 50d8222..7a1e7bf 100644
+--- a/node_modules/expo-store-review/ios/StoreReviewModule.swift
++++ b/node_modules/expo-store-review/ios/StoreReviewModule.swift
+@@ -25,7 +25,9 @@ public class StoreReviewModule: Module {
+ 
+   @MainActor
+   private func getForegroundActiveScene() -> UIWindowScene? {
+-    return SceneGeometry.foregroundScene()
++    return UIApplication.shared.connectedScenes
++      .compactMap { $0 as? UIWindowScene }
++      .first { $0.activationState == .foregroundActive }
+   }
+ 
+   private func isRunningFromTestFlight() -> Bool {

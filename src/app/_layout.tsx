@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { useColorScheme } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -71,13 +72,11 @@ function RootLayoutNav() {
   const screenBg = colorScheme === 'dark' ? '#0A0A0A' : '#FFFFFF';
   const { session, loading: authLoading, isRecovery } = useAuth();
   const [loaded, setLoaded] = useState(false);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const hasNavigated = useRef(false);
 
   // Phase 1: check onboarding state and show the Stack
   useEffect(() => {
     async function checkOnboarding() {
-      const complete = await isOnboardingComplete();
-      setNeedsOnboarding(!complete);
       setLoaded(true);
       await SplashScreen.hideAsync();
       // Load actual OS permission state (no prompt) so UI reflects reality immediately
@@ -86,20 +85,20 @@ function RootLayoutNav() {
     checkOnboarding();
   }, []);
 
-  // Phase 2: navigate AFTER Stack is mounted and auth is resolved
+  // Phase 2: initial navigation only — fires once after load + auth resolve.
+  // After this, each screen (sign-in, sign-up, onboarding) handles its own navigation.
   useEffect(() => {
-    if (!loaded || authLoading) return;
+    if (!loaded || authLoading || hasNavigated.current) return;
+    hasNavigated.current = true;
     if (isRecovery) {
       router.replace('/reset-password');
     } else if (session) {
       router.replace('/(tabs)');
-    } else if (needsOnboarding) {
-      router.replace('/onboarding');
     } else {
-      router.replace('/sign-in');
+      router.replace('/onboarding');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, authLoading, session, needsOnboarding, isRecovery]);
+  }, [loaded, authLoading, session, isRecovery]);
 
   // Phase 3: handle notification taps — navigate to the relevant trip
   useEffect(() => {
@@ -111,6 +110,20 @@ function RootLayoutNav() {
         router.push({ pathname: `/trip/${tripId}` as any, params });
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Phase 4: handle Universal Links — tripseekapp.com/join/CODE → join-trip screen
+  useEffect(() => {
+    function handleUrl({ url }: { url: string }) {
+      const match = url.match(/(?:tripseekapp\.com\/join\/|tripseek:\/\/join\?code=)([A-Z0-9-]+)/i);
+      if (match) {
+        router.push({ pathname: '/join-trip' as any, params: { code: match[1].toUpperCase() } });
+      }
+    }
+    const sub = Linking.addEventListener('url', handleUrl);
+    Linking.getInitialURL().then((url) => { if (url) handleUrl({ url }); });
+    return () => sub.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

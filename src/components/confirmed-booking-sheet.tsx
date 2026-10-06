@@ -76,6 +76,173 @@ export function ConfirmedBookingSheet({ data, onClose, onEdit, onDelete }: Props
 
   const { res, trip, photoUrl } = data;
 
+  // ── Shared helpers ──
+  const sym = getCurrSymbol(res.currency ?? 'USD');
+
+  const confirmationRow = res.confirmationNumber ? (
+    <Pressable onPress={() => handleCopyConfirmation(res.confirmationNumber!)} style={styles.detailRow} accessibilityRole="button" accessibilityLabel="Copy confirmation number">
+      <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
+      <ThemedText style={styles.detailLabel}>Confirmation</ThemedText>
+      <ThemedText style={[styles.detailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>{res.confirmationNumber}</ThemedText>
+      <SymbolView name={copiedConfirmation === res.confirmationNumber ? 'checkmark' : 'doc.on.doc'} size={14} tintColor={copiedConfirmation === res.confirmationNumber ? theme.primary : theme.textSecondary} />
+    </Pressable>
+  ) : null;
+
+  const linkRow = res.bookingUrl ? (
+    <Pressable onPress={() => Linking.openURL(res.bookingUrl!)} style={styles.detailRow} accessibilityRole="button" accessibilityLabel="Open booking link">
+      <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
+      <ThemedText style={styles.detailLabel}>Link</ThemedText>
+      <ThemedText style={[styles.detailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>{res.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...</ThemedText>
+      <SymbolView name={'arrow.up.right.square' as any} size={14} tintColor={theme.primary} />
+    </Pressable>
+  ) : null;
+
+  const notesText = res.notes ? res.notes.split('\nCheck-out:')[0] : null;
+  const notesRow = notesText ? (
+    <View style={styles.detailRow}>
+      <SymbolView name="note.text" size={16} tintColor={theme.textSecondary} />
+      <ThemedText style={styles.detailLabel}>Notes</ThemedText>
+      <View style={{ flex: 1 }}>
+        <ThemedText style={styles.detailValue} numberOfLines={expandedNotes ? undefined : 2}>{notesText}</ThemedText>
+        <Pressable onPress={() => setExpandedNotes(!expandedNotes)}>
+          <ThemedText style={[styles.readMoreText, { color: theme.primary }]}>{expandedNotes ? 'Show less' : 'Read more'}</ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  ) : null;
+
+  function addressRow(label: string) {
+    if (!res.address) return null;
+    return (
+      <Pressable onPress={() => { const q = encodeURIComponent(res.address!); Linking.openURL(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`); }} style={styles.detailRow} accessibilityRole="button" accessibilityLabel="Open in Maps">
+        <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
+        <ThemedText style={styles.detailLabel}>{label}</ThemedText>
+        <ThemedText style={[styles.detailValue, { flex: 1, color: theme.primary }]}>{res.address}</ThemedText>
+        <SymbolView name="location.fill" size={14} tintColor={theme.primary} />
+      </Pressable>
+    );
+  }
+
+  function renderFields(r: Reservation) {
+    // ── FLIGHT / TRAIN ──
+    if (r.type === 'flight' || r.type === 'train') {
+      const isFlight = r.type === 'flight';
+      function parseAirport(str: string) {
+        const idx = str.indexOf(' - ');
+        return idx > 0 ? { code: str.slice(0, idx).trim(), city: str.slice(idx + 3).trim() } : { code: str.trim(), city: '' };
+      }
+      const orig = r.origin ? parseAirport(r.origin) : null;
+      const dest = r.destination ? parseAirport(r.destination) : null;
+      const departsText = r.date ? `${formatBookingDate(r.date)}${r.time ? ` at ${r.time}` : ''}` : r.time ?? null;
+      const arrivesText = r.arrivalTime
+        ? (r.checkOutDate && r.checkOutDate !== r.date ? `${formatBookingDate(r.checkOutDate)} at ${r.arrivalTime}` : r.arrivalTime)
+        : (r.checkOutDate && r.checkOutDate !== r.date ? formatBookingDate(r.checkOutDate) : null);
+      return (
+        <>
+          {orig && dest ? (
+            <View style={styles.routeHeader}>
+              <View style={styles.routeAirport}>
+                <ThemedText style={styles.routeCode}>{orig.code}</ThemedText>
+                {orig.city ? <ThemedText style={[styles.routeCity, { color: theme.textSecondary }]}>{orig.city}</ThemedText> : null}
+              </View>
+              <SymbolView name={isFlight ? 'airplane' : 'tram.fill'} size={20} tintColor={theme.textSecondary} />
+              <View style={[styles.routeAirport, { alignItems: 'flex-end' }]}>
+                <ThemedText style={styles.routeCode}>{dest.code}</ThemedText>
+                {dest.city ? <ThemedText style={[styles.routeCity, { color: theme.textSecondary }]}>{dest.city}</ThemedText> : null}
+              </View>
+            </View>
+          ) : null}
+          {confirmationRow}
+          {r.flightNumber ? <View style={styles.detailRow}><SymbolView name={isFlight ? 'airplane' : 'tram.fill'} size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>{isFlight ? 'Flight' : 'Train'}</ThemedText><ThemedText style={styles.detailValue}>{r.flightNumber}</ThemedText></View> : null}
+          {departsText ? <View style={styles.detailRow}><SymbolView name="calendar" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Departs</ThemedText><ThemedText style={styles.detailValue}>{departsText}</ThemedText></View> : null}
+          {arrivesText ? <View style={styles.detailRow}><SymbolView name="calendar" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Arrives</ThemedText><ThemedText style={styles.detailValue}>{arrivesText}</ThemedText></View> : null}
+          {r.boardingTime ? <View style={styles.detailRow}><SymbolView name="clock" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Boards</ThemedText><ThemedText style={styles.detailValue}>{r.boardingTime}</ThemedText></View> : null}
+          {r.seat ? <View style={styles.detailRow}><SymbolView name="person.crop.rectangle" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Seat</ThemedText><ThemedText style={styles.detailValue}>{r.seat}</ThemedText></View> : null}
+          {r.passengerName ? <View style={styles.detailRow}><SymbolView name="person" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Passenger</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.passengerName}</ThemedText></View> : null}
+          {r.baggage ? <View style={styles.detailRow}><SymbolView name="bag" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Baggage</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.baggage}</ThemedText></View> : null}
+          {r.price != null ? <View style={styles.detailRow}><SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Price</ThemedText><ThemedText style={styles.detailValue}>{sym}{r.price.toLocaleString()}</ThemedText></View> : null}
+          {linkRow}
+          {notesRow}
+        </>
+      );
+    }
+
+    // ── HOTEL ──
+    if (r.type === 'hotel') {
+      const checkInText = r.date ? `${formatBookingDate(r.date)}${r.checkInTime ? ` · from ${r.checkInTime}` : ''}` : null;
+      const checkOutText = r.checkOutDate ? `${formatBookingDate(r.checkOutDate)}${r.checkOutTime ? ` · by ${r.checkOutTime}` : ''}` : null;
+      let perNight: number | null = null;
+      if (r.price != null && r.date && r.checkOutDate) {
+        const nights = Math.round((new Date(r.checkOutDate).getTime() - new Date(r.date).getTime()) / 86_400_000);
+        if (nights > 0) perNight = Math.round(r.price / nights);
+      }
+      return (
+        <>
+          {confirmationRow}
+          {checkInText ? <View style={styles.detailRow}><SymbolView name="arrow.right.square" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Check-in</ThemedText><ThemedText style={styles.detailValue}>{checkInText}</ThemedText></View> : null}
+          {checkOutText ? <View style={styles.detailRow}><SymbolView name="arrow.left.square" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Check-out</ThemedText><ThemedText style={styles.detailValue}>{checkOutText}</ThemedText></View> : null}
+          {r.roomType ? <View style={styles.detailRow}><SymbolView name="bed.double" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Room</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.roomType}</ThemedText></View> : null}
+          {r.guestCount ? <View style={styles.detailRow}><SymbolView name="person.2" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Guests</ThemedText><ThemedText style={styles.detailValue}>{r.guestCount}</ThemedText></View> : null}
+          {r.price != null ? <View style={styles.detailRow}><SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Price</ThemedText><ThemedText style={styles.detailValue}>{sym}{r.price.toLocaleString()}{perNight != null ? ` · ${sym}${perNight.toLocaleString()}/night` : ''}</ThemedText></View> : null}
+          {r.cancellationPolicy ? <View style={styles.detailRow}><SymbolView name="exclamationmark.circle" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Cancel</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.cancellationPolicy}</ThemedText></View> : null}
+          {addressRow('Property')}
+          {linkRow}
+          {notesRow}
+        </>
+      );
+    }
+
+    // ── RESTAURANT ──
+    if (r.type === 'restaurant') {
+      const reservationText = r.date ? `${formatBookingDate(r.date)}${r.time ? ` at ${r.time}` : ''}` : r.time ?? null;
+      return (
+        <>
+          {confirmationRow}
+          {reservationText ? <View style={styles.detailRow}><SymbolView name="calendar" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Reservation</ThemedText><ThemedText style={styles.detailValue}>{reservationText}</ThemedText></View> : null}
+          {r.guestCount ? <View style={styles.detailRow}><SymbolView name="person.2" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Party</ThemedText><ThemedText style={styles.detailValue}>{r.guestCount} {r.guestCount === 1 ? 'guest' : 'guests'}</ThemedText></View> : null}
+          {r.price != null ? <View style={styles.detailRow}><SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Price</ThemedText><ThemedText style={styles.detailValue}>{sym}{r.price.toLocaleString()}</ThemedText></View> : null}
+          {r.cancellationPolicy ? <View style={styles.detailRow}><SymbolView name="exclamationmark.circle" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Cancel</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.cancellationPolicy}</ThemedText></View> : null}
+          {addressRow('Address')}
+          {linkRow}
+          {notesRow}
+        </>
+      );
+    }
+
+    // ── ACTIVITY ──
+    if (r.type === 'activity') {
+      const dateText = r.date ? `${formatBookingDate(r.date)}${r.time ? ` at ${r.time}` : ''}` : r.time ?? null;
+      let perPerson: number | null = null;
+      if (r.price != null && r.guestCount && r.guestCount > 1) perPerson = Math.round(r.price / r.guestCount);
+      return (
+        <>
+          {confirmationRow}
+          {dateText ? <View style={styles.detailRow}><SymbolView name="calendar" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Date</ThemedText><ThemedText style={styles.detailValue}>{dateText}</ThemedText></View> : null}
+          {r.duration ? <View style={styles.detailRow}><SymbolView name="timer" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Duration</ThemedText><ThemedText style={styles.detailValue}>{r.duration}</ThemedText></View> : null}
+          {r.guestCount ? <View style={styles.detailRow}><SymbolView name="person.2" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Participants</ThemedText><ThemedText style={styles.detailValue}>{r.guestCount}</ThemedText></View> : null}
+          {r.price != null ? <View style={styles.detailRow}><SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Price</ThemedText><ThemedText style={styles.detailValue}>{sym}{r.price.toLocaleString()}{perPerson != null ? ` · ${sym}${perPerson.toLocaleString()}/person` : ''}</ThemedText></View> : null}
+          {r.cancellationPolicy ? <View style={styles.detailRow}><SymbolView name="exclamationmark.circle" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Cancel</ThemedText><ThemedText style={[styles.detailValue, { flex: 1 }]}>{r.cancellationPolicy}</ThemedText></View> : null}
+          {addressRow('Meeting point')}
+          {linkRow}
+          {notesRow}
+        </>
+      );
+    }
+
+    // ── OTHER / fallback ──
+    return (
+      <>
+        {confirmationRow}
+        {r.date ? <View style={styles.detailRow}><SymbolView name="calendar" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Date</ThemedText><ThemedText style={styles.detailValue}>{formatBookingDate(r.date)}{r.checkOutDate ? ` – ${formatBookingDate(r.checkOutDate)}` : ''}</ThemedText></View> : null}
+        {r.time ? <View style={styles.detailRow}><SymbolView name="clock" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Time</ThemedText><ThemedText style={styles.detailValue}>{r.time}</ThemedText></View> : null}
+        {r.price != null ? <View style={styles.detailRow}><SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} /><ThemedText style={styles.detailLabel}>Price</ThemedText><ThemedText style={styles.detailValue}>{sym}{r.price.toLocaleString()}</ThemedText></View> : null}
+        {addressRow('Address')}
+        {linkRow}
+        {notesRow}
+      </>
+    );
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -151,131 +318,7 @@ export function ConfirmedBookingSheet({ data, onClose, onEdit, onDelete }: Props
             {res.title}
           </ThemedText>
 
-          {/* Confirmation # */}
-          {res.confirmationNumber ? (
-            <Pressable
-              onPress={() => handleCopyConfirmation(res.confirmationNumber!)}
-              style={styles.detailRow}
-              accessibilityRole="button"
-              accessibilityLabel="Copy confirmation number"
-            >
-              <SymbolView name="doc.on.clipboard" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Confirmation</ThemedText>
-              <ThemedText style={[styles.detailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
-                {res.confirmationNumber}
-              </ThemedText>
-              <SymbolView
-                name={copiedConfirmation === res.confirmationNumber ? 'checkmark' : 'doc.on.doc'}
-                size={14}
-                tintColor={copiedConfirmation === res.confirmationNumber ? theme.primary : theme.textSecondary}
-              />
-            </Pressable>
-          ) : null}
-
-          {/* Date */}
-          {res.date ? (
-            <View style={styles.detailRow}>
-              <SymbolView name="calendar" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Date</ThemedText>
-              <ThemedText style={styles.detailValue}>
-                {formatBookingDate(res.date)}
-                {res.checkOutDate ? ` \u2013 ${formatBookingDate(res.checkOutDate)}` : ''}
-              </ThemedText>
-            </View>
-          ) : null}
-
-          {/* Time */}
-          {res.time ? (
-            <View style={styles.detailRow}>
-              <SymbolView name="clock" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Time</ThemedText>
-              <ThemedText style={styles.detailValue}>{res.time}</ThemedText>
-            </View>
-          ) : null}
-
-          {/* Price */}
-          {res.price != null ? (() => {
-            const currSym = getCurrSymbol(res.currency ?? 'USD');
-            let perNight: number | null = null;
-            if (res.type === 'hotel' && res.date && res.checkOutDate) {
-              const nights = Math.round(
-                (new Date(res.checkOutDate).getTime() - new Date(res.date).getTime()) / 86_400_000,
-              );
-              if (nights > 0) perNight = Math.round(res.price / nights);
-            }
-            return (
-              <View style={styles.detailRow}>
-                <SymbolView name="creditcard" size={16} tintColor={theme.textSecondary} />
-                <ThemedText style={styles.detailLabel}>Price</ThemedText>
-                <ThemedText style={styles.detailValue}>
-                  {currSym}{res.price.toLocaleString()}
-                  {perNight != null ? ` \u00B7 ${currSym}${perNight.toLocaleString()}/night` : ''}
-                </ThemedText>
-              </View>
-            );
-          })() : null}
-
-          {/* Room type */}
-          {res.roomType ? (
-            <View style={styles.detailRow}>
-              <SymbolView name="bed.double" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Room</ThemedText>
-              <ThemedText style={[styles.detailValue, { flex: 1 }]}>{res.roomType}</ThemedText>
-            </View>
-          ) : null}
-
-          {/* Address */}
-          {res.address ? (
-            <Pressable
-              onPress={() => {
-                const q = encodeURIComponent(res.address!);
-                Linking.openURL(Platform.OS === 'ios' ? `maps:?q=${q}` : `geo:0,0?q=${q}`);
-              }}
-              style={styles.detailRow}
-              accessibilityRole="button"
-              accessibilityLabel="Open in Maps"
-            >
-              <SymbolView name="mappin" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Address</ThemedText>
-              <ThemedText style={[styles.detailValue, { flex: 1, color: theme.primary }]}>{res.address}</ThemedText>
-              <SymbolView name="location.fill" size={14} tintColor={theme.primary} />
-            </Pressable>
-          ) : null}
-
-          {/* Booking URL */}
-          {res.bookingUrl ? (
-            <Pressable
-              onPress={() => { if (res.bookingUrl) Linking.openURL(res.bookingUrl); }}
-              style={styles.detailRow}
-              accessibilityRole="button"
-              accessibilityLabel="Open booking link"
-            >
-              <SymbolView name="link" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Link</ThemedText>
-              <ThemedText style={[styles.detailValue, { color: theme.primary, flex: 1 }]} numberOfLines={1}>
-                {res.bookingUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 30)}...
-              </ThemedText>
-              <SymbolView name={'arrow.up.right.square' as any} size={14} tintColor={theme.primary} />
-            </Pressable>
-          ) : null}
-
-          {/* Notes */}
-          {res.notes && !res.notes.startsWith('Check-out:') ? (
-            <View style={styles.detailRow}>
-              <SymbolView name="note.text" size={16} tintColor={theme.textSecondary} />
-              <ThemedText style={styles.detailLabel}>Notes</ThemedText>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.detailValue} numberOfLines={expandedNotes ? undefined : 2}>
-                  {res.notes.split('\nCheck-out:')[0]}
-                </ThemedText>
-                <Pressable onPress={() => setExpandedNotes(!expandedNotes)}>
-                  <ThemedText style={[styles.readMoreText, { color: theme.primary }]}>
-                    {expandedNotes ? 'Show less' : 'Read more'}
-                  </ThemedText>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
+          {renderFields(res)}
 
           <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
@@ -434,5 +477,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 3,
+  },
+  routeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  routeAirport: {
+    alignItems: 'flex-start',
+  },
+  routeCode: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    lineHeight: 36,
+  },
+  routeCity: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
   },
 });

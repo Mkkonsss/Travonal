@@ -20,7 +20,7 @@ import { supabase } from './supabase';
 
 // ── Edge function caller ──
 
-const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-travonal`;
+const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-toveli`;
 
 async function callPhotoEdge<T>(action: string, payload: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();

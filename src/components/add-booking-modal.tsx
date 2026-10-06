@@ -251,7 +251,7 @@ export function AddBookingModal({
           <View style={styles.chooseContainer}>
             <View style={styles.chooseMain}>
               <Image
-                source={require('@/assets/images/gmail-logo.png')}
+                source={require('@/assets/images/onboarding-slide-2.png')}
                 style={styles.chooseGmailLogo}
                 contentFit="contain"
               />
@@ -784,7 +784,7 @@ const styles = StyleSheet.create({
 
   chooseContainer: { flex: 1, paddingHorizontal: 32, paddingBottom: 32, justifyContent: 'space-between' },
   chooseMain: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  chooseGmailLogo: { width: 72, height: 72, marginBottom: 4 },
+  chooseGmailLogo: { width: 140, height: 140, marginBottom: 4, transform: [{ rotate: '12deg' }] },
   chooseDesc: { fontSize: 15, lineHeight: 22, textAlign: 'center' },
   chooseEmailBox: {
     flexDirection: 'row',

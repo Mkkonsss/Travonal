@@ -50,11 +50,28 @@ export async function deleteRemoteTrip(tripId: string): Promise<void> {
 
 /**
  * Find a trip by its invite code.
- * Searches across all trips (relies on Supabase RLS allowing code-based access).
+ * Checks the trip_members table first, falls back to legacy JSONB scan.
  */
 export async function findTripByInviteCode(inviteCode: string): Promise<Trip | null> {
   const code = inviteCode.toUpperCase().trim();
-  // JSONB contains query: find trips whose invitations array has an entry with this code
+
+  // New path: look up in trip_members (works for codes registered via registerInviteCode)
+  const { data: member } = await supabase
+    .from('trip_members')
+    .select('trip_id')
+    .eq('invite_code', code)
+    .maybeSingle();
+
+  if (member?.trip_id) {
+    const { data: tripRow, error: tripErr } = await supabase
+      .from('trips')
+      .select('data')
+      .eq('id', member.trip_id)
+      .single();
+    if (!tripErr && tripRow) return tripRow.data as Trip;
+  }
+
+  // Legacy path: JSONB contains query (for codes not yet registered in trip_members)
   const { data, error } = await supabase
     .from('trips')
     .select('data')
@@ -66,6 +83,147 @@ export async function findTripByInviteCode(inviteCode: string): Promise<Trip | n
     return null;
   }
   return data.data as Trip;
+}
+
+/**
+ * Register an invite code in Supabase so other users can look it up.
+ * Called after a code is generated locally in trip-members screen.
+ */
+export async function registerInviteCode(
+  tripId: string,
+  code: string,
+  role: 'member' | 'viewer' = 'member',
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase.from('trip_members').upsert(
+    { trip_id: tripId, role, invite_code: code.toUpperCase().trim(), invited_by: user.id },
+    { onConflict: 'invite_code', ignoreDuplicates: true },
+  );
+  if (error) console.warn('[sync] registerInviteCode failed:', error.message);
+}
+
+/**
+ * Claim an invite code — associates the current user with the trip membership row.
+ * Call this when the user taps "Join" after previewing a trip.
+ */
+export async function claimInviteCode(code: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase
+    .from('trip_members')
+    .update({ user_id: user.id, joined_at: new Date().toISOString() })
+    .eq('invite_code', code.toUpperCase().trim())
+    .is('user_id', null);
+  if (error) console.warn('[sync] claimInviteCode failed:', error.message);
+}
+
+/**
+ * Fetch trips shared with the current user (they are a member, not the owner).
+ * Returns trips with the role the user has on each.
+ */
+export async function pullSharedTrips(userId: string): Promise<Array<{ trip: Trip; role: 'member' | 'viewer' }>> {
+  const { data: memberships, error: memberErr } = await supabase
+    .from('trip_members')
+    .select('trip_id, role')
+    .eq('user_id', userId);
+  if (memberErr || !memberships?.length) return [];
+  const roleMap = new Map(memberships.map((m: { trip_id: string; role: string }) => [m.trip_id, m.role as 'member' | 'viewer']));
+  const tripIds = [...roleMap.keys()];
+  const { data, error } = await supabase
+    .from('trips')
+    .select('data')
+    .in('id', tripIds);
+  if (error) {
+    console.warn('[sync] pullSharedTrips failed:', error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => {
+    const trip = row.data as Trip;
+    return { trip, role: roleMap.get(trip.id) ?? 'member' };
+  });
+}
+
+/**
+ * Look up the role granted by an invite code.
+ * Used in the join flow so the local trip copy stores the correct joinedAs role.
+ */
+export async function getRoleForInviteCode(code: string): Promise<'member' | 'viewer'> {
+  const { data } = await supabase
+    .from('trip_members')
+    .select('role')
+    .eq('invite_code', code.toUpperCase().trim())
+    .maybeSingle();
+  return (data?.role as 'member' | 'viewer') ?? 'member';
+}
+
+/**
+ * Remove the current user from a shared trip's trip_members row.
+ * Call this when a member wants to leave a trip they joined.
+ */
+export async function leaveSharedTrip(tripId: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase
+    .from('trip_members')
+    .delete()
+    .eq('trip_id', tripId)
+    .eq('user_id', user.id);
+  if (error) console.warn('[sync] leaveSharedTrip failed:', error.message);
+}
+
+/**
+ * Subscribe to real-time updates on a set of shared trip IDs.
+ * Calls onUpdate whenever the owner pushes a new version.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToSharedTrips(
+  tripIds: string[],
+  onUpdate: (trip: Trip) => void,
+): () => void {
+  if (tripIds.length === 0) return () => {};
+  const channel = supabase
+    .channel('shared-trips-' + tripIds.slice(0, 3).join('-'))
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'trips',
+        filter: `id=in.(${tripIds.join(',')})`,
+      },
+      (payload) => {
+        const data = (payload.new as { data?: Trip }).data;
+        if (data) onUpdate(data);
+      },
+    )
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+/**
+ * Push a single trip to Supabase immediately (used for real-time sync on shared trips).
+ */
+export async function pushTripById(tripId: string, userId: string, data: Trip): Promise<void> {
+  const { error } = await supabase.from('trips').upsert(
+    { id: tripId, user_id: userId, data, updated_at: new Date().toISOString() },
+    { onConflict: 'id' },
+  );
+  if (error) console.warn('[sync] pushTripById failed:', error.message);
+}
+
+/**
+ * Push a member's edits to a shared trip's canonical Supabase row.
+ * Uses UPDATE (not upsert) so the owner's user_id column is never overwritten.
+ * Strips joinedAs before writing — it's a local-only annotation.
+ */
+export async function pushSharedTripData(tripId: string, trip: Trip): Promise<void> {
+  const { joinedAs: _ja, ...tripData } = trip;
+  const { error } = await supabase
+    .from('trips')
+    .update({ data: tripData, updated_at: new Date().toISOString() })
+    .eq('id', tripId);
+  if (error) console.warn('[sync] pushSharedTripData failed:', error.message);
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────

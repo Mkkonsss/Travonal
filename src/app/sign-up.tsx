@@ -9,7 +9,7 @@ import {
   Pressable,
   ScrollView,
 } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { Image as ExpoImage } from 'expo-image';
@@ -35,6 +35,7 @@ const HERO_IMAGE = require('@/assets/images/sign-up-hero.png');
 export default function SignUpScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { fromSignIn } = useLocalSearchParams<{ fromSignIn?: string }>();
   const insets = useSafeAreaInsets();
   const { signUp, signInWithApple, signInWithGoogle } = useAuth();
   const { showToast } = useToast();
@@ -84,6 +85,8 @@ export default function SignUpScreen() {
     setLoading(false);
     if (error) {
       setError(error.message);
+    } else if (fromSignIn === '1') {
+      router.replace({ pathname: '/onboarding', params: { survey: '1' } } as any);
     } else {
       router.replace('/(tabs)');
     }

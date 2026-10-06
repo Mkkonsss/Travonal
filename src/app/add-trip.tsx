@@ -916,7 +916,7 @@ export default function AddTripScreen() {
 {mode === 'quick' ? 'These help us tailor your itinerary.' : 'Optional details about your trip.'}
               </ThemedText>
 
-              <ThemedText style={styles.label}>Travelers</ThemedText>
+              <ThemedText style={styles.label}>Travelers (optional)</ThemedText>
               <View style={styles.stepperRow}>
                 <Pressable
                   onPress={() => {
@@ -947,7 +947,7 @@ export default function AddTripScreen() {
                 </Pressable>
               </View>
 
-              <ThemedText style={styles.label}>Budget</ThemedText>
+              <ThemedText style={styles.label}>Budget (optional)</ThemedText>
               <View style={styles.chipRow}>
                 {BUDGET_OPTIONS.map((o) => (
                   <Pressable
@@ -968,6 +968,44 @@ export default function AddTripScreen() {
                     </ThemedText>
                   </Pressable>
                 ))}
+              </View>
+
+              <ThemedText style={styles.label}>Flying from (optional)</ThemedText>
+              <View style={{ position: 'relative', zIndex: 200 }}>
+                <TextInput
+                  style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+                  value={departureFrom}
+                  onChangeText={setDepartureFrom}
+                  placeholder="e.g. New York, London, Toronto"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                />
+                {depSuggestions.length > 0 && (
+                  <View style={[styles.autocompleteDropdown, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+                    {depSuggestions.map((place, i) => (
+                      <Pressable
+                        key={`${place.city}-${i}`}
+                        onPress={() => selectDeparture(place)}
+                        style={[styles.autocompleteItem, i < depSuggestions.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}
+                        accessibilityRole="button"
+                        accessibilityLabel={place.display}
+                      >
+                        <View style={styles.autocompleteItemRow}>
+                          <SymbolView name="airplane" size={18} tintColor={theme.primary} />
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={styles.autocompleteItemText}>{place.city}</ThemedText>
+                            <ThemedText style={[styles.autocompleteItemSub, { color: theme.textSecondary }]}>{place.display}</ThemedText>
+                          </View>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {depSearching && departureFrom.length >= 2 && depSuggestions.length === 0 && (
+                  <ThemedText style={[styles.autocompleteSearching, { color: theme.textSecondary }]}>Searching...</ThemedText>
+                )}
               </View>
 
               <ThemedText style={styles.label}>Notes (optional)</ThemedText>

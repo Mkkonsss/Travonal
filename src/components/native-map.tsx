@@ -23,6 +23,7 @@ const NativeMap = forwardRef<NativeMapRef, NativeMapProps>(function NativeMap(
     interactive = true,
     initialPadding,
     userInterfaceStyle,
+    initialRegion: initialRegionProp,
   },
   ref,
 ) {
@@ -49,7 +50,7 @@ const NativeMap = forwardRef<NativeMapRef, NativeMapProps>(function NativeMap(
     },
   }));
 
-  // Compute initial region from marker bounds
+  // Compute initial region from marker bounds, explicit prop, or world view
   const initialRegion =
     markers.length > 0
       ? (() => {
@@ -66,7 +67,7 @@ const NativeMap = forwardRef<NativeMapRef, NativeMapProps>(function NativeMap(
             longitudeDelta: Math.max((maxLng - minLng) * 1.5, 0.005),
           };
         })()
-      : { latitude: 0, longitude: 0, latitudeDelta: 90, longitudeDelta: 180 };
+      : initialRegionProp ?? { latitude: 0, longitude: 0, latitudeDelta: 90, longitudeDelta: 180 };
 
   return (
     <MapView
