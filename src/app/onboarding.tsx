@@ -404,7 +404,7 @@ export default function OnboardingScreen() {
   // ========== WELCOME ==========
   if (phase === 'welcome') {
     const slideHeadlines = [
-      'Your whole trip\nlives here.',
+      'Your entire trip\nlives here.',
       'All your bookings\nautomatically organized.',
       'Explore and save\nreal places nearby.',
       'Catch problems before\nthey ruin your trip.',
