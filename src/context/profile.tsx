@@ -86,10 +86,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     const meta = user.user_metadata;
     if (meta) {
       const providerName =
-        meta.full_name as string | undefined ??
-        meta.name as string | undefined ??
-        [meta.given_name, meta.family_name].filter(Boolean).join(' ') ||
-        undefined;
+        (meta.full_name as string | undefined) ??
+        (meta.name as string | undefined) ??
+        ([meta.given_name, meta.family_name].filter(Boolean).join(' ') || undefined);
       if (providerName) {
         setProfile((prev) =>
           prev.displayName ? prev : { ...prev, displayName: providerName },
