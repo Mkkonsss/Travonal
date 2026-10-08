@@ -74,7 +74,7 @@ export async function signInWithApple(): Promise<{ error: SocialAuthError }> {
  */
 export async function signInWithGoogle(): Promise<{ error: SocialAuthError }> {
   try {
-    const redirectUri = makeRedirectUri({ scheme: 'toveli', path: 'auth/callback' });
+    const redirectUri = makeRedirectUri({ scheme: 'tripseek', path: 'auth/callback' });
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
