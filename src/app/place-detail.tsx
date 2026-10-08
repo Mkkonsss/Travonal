@@ -10,7 +10,7 @@ import { SymbolView } from 'expo-symbols';
 import NativeMap from '@/components/native-map';
 import { DEFAULT_PATH_DATA } from '@/constants/map-icons';
 import { BoardsIcon } from '@/components/icons';
-import { TimePickerButton } from '@/components/time-picker';
+import { HOURS_12, MINUTES_5, parseTime, formatTime, formatTimeDisplay } from '@/components/time-picker';
 import { SelectionSheet, SelectionOption } from '@/components/selection-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -984,7 +984,7 @@ export default function PlaceDetailScreen() {
             {(placeBookable || (place.category ?? '').startsWith('stay')) && (
               <>
                 <Pressable
-                  onPress={handleAddToTrip}
+                  onPress={(place.type === 'hotel' || (place.category ?? '').startsWith('stay')) ? handleAddToStays : handleAddToTrip}
                   style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
                   accessibilityRole="button"
                   accessibilityLabel="Add to trip"
@@ -1621,31 +1621,64 @@ export default function PlaceDetailScreen() {
         />
       )}
 
-      {/* Time & duration picker before adding to trip */}
-      {pendingAdd && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setPendingAdd(null)}>
-          <Pressable style={styles.addModalBackdrop} onPress={() => setPendingAdd(null)} accessibilityRole="button" accessibilityLabel="Dismiss">
-            <Pressable style={[styles.addModalSheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()} accessibilityRole="button" accessibilityLabel="Add to trip options">
-              <ThemedText type="subtitle" style={styles.addModalTitle}>Add to trip</ThemedText>
-              <ThemedText style={[styles.addModalPlace, { color: theme.textSecondary }]}>
-                {place.title} {'\u00B7'} Day {pendingAdd.day}
-              </ThemedText>
-              <TimePickerButton
-                value={pendingAdd.time}
-                onChange={(t) => setPendingAdd((p) => p ? { ...p, time: t } : p)}
-              />
-              <View style={styles.addModalBtns}>
-                <Pressable onPress={() => setPendingAdd(null)} style={[styles.addModalCancel, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel">
-                  <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>Cancel</ThemedText>
-                </Pressable>
-                <Pressable onPress={confirmPendingAdd} style={[styles.addModalConfirm, { backgroundColor: theme.primary }]} accessibilityRole="button" accessibilityLabel="Confirm add to trip">
-                  <ThemedText style={{ color: theme.primaryText, fontSize: 15, fontWeight: '700' }}>Add to trip</ThemedText>
-                </Pressable>
-              </View>
+      {/* Time picker — bottom sheet */}
+      {pendingAdd && (() => {
+        const parsed = parseTime(pendingAdd.time);
+        const snapped = Math.round(parsed.minute / 5) * 5;
+        return (
+          <Modal visible transparent animationType="slide" onRequestClose={() => setPendingAdd(null)}>
+            <Pressable style={styles.addModalBackdrop} onPress={() => setPendingAdd(null)} accessibilityRole="button" accessibilityLabel="Dismiss">
+              <Pressable style={[styles.addModalSheet, { backgroundColor: theme.background, paddingBottom: insets.bottom + 16 }]} onPress={(e) => e.stopPropagation()} accessibilityRole="button" accessibilityLabel="Add to trip options">
+                <View style={styles.addModalHandle} />
+                <ThemedText type="subtitle" style={styles.addModalTitle}>Add to trip</ThemedText>
+                <ThemedText style={[styles.addModalPlace, { color: theme.textSecondary }]}>
+                  {place.title} {'\u00B7'} Day {pendingAdd.day}
+                </ThemedText>
+
+                <ThemedText style={[styles.addModalTimeLabel, { color: theme.textSecondary }]}>HOUR</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.addModalChipRow}>
+                  {HOURS_12.map((h) => (
+                    <Pressable key={h} onPress={() => setPendingAdd((p) => p ? { ...p, time: formatTime(h, snapped, parsed.period) } : p)}
+                      style={[styles.addModalChip, { backgroundColor: parsed.hour12 === h ? theme.primary : theme.backgroundElement }]}>
+                      <ThemedText style={[styles.addModalChipText, parsed.hour12 === h && { color: theme.primaryText }]}>{h}</ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <ThemedText style={[styles.addModalTimeLabel, { color: theme.textSecondary }]}>MINUTE</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.addModalChipRow}>
+                  {MINUTES_5.map((m) => (
+                    <Pressable key={m} onPress={() => setPendingAdd((p) => p ? { ...p, time: formatTime(parsed.hour12, m, parsed.period) } : p)}
+                      style={[styles.addModalChip, { backgroundColor: snapped === m ? theme.primary : theme.backgroundElement }]}>
+                      <ThemedText style={[styles.addModalChipText, snapped === m && { color: theme.primaryText }]}>{String(m).padStart(2, '0')}</ThemedText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.addModalPeriodRow}>
+                  {(['AM', 'PM'] as const).map((p) => (
+                    <Pressable key={p} onPress={() => setPendingAdd((prev) => prev ? { ...prev, time: formatTime(parsed.hour12, snapped, p) } : prev)}
+                      style={[styles.addModalPeriodBtn, { backgroundColor: parsed.period === p ? theme.primary : theme.backgroundElement }]}>
+                      <ThemedText style={[styles.addModalPeriodText, parsed.period === p && { color: theme.primaryText }]}>{p}</ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={[styles.addModalPreview, { color: theme.text }]}>{formatTimeDisplay(pendingAdd.time)}</ThemedText>
+
+                <View style={styles.addModalBtns}>
+                  <Pressable onPress={() => setPendingAdd(null)} style={[styles.addModalCancel, { borderColor: theme.border }]} accessibilityRole="button" accessibilityLabel="Cancel">
+                    <ThemedText style={{ fontSize: 15, fontWeight: '600' }}>Cancel</ThemedText>
+                  </Pressable>
+                  <Pressable onPress={confirmPendingAdd} style={[styles.addModalConfirm, { backgroundColor: theme.primary }]} accessibilityRole="button" accessibilityLabel="Confirm add to trip">
+                    <ThemedText style={{ color: theme.primaryText, fontSize: 15, fontWeight: '700' }}>Add to trip</ThemedText>
+                  </Pressable>
+                </View>
+              </Pressable>
             </Pressable>
-          </Pressable>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* Bottom action bar */}
       {(() => {
@@ -1702,7 +1735,7 @@ export default function PlaceDetailScreen() {
           <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
             <View style={[styles.bottomBarContent, { flexDirection: 'row', gap: 10 }]}>
               <Pressable
-                onPress={handleAddToTrip}
+                onPress={(place?.type === 'hotel' || (place?.category ?? '').startsWith('stay')) ? handleAddToStays : handleAddToTrip}
                 style={({ pressed }) => [
                   styles.addButton,
                   { backgroundColor: '#000', opacity: pressed ? 0.85 : 1 },
@@ -1958,23 +1991,20 @@ const styles = StyleSheet.create({
   },
   addButtonText: { fontSize: 17, fontWeight: '700' },
 
-  // Add to trip time picker modal
-  addModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  addModalSheet: {
-    borderRadius: Radius.lg,
-    padding: 24,
-    width: '100%',
-    maxWidth: 360,
-    gap: 14,
-  },
+  // Add to trip time picker (bottom sheet)
+  addModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  addModalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12 },
+  addModalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(128,128,128,0.3)', alignSelf: 'center', marginBottom: 8 },
   addModalTitle: { textAlign: 'center' },
   addModalPlace: { textAlign: 'center', fontSize: 14 },
+  addModalTimeLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
+  addModalChipRow: { gap: 6, paddingVertical: 2 },
+  addModalChip: { minWidth: 42, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  addModalChipText: { fontSize: 15, fontWeight: '600' },
+  addModalPeriodRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
+  addModalPeriodBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  addModalPeriodText: { fontSize: 16, fontWeight: '700' },
+  addModalPreview: { textAlign: 'center', fontSize: 22, fontWeight: '700' },
   addModalBtns: { flexDirection: 'row', gap: 10, marginTop: 4 },
   addModalCancel: { flex: 1, paddingVertical: 14, borderRadius: Radius.md, borderWidth: 1, alignItems: 'center' },
   addModalConfirm: { flex: 2, paddingVertical: 14, borderRadius: Radius.md, alignItems: 'center' },

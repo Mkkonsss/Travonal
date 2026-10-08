@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { ActivityIndicator, Dimensions, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
@@ -28,28 +29,57 @@ const SLIDE_PADDING = 24;
 // ─── Slide 1: Features ─────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: 'sparkles', title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month — one for every adventure' },
-  { icon: 'bubble.left.and.bubble.right', title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
-  { icon: 'square.and.arrow.down', title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere — Tripseek finds the place' },
-  { icon: 'doc.text', title: 'PDF export', desc: 'Save or print your itinerary as a formatted PDF' },
+  { icon: 'sparkles', image: require('@/assets/images/icon-chat-empty.png'), imageScale: 1, title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month — one for every adventure' },
+  { icon: 'bubble.left.and.bubble.right', image: require('@/assets/images/plus-feature-chat.png'), imageScale: 1.1, title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
+  { icon: 'square.and.arrow.down', image: require('@/assets/images/plus-feature-import.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere — Tripseek finds the place' },
+  { icon: 'icloud.and.arrow.down', image: require('@/assets/images/plus-feature-offline.png'), imageScale: 1, title: 'Offline trip access', desc: 'Download your trip and access it anywhere — no internet needed' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {
+  const [expanded, setExpanded] = useState<number | null>(null);
+
   return (
     <View style={slideStyles.slideContainer}>
       <ThemedText style={slideStyles.slideTitle}>Everything you get</ThemedText>
-      <View style={slideStyles.featureList}>
-        {FEATURES.map((f, i) => (
-          <View key={i} style={slideStyles.featureRow}>
-            <View style={[slideStyles.featureIcon, { backgroundColor: theme.primaryMuted }]}>
-              <SymbolView name={f.icon as any} size={16} tintColor={theme.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <ThemedText style={slideStyles.featureTitle}>{f.title}</ThemedText>
-              <ThemedText style={[slideStyles.featureDesc, { color: theme.textSecondary }]}>{f.desc}</ThemedText>
-            </View>
-          </View>
-        ))}
+      <View style={slideStyles.zigzagList}>
+        {FEATURES.map((f, i) => {
+          const isRight = i % 2 === 1;
+          const isOpen = expanded === i;
+          return (
+            <Pressable
+              key={i}
+              onPress={() => setExpanded(isOpen ? null : i)}
+              style={({ pressed }) => [
+                slideStyles.zigzagCard,
+                { backgroundColor: theme.background, borderColor: isOpen ? theme.primary : theme.border },
+                isRight ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' },
+                { zIndex: i },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              {f.image ? (
+                <View style={slideStyles.zigzagImageWrap}>
+                  <Image source={f.image} style={[slideStyles.zigzagImage, { transform: [{ scale: f.imageScale ?? 1 }] }]} contentFit="contain" />
+                </View>
+              ) : (
+                <View style={[slideStyles.zigzagPlaceholder, { backgroundColor: theme.primaryMuted }]}>
+                  <SymbolView name={f.icon as any} size={26} tintColor={theme.primary} />
+                </View>
+              )}
+              <View style={slideStyles.zigzagCardBody}>
+                <View style={slideStyles.zigzagCardRow}>
+                  <ThemedText style={slideStyles.zigzagTitle}>{f.title}</ThemedText>
+                  <SymbolView name={isOpen ? 'chevron.up' : 'chevron.down'} size={11} tintColor={theme.textSecondary} />
+                </View>
+                {isOpen && (
+                  <Animated.View entering={FadeIn.duration(150)}>
+                    <ThemedText style={[slideStyles.zigzagDesc, { color: theme.textSecondary }]}>{f.desc}</ThemedText>
+                  </Animated.View>
+                )}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -61,8 +91,7 @@ const COMPARISON = [
   { label: 'AI trip plans', free: '1 / month', plus: '5 / month' },
   { label: 'AI chat messages', free: '20 / month', plus: '100 / month' },
   { label: 'Board imports', free: '3 / month', plus: '15 / month' },
-  { label: 'PDF export', free: '\u2014', plus: '\u2713' },
-  { label: 'Trip collaboration', free: '\u2014', plus: '\u2713' },
+  { label: 'Offline trip access', free: '\u2014', plus: '\u2713' },
   { label: 'Trip management', free: '\u2713', plus: '\u2713' },
   { label: 'Explore & map', free: '\u2713', plus: '\u2713' },
   { label: 'Boards & saves', free: '\u2713', plus: '\u2713' },
@@ -73,7 +102,7 @@ function ComparisonSlide({ theme }: { theme: any }) {
   return (
     <View style={slideStyles.slideContainer}>
       <ThemedText style={slideStyles.slideTitle}>Free vs Tripseek+</ThemedText>
-      <View style={[slideStyles.comparisonCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+      <View style={[slideStyles.comparisonCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
         {/* Header */}
         <View style={[slideStyles.comparisonHeader, { borderBottomColor: theme.border }]}>
           <ThemedText style={[slideStyles.comparisonHeaderLabel, { flex: 2 }]}> </ThemedText>
@@ -446,12 +475,23 @@ const slideStyles = StyleSheet.create({
   slideContainer: { gap: 16, paddingTop: 4 },
   slideTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
 
-  // Features
+  // Features (legacy, kept for reference)
   featureList: { gap: 0 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   featureIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   featureTitle: { fontSize: 14, fontWeight: '700' },
   featureDesc: { fontSize: 12, marginTop: 1, lineHeight: 17 },
+
+  // Zig-zag feature cards
+  zigzagList: { gap: 0, paddingTop: 4 },
+  zigzagCard: { width: '65%', borderRadius: Radius.lg, borderWidth: 1, overflow: 'hidden', marginBottom: -8 },
+  zigzagPlaceholder: { width: '100%', height: 140, alignItems: 'center', justifyContent: 'center' },
+  zigzagImageWrap: { width: '100%', height: 140, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  zigzagImage: { width: '100%', height: 140 },
+  zigzagCardBody: { padding: 12, gap: 6 },
+  zigzagCardRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  zigzagTitle: { fontSize: 14, fontWeight: '700', flex: 1 },
+  zigzagDesc: { fontSize: 12, lineHeight: 17 },
 
   // Comparison
   comparisonCard: { borderRadius: Radius.md, borderWidth: 1, overflow: 'hidden' },

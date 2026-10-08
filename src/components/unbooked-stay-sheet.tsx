@@ -23,9 +23,10 @@ const BOOKING_EMAIL = 'bookings@tripseekapp.com';
 interface Props {
   data: { activity: Activity; trip: Trip; photoUrl?: string } | null;
   onClose: () => void;
+  onRemove?: (activity: Activity) => void;
 }
 
-export function UnbookedStaySheet({ data, onClose }: Props) {
+export function UnbookedStaySheet({ data, onClose, onRemove }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
 
@@ -159,6 +160,17 @@ export function UnbookedStaySheet({ data, onClose }: Props) {
               tintColor={emailCopied ? theme.primary : theme.textSecondary}
             />
           </Pressable>
+
+          {onRemove && (
+            <Pressable
+              onPress={() => { close(); onRemove(activity); }}
+              style={styles.removeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Remove stay"
+            >
+              <ThemedText style={[styles.removeBtnText, { color: theme.danger ?? '#FF3B30' }]}>Remove stay</ThemedText>
+            </Pressable>
+          )}
         </ScrollView>
       </Animated.View>
     </>
@@ -258,5 +270,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     flex: 1,
+  },
+  removeBtn: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  removeBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

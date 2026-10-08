@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Image, Linking, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Image, Linking, Modal, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
@@ -8,7 +8,9 @@ import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Spacing, Radius } from '@/constants/theme';
+import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, SUPPORT_EMAIL } from '@/constants/legal';
 import { useProfile } from '@/context/profile';
 import { useTrips } from '@/context/trips';
@@ -19,9 +21,8 @@ import { useTripPulse } from '@/context/trip-pulse';
 import { usePulseHistory } from '@/context/pulse-history';
 import { useTheme } from '@/hooks/use-theme';
 import { useToast } from '@/context/toast';
-import { TravelStyleCard } from '@/components/travel-style-card';
 
-import { clearOnboardingComplete, resetAllData, loadChatMessages, saveChatMessages, saveChatThreads, loadRecentSearches, loadDismissedPulse, loadSeenPulse, loadNotifDismissed, loadTripPulseEnabled, loadLearningEnabled, loadBookingRemindersEnabled, saveBookingRemindersEnabled, loadDepartureReminderEnabled, saveDepartureReminderEnabled, loadDailyBriefingEnabled, saveDailyBriefingEnabled } from '@/services/storage';
+import { clearOnboardingComplete, resetAllData, clearLastUserId, loadChatMessages, saveChatMessages, saveChatThreads, loadRecentSearches, loadDismissedPulse, loadSeenPulse, loadNotifDismissed, loadTripPulseEnabled, loadLearningEnabled } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 import { hasPermission, requestNotificationPermission, onPermissionChange, openNotificationSettings } from '@/services/notifications';
 import { deleteAccount } from '@/services/supabase';
@@ -51,17 +52,19 @@ function NavRow({
   onPress,
   theme,
   destructive,
+  last,
 }: {
   label: string;
   sublabel?: string;
   onPress: () => void;
   theme: any;
   destructive?: boolean;
+  last?: boolean;
 }) {
   return (
     <Pressable
       onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onPress(); }}
-      style={[styles.navRow, { borderBottomColor: theme.border }]}
+      style={[styles.navRow, { borderBottomColor: theme.border }, last && { borderBottomWidth: 0 }]}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
@@ -229,7 +232,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const router = useRouter();
-  const { profile, loaded: profileLoaded, resetProfile, setSyncErrorCallback } = useProfile();
+  const { profile, loaded: profileLoaded, updateProfile, resetProfile, setSyncErrorCallback } = useProfile();
   const { trips } = useTrips();
   const { entries, removeEntry, clearAll, learningEnabled, setLearningEnabled, resetAll: resetMemory } = useMemory();
   const { savedPlaces, resetAll: resetInbox } = useInbox();
@@ -237,14 +240,27 @@ export default function ProfileScreen() {
   const { resetAll: resetPulseHistory } = usePulseHistory();
   const { resetAll: resetTrips } = useTrips();
   const { user, signOut, resetPassword } = useAuth();
+
+  const displayName =
+    profile.displayName?.trim() ||
+    (user?.user_metadata?.full_name as string | undefined) ||
+    formatDisplayName(user?.email);
+
+  const derivedUsername = displayName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 20);
+  const visibleUsername = profile.username || derivedUsername;
+
+  const tripCount = trips.length;
+  const destinationCount = new Set(trips.map((t) => t.destination).filter(Boolean)).size;
   const { showToast } = useToast();
 
-  const notifSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(hasPermission());
-  const [bookingRemindersEnabled, setBookingRemindersEnabled] = useState(true);
-  const [departureReminderEnabled, setDepartureReminderEnabled] = useState(true);
-  const [dailyBriefingEnabled, setDailyBriefingEnabled] = useState(true);
-  const [showAllMemories, setShowAllMemories] = useState(false);
+  const [mediaPermissionGranted, setMediaPermissionGranted] = useState(false);
+  const [showMemorySheet, setShowMemorySheet] = useState(false);
   const [chatMessageCount, setChatMessageCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const { isPlus, usage, plan } = useSubscription();
@@ -254,16 +270,15 @@ export default function ProfileScreen() {
 
   // Expanded sub-sections
   const [showAccount, setShowAccount] = useState(false);
-  const [showPrivacy, setShowPrivacy] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showMemory, setShowMemory] = useState(false);
 
   useEffect(() => {
     verifyEntitlement().then(setIsSubscribed).catch(() => {});
-    loadBookingRemindersEnabled().then(setBookingRemindersEnabled);
-    loadDepartureReminderEnabled().then(setDepartureReminderEnabled);
-    loadDailyBriefingEnabled().then(setDailyBriefingEnabled);
     loadChatMessages<unknown[]>([]).then((msgs) => setChatMessageCount(msgs.length));
+    // Pre-check media permission so the picker opens instantly on tap
+    ImagePicker.getMediaLibraryPermissionsAsync().then(({ status }) => {
+      setMediaPermissionGranted(status === 'granted');
+    });
   }, []);
 
   // Pull notification settings from cloud on sign-in
@@ -271,18 +286,6 @@ export default function ProfileScreen() {
     if (!user?.id) return;
     pullUserSettings(user.id).then((remote) => {
       if (!remote) return;
-      if (typeof remote.bookingRemindersEnabled === 'boolean') {
-        setBookingRemindersEnabled(remote.bookingRemindersEnabled);
-        saveBookingRemindersEnabled(remote.bookingRemindersEnabled);
-      }
-      if (typeof remote.departureReminderEnabled === 'boolean') {
-        setDepartureReminderEnabled(remote.departureReminderEnabled);
-        saveDepartureReminderEnabled(remote.departureReminderEnabled);
-      }
-      if (typeof remote.dailyBriefingEnabled === 'boolean') {
-        setDailyBriefingEnabled(remote.dailyBriefingEnabled);
-        saveDailyBriefingEnabled(remote.dailyBriefingEnabled);
-      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -297,36 +300,29 @@ export default function ProfileScreen() {
 
   // ─── Helpers ───
 
-  function pushNotifSettings(patch: Record<string, boolean>) {
-    if (!user?.id) return;
-    const userId = user.id;
-    if (notifSyncTimerRef.current) clearTimeout(notifSyncTimerRef.current);
-    notifSyncTimerRef.current = setTimeout(() => {
-      mergeUserSettings(userId, patch);
-    }, 1500);
-  }
-
   // ─── Handlers ───
 
-  function handleReset() {
-    Alert.alert(
-      'Reset Profile',
-      'This will reset your travel preferences and clear all learned memories. Your trips will not be deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            resetProfile();
-            resetMemory();
-            await clearOnboardingComplete();
-            router.replace({ pathname: '/onboarding', params: { survey: '1' } } as any);
-          },
-        },
-      ]
-    );
+  async function handlePickAvatar() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!mediaPermissionGranted) {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Photo Access Required', 'Allow Tripseek to access your photos.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: openNotificationSettings },
+        ]);
+        return;
+      }
+      setMediaPermissionGranted(true);
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    updateProfile({ avatarUri: result.assets[0].uri });
   }
+
 
   function handleClearMemory() {
     Alert.alert(
@@ -350,41 +346,7 @@ export default function ProfileScreen() {
     );
   }
 
-  function handleClearChat() {
-    Alert.alert(
-      'Clear Chat History',
-      'This will remove all Ask Tripseek conversations. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            await Promise.all([saveChatMessages([]), saveChatThreads([])]);
-            showToast('Chat history cleared', 'success');
-          },
-        },
-      ]
-    );
-  }
 
-  function handleClearMemoryOnly() {
-    Alert.alert(
-      'Clear Trip Memory',
-      'This will remove all learned preferences. Your travel profile and trips are not affected.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => {
-            clearAll();
-            showToast('Trip memory cleared', 'success');
-          },
-        },
-      ]
-    );
-  }
 
   function handleResetPassword() {
     if (!user?.email) return;
@@ -475,20 +437,56 @@ export default function ProfileScreen() {
       >
         {/* ── Identity header ── */}
         <View style={styles.identityHeader}>
-          <View style={[styles.avatar, { backgroundColor: theme.primaryMuted }]}>
-            <ThemedText style={[styles.avatarText, { color: theme.primary }]}>
-              {((user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'T').toUpperCase()}
-            </ThemedText>
-          </View>
-          <View style={{ flex: 1 }}>
-            <ThemedText style={styles.userName}>
-              {(user?.user_metadata?.full_name as string | undefined) || formatDisplayName(user?.email)}
-            </ThemedText>
-            {user?.email && (
-              <ThemedText style={[styles.userEmail, { color: theme.textSecondary }]}>{user.email}</ThemedText>
+          {/* Avatar */}
+          <Pressable onPress={handlePickAvatar} style={styles.avatarWrap} accessibilityRole="button" accessibilityLabel="Change profile photo">
+            {profile.avatarUri ? (
+              <ExpoImage source={{ uri: profile.avatarUri }} style={styles.avatar} contentFit="cover" />
+            ) : (
+              <View style={[styles.avatar, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                <ThemedText style={[styles.avatarText, { color: theme.primary }]}>
+                  {(displayName[0] ?? 'T').toUpperCase()}
+                </ThemedText>
+              </View>
             )}
+            <View style={[styles.cameraBadge, { backgroundColor: theme.backgroundElement, borderColor: theme.background }]}>
+              <SymbolView name="camera.fill" size={11} tintColor={theme.textSecondary} />
+            </View>
+          </Pressable>
+
+          {/* Name / username / stats */}
+          <View style={{ flex: 1, gap: 2 }}>
+            <ThemedText style={styles.userName}>{displayName}</ThemedText>
+            {visibleUsername ? (
+              <ThemedText style={[styles.userUsername, { color: theme.textSecondary }]}>@{visibleUsername}</ThemedText>
+            ) : null}
+            <ThemedText style={[styles.userStats, { color: theme.textSecondary }]}>
+              {tripCount} {tripCount === 1 ? 'trip' : 'trips'}
+            </ThemedText>
           </View>
         </View>
+
+        {/* Edit Profile pill button */}
+        <Pressable
+          onPress={() => router.push('/edit-profile' as any)}
+          style={({ pressed }) => [styles.editProfileBtn, { borderColor: theme.border, opacity: pressed ? 0.7 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile"
+        >
+          <ThemedText style={[styles.editProfileBtnText, { color: theme.text }]}>Edit Profile</ThemedText>
+        </Pressable>
+
+        {/* ── Interests chips (inline, combined with profile) ── */}
+        {profile.interests.length > 0 && (
+          <View style={styles.interestsRow}>
+            {profile.interests.map((i) => (
+              <View key={i} style={[styles.interestChip, { borderColor: theme.border }]}>
+                <ThemedText style={[styles.interestChipText, { color: theme.textSecondary }]}>{i.trim()}</ThemedText>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
 
         {/* ── Tripseek Plus ── */}
         <View style={styles.plusGlow}>
@@ -508,100 +506,96 @@ export default function ProfileScreen() {
             <ThemedText style={[styles.plusSub, { color: theme.textSecondary }]}>
               {isSubscribed || isPlus
                 ? (usage ? `${Math.max(0, (usage.limits.generations ?? 3) - usage.generations_used)} plans, ${Math.max(0, (usage.limits.assistance ?? 50) - usage.assistance_used)} messages left` : 'Your subscription is active.')
-                : 'Unlock AI trip editing, analysis & more'}
+                : 'Your trips taken to the next level'}
             </ThemedText>
           </Pressable>
         </View>
 
-        {/* ── Travel Style ── */}
-        <View style={{ marginTop: 35 }} />
-        <TravelStyleCard
-          profile={profile}
-          onPress={() => router.push('/edit-profile' as any)}
-          compact
-        />
-
-        <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
-
         {/* ── Your Tripseek ── */}
-        <ThemedText style={[styles.sectionLabel, { color: theme.text, marginTop: 0 }]}>Your Tripseek</ThemedText>
+        <ThemedText style={[styles.sectionLabel, { color: theme.text, marginTop: 4 }]}>Your Tripseek</ThemedText>
 
         <View style={styles.sectionGroup}>
           <NavRow
+            label="Your trips"
+            onPress={() => router.push('/(tabs)/' as any)}
+            theme={theme}
+          />
+          <NavRow
+            label="Your bookings"
+            onPress={() => router.push('/bookings' as any)}
+            theme={theme}
+          />
+          <NavRow
             label="Your boards"
-            sublabel={savedPlaces.length > 0 ? `${savedPlaces.length} ${savedPlaces.length === 1 ? 'place' : 'places'} saved` : 'None yet'}
             onPress={() => router.push('/inbox' as any)}
             theme={theme}
           />
-          <Pressable
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowMemory(!showMemory); }}
-            style={[styles.navRow, { borderBottomWidth: 0 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Trip memory"
-          >
-            <View style={{ flex: 1 }}>
-              <ThemedText style={[styles.navLabel, { color: theme.textSecondary }]}>Trip memory</ThemedText>
-              <ThemedText style={[styles.navSublabel, { color: theme.textSecondary }]}>
-                {entries.length > 0
-                  ? `${entries.length} ${entries.length === 1 ? 'thing' : 'things'} learned`
-                  : 'What Tripseek has learned'}
-              </ThemedText>
-            </View>
-            <ThemedText style={[styles.navChevron, { color: theme.textSecondary }]}>{showMemory ? '\u2212' : '\u203A'}</ThemedText>
-          </Pressable>
+          <NavRow
+            label="Trip memory"
+            onPress={() => setShowMemorySheet(true)}
+            theme={theme}
+            last
+          />
         </View>
 
-        {/* Memory entries (expandable — grouped by sentiment) */}
-        {showMemory && (
-          <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-            <View style={styles.memoryPanel}>
-              {entries.length > 0 ? (
-                <>
-                  {/* Insights summary */}
-                  <MemoryInsights entries={entries} theme={theme} />
+        {/* Trip Memory bottom sheet */}
+        <Modal visible={showMemorySheet} transparent animationType="slide" onRequestClose={() => setShowMemorySheet(false)}>
+          <Pressable style={styles.memorySheetBackdrop} onPress={() => setShowMemorySheet(false)}>
+            <Pressable onPress={(e) => e.stopPropagation()} style={[styles.memorySheetContainer, { backgroundColor: theme.background }]}>
+              <View style={styles.memorySheetHandle} />
+              <View style={styles.memorySheetHeader}>
+                <ThemedText style={styles.memorySheetTitle}>Trip Memory</ThemedText>
+                <Pressable onPress={() => setShowMemorySheet(false)} hitSlop={12}>
+                  <SymbolView name="xmark" size={16} tintColor={theme.textSecondary} />
+                </Pressable>
+              </View>
 
-                  {/* Grouped sections */}
-                  <MemoryGroup
-                    label="What you love"
-                    entries={entries.filter((e) => e.sentiment === 'positive' || e.type === 'recommendation_accepted' || e.type === 'preference_saved')}
-                    showAll={showAllMemories}
-                    theme={theme}
-                    onDelete={handleDeleteMemoryEntry}
-                  />
-                  <MemoryGroup
-                    label="What to avoid"
-                    entries={entries.filter((e) => e.sentiment === 'negative' || e.type === 'activity_skipped' || e.type === 'recommendation_rejected')}
-                    showAll={showAllMemories}
-                    theme={theme}
-                    onDelete={handleDeleteMemoryEntry}
-                  />
-                  <MemoryGroup
-                    label="Choices made"
-                    entries={entries.filter((e) => e.type === 'activity_replaced')}
-                    showAll={showAllMemories}
-                    theme={theme}
-                    onDelete={handleDeleteMemoryEntry}
-                  />
-
-                  {entries.length > 5 && (
-                    <Pressable onPress={() => setShowAllMemories(!showAllMemories)} style={styles.clearBtn} accessibilityRole="button" accessibilityLabel={showAllMemories ? 'Show less' : 'View all memories'}>
-                      <ThemedText style={[styles.clearBtnText, { color: theme.primary }]}>
-                        {showAllMemories ? 'Show less' : `View all ${entries.length} memories`}
-                      </ThemedText>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.memorySheetScroll}>
+                <SettingToggle
+                  label="Learn from my choices"
+                  sublabel={learningEnabled ? 'Tripseek remembers your preferences' : 'Paused — existing memories are kept'}
+                  value={learningEnabled}
+                  onToggle={setLearningEnabled}
+                  theme={theme}
+                />
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border, marginVertical: 16 }} />
+                {entries.length > 0 ? (
+                  <>
+                    <MemoryInsights entries={entries} theme={theme} />
+                    <MemoryGroup
+                      label="What you love"
+                      entries={entries.filter((e) => e.sentiment === 'positive' || e.type === 'recommendation_accepted' || e.type === 'preference_saved')}
+                      showAll
+                      theme={theme}
+                      onDelete={handleDeleteMemoryEntry}
+                    />
+                    <MemoryGroup
+                      label="What to avoid"
+                      entries={entries.filter((e) => e.sentiment === 'negative' || e.type === 'activity_skipped' || e.type === 'recommendation_rejected')}
+                      showAll
+                      theme={theme}
+                      onDelete={handleDeleteMemoryEntry}
+                    />
+                    <MemoryGroup
+                      label="Choices made"
+                      entries={entries.filter((e) => e.type === 'activity_replaced')}
+                      showAll
+                      theme={theme}
+                      onDelete={handleDeleteMemoryEntry}
+                    />
+                    <Pressable onPress={() => { setShowMemorySheet(false); setTimeout(handleClearMemory, 300); }} style={styles.clearBtn}>
+                      <ThemedText style={[styles.clearBtnText, { color: theme.textSecondary }]}>Clear all memory</ThemedText>
                     </Pressable>
-                  )}
-                  <Pressable onPress={handleClearMemory} style={styles.clearBtn} accessibilityRole="button" accessibilityLabel="Clear all memory">
-                    <ThemedText style={[styles.clearBtnText, { color: theme.textSecondary }]}>Clear all memory</ThemedText>
-                  </Pressable>
-                </>
-              ) : (
-                <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
-                  No memories yet. As you use Tripseek, it will learn from your choices to give better recommendations.
-                </ThemedText>
-              )}
-            </View>
-          </Animated.View>
-        )}
+                  </>
+                ) : (
+                  <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    No memories yet. As you use Tripseek, it will learn from your choices to give better recommendations.
+                  </ThemedText>
+                )}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
 
@@ -638,100 +632,18 @@ export default function ProfileScreen() {
                         ]);
                       }
                       setNotificationsEnabled(granted);
+                      if (tripPulseLoaded) setTripPulseEnabled(granted);
                     } else {
                       openNotificationSettings();
                     }
                   }}
                   theme={theme}
                 />
-                <SettingToggle
-                  label="Trip alerts"
-                  sublabel="Smart alerts about conflicts and suggestions"
-                  value={tripPulseLoaded ? tripPulseEnabled : false}
-                  onToggle={tripPulseLoaded ? setTripPulseEnabled : () => {}}
-                  theme={theme}
-                />
-                <SettingToggle
-                  label="Booking reminders"
-                  sublabel="Remind about unbooked hotels and flights"
-                  value={bookingRemindersEnabled}
-                  onToggle={(val) => { setBookingRemindersEnabled(val); saveBookingRemindersEnabled(val); pushNotifSettings({ bookingRemindersEnabled: val }); }}
-                  theme={theme}
-                />
-                <SettingToggle
-                  label="Trip countdown"
-                  sublabel="Reminder the day before your trip starts"
-                  value={departureReminderEnabled}
-                  onToggle={(val) => { setDepartureReminderEnabled(val); saveDepartureReminderEnabled(val); pushNotifSettings({ departureReminderEnabled: val }); }}
-                  theme={theme}
-                />
-                <SettingToggle
-                  label="Daily briefing"
-                  sublabel="Morning summary of today's activities"
-                  value={dailyBriefingEnabled}
-                  onToggle={(val) => { setDailyBriefingEnabled(val); saveDailyBriefingEnabled(val); pushNotifSettings({ dailyBriefingEnabled: val }); }}
-                  theme={theme}
-                />
 
               </View>
             </Animated.View>
           )}
 
-          {/* Personalization & privacy */}
-          <Pressable
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowPrivacy(!showPrivacy); }}
-            style={[styles.navRow, { borderBottomColor: theme.border }]}
-            accessibilityRole="button"
-          >
-            <View style={{ flex: 1 }}>
-              <ThemedText style={[styles.navLabel, { color: theme.textSecondary }]}>Personalization & privacy</ThemedText>
-            </View>
-            <ThemedText style={[styles.navChevron, { color: theme.textSecondary }]}>{showPrivacy ? '\u2212' : '\u203A'}</ThemedText>
-          </Pressable>
-
-          {showPrivacy && (
-            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
-              <View style={styles.subSection}>
-                <SettingToggle
-                  label="Personalization"
-                  sublabel={learningEnabled ? 'Learn from your choices to improve suggestions' : 'Paused — existing memories are kept'}
-                  value={learningEnabled}
-                  onToggle={setLearningEnabled}
-                  theme={theme}
-                />
-                <ThemedText style={{ fontSize: 12, color: theme.textSecondary, marginTop: 12, marginBottom: 4, paddingHorizontal: 4 }}>
-                  {trips.length} trip{trips.length !== 1 ? 's' : ''} · {entries.length} memor{entries.length !== 1 ? 'ies' : 'y'} · {chatMessageCount} chat message{chatMessageCount !== 1 ? 's' : ''}
-                </ThemedText>
-                <NavRow
-                  label="Export my data"
-                  sublabel="Share your trips and preferences as JSON"
-                  onPress={handleExport}
-                  theme={theme}
-                />
-                <NavRow
-                  label="Clear chat history"
-                  sublabel="Remove all Ask Tripseek conversations"
-                  onPress={handleClearChat}
-                  theme={theme}
-                  destructive
-                />
-                <NavRow
-                  label="Clear trip memory"
-                  sublabel="Remove all learned preferences"
-                  onPress={handleClearMemoryOnly}
-                  theme={theme}
-                  destructive
-                />
-                <NavRow
-                  label="Reset preferences"
-                  sublabel="Clear your travel profile and start over"
-                  onPress={handleReset}
-                  theme={theme}
-                  destructive
-                />
-              </View>
-            </Animated.View>
-          )}
 
           {/* Account */}
           <Pressable
@@ -765,6 +677,12 @@ export default function ProfileScreen() {
                       label="Reset password"
                       sublabel="Send a reset link to your email"
                       onPress={handleResetPassword}
+                      theme={theme}
+                    />
+                    <NavRow
+                      label="Export my data"
+                      sublabel="Share your trips and preferences as JSON"
+                      onPress={handleExport}
                       theme={theme}
                     />
                     <NavRow
@@ -898,29 +816,80 @@ const styles = StyleSheet.create({
   // Identity header
   identityHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+    alignItems: 'flex-start',
+    gap: 16,
     marginBottom: 0,
   },
+  avatarWrap: {
+    position: 'relative',
+  },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  avatarText: {
+    fontSize: 36,
+    fontWeight: '700',
+    lineHeight: 42,
+    includeFontPadding: false,
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
   userName: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
-  userEmail: {
+  userUsername: {
     fontSize: 14,
-    marginTop: 1,
+    fontWeight: '500',
+  },
+  userBio: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 2,
+  },
+  userStats: {
+    fontSize: 13,
+    marginTop: 4,
+  },
+  interestsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 12,
+  },
+  interestChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  interestChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editProfileBtn: {
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderRadius: Radius.xl,
+    paddingVertical: 9,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  editProfileBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 
   // Section labels
@@ -970,7 +939,31 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
 
-  // Memory panel
+  // Memory bottom sheet
+  memorySheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  memorySheetContainer: {
+    borderTopLeftRadius: Radius.sheet,
+    borderTopRightRadius: Radius.sheet,
+    maxHeight: '80%',
+    paddingBottom: 40,
+  },
+  memorySheetHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.3)',
+    alignSelf: 'center', marginTop: 10, marginBottom: 16,
+  },
+  memorySheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four, marginBottom: 16,
+  },
+  memorySheetTitle: { fontSize: 17, fontWeight: '700' },
+  memorySheetScroll: { paddingHorizontal: Spacing.four, paddingBottom: 8 },
+
+  // Memory panel (legacy — keep for existing styles)
   memoryPanel: {
     paddingHorizontal: 4,
     marginTop: 4,
@@ -1027,7 +1020,8 @@ const styles = StyleSheet.create({
 
   // Tripseek Plus card
   plusGlow: {
-    marginTop: 30,
+    marginTop: 16,
+    marginBottom: 40,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,

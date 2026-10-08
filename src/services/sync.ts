@@ -202,17 +202,6 @@ export function subscribeToSharedTrips(
 }
 
 /**
- * Push a single trip to Supabase immediately (used for real-time sync on shared trips).
- */
-export async function pushTripById(tripId: string, userId: string, data: Trip): Promise<void> {
-  const { error } = await supabase.from('trips').upsert(
-    { id: tripId, user_id: userId, data, updated_at: new Date().toISOString() },
-    { onConflict: 'id' },
-  );
-  if (error) console.warn('[sync] pushTripById failed:', error.message);
-}
-
-/**
  * Push a member's edits to a shared trip's canonical Supabase row.
  * Uses UPDATE (not upsert) so the owner's user_id column is never overwritten.
  * Strips joinedAs before writing — it's a local-only annotation.
@@ -251,6 +240,110 @@ export async function pullProfile(userId: string): Promise<{ profile: TravelProf
     .single();
   if (error || !data) return null;
   return { profile: data.travel_profile as TravelProfile, updatedAt: data.updated_at as string };
+}
+
+// ─── User Identities ─────────────────────────────────────────────────────────
+
+export interface UserIdentity {
+  userId: string;
+  displayName?: string;
+  username?: string;
+  avatarUrl?: string; // https:// only — never a local file URI
+}
+
+/**
+ * Upsert the current user's public identity (name, username, avatar).
+ * Local file:// URIs are silently dropped — only https:// URLs are stored.
+ */
+export async function pushPublicIdentity(
+  userId: string,
+  identity: Pick<UserIdentity, 'displayName' | 'username' | 'avatarUrl'>,
+): Promise<void> {
+  const { error } = await supabase.from('user_identities').upsert(
+    {
+      user_id: userId,
+      display_name: identity.displayName ?? null,
+      username: identity.username ?? null,
+      avatar_url: identity.avatarUrl?.startsWith('https://') ? identity.avatarUrl : null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
+  if (error) console.warn('[sync] pushPublicIdentity failed:', error.message);
+}
+
+/** Fetch a single user's public identity by their user_id. */
+export async function fetchUserIdentity(userId: string): Promise<UserIdentity | null> {
+  const { data, error } = await supabase
+    .from('user_identities')
+    .select('user_id, display_name, username, avatar_url')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    userId: data.user_id as string,
+    displayName: (data.display_name as string | null) ?? undefined,
+    username: (data.username as string | null) ?? undefined,
+    avatarUrl: (data.avatar_url as string | null) ?? undefined,
+  };
+}
+
+/** Batch-fetch identities for multiple user_ids. Returns a map keyed by userId. */
+export async function fetchUserIdentities(userIds: string[]): Promise<Map<string, UserIdentity>> {
+  if (userIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('user_identities')
+    .select('user_id, display_name, username, avatar_url')
+    .in('user_id', userIds);
+  if (error) {
+    console.warn('[sync] fetchUserIdentities failed:', error.message);
+    return new Map();
+  }
+  const map = new Map<string, UserIdentity>();
+  for (const row of data ?? []) {
+    map.set(row.user_id as string, {
+      userId: row.user_id as string,
+      displayName: (row.display_name as string | null) ?? undefined,
+      username: (row.username as string | null) ?? undefined,
+      avatarUrl: (row.avatar_url as string | null) ?? undefined,
+    });
+  }
+  return map;
+}
+
+/**
+ * Fetch all participants of a trip: the owner (from trips table) + joined members (from trip_members).
+ * Owner is always first in the returned array.
+ */
+export async function fetchTripAllParticipants(
+  tripId: string,
+): Promise<Array<{ userId: string; role: string }>> {
+  const [ownerResult, membersResult] = await Promise.all([
+    supabase.from('trips').select('user_id').eq('id', tripId).maybeSingle(),
+    supabase.from('trip_members').select('user_id, role').eq('trip_id', tripId).not('user_id', 'is', null),
+  ]);
+  const results: Array<{ userId: string; role: string }> = [];
+  if (ownerResult.data?.user_id) {
+    results.push({ userId: ownerResult.data.user_id as string, role: 'owner' });
+  }
+  for (const row of membersResult.data ?? []) {
+    results.push({ userId: row.user_id as string, role: row.role as string });
+  }
+  return results;
+}
+
+/**
+ * Fetch the identity of the user who created an invite code (the trip owner).
+ * Returns null if the code doesn't exist or invited_by is not set.
+ */
+export async function fetchOwnerIdentityForCode(code: string): Promise<UserIdentity | null> {
+  const { data, error } = await supabase
+    .from('trip_members')
+    .select('invited_by')
+    .eq('invite_code', code.toUpperCase().trim())
+    .maybeSingle();
+  if (error || !data?.invited_by) return null;
+  return fetchUserIdentity(data.invited_by as string);
 }
 
 // ─── Memory ─────────────────────────────────────────────────────────────────

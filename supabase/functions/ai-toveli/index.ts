@@ -12,8 +12,8 @@ const corsHeaders = {
 };
 
 const client = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
-const MODEL = "claude-sonnet-4-6";
-// Use Sonnet for all calls — Haiku not available on this API key
+const SONNET = "claude-sonnet-4-6";
+const HAIKU = "claude-haiku-4-5-20251001";
 
 function extractJSON(text) {
   // Try code block first
@@ -73,13 +73,14 @@ function extractJSON(text) {
   }
 }
 
-async function claude(system, user, maxTokens, timeoutMs) {
+async function claude(system, user, maxTokens, timeoutMs, model) {
   var tms = timeoutMs || 60000;
+  var mdl = model || SONNET;
   var controller = new AbortController();
   var timer = setTimeout(function() { controller.abort(); }, tms);
   try {
     var response = await client.messages.create({
-      model: MODEL,
+      model: mdl,
       max_tokens: maxTokens,
       system: system,
       messages: [{ role: "user", content: user }],
@@ -924,12 +925,12 @@ async function handleChat(payload) {
 
   var chatResult;
   try {
-    chatResult = await claude(system, user, 8192);
+    chatResult = await claude(system, user, 8192, undefined, HAIKU);
     validateOutput(chatResult, "chat");
   } catch (parseErr) {
     console.error("[handleChat] first attempt error:", String(parseErr), "rawText:", parseErr.rawText ? parseErr.rawText.substring(0, 200) : "NONE");
     try {
-      chatResult = await claude(system, user, 10240);
+      chatResult = await claude(system, user, 10240, undefined, HAIKU);
       validateOutput(chatResult, "chat");
     } catch (retryErr) {
       console.error("[handleChat] retry also failed:", String(retryErr), "rawText:", retryErr.rawText ? retryErr.rawText.substring(0, 200) : "NONE");
@@ -2150,7 +2151,7 @@ async function handleImportPlace(payload) {
     ];
 
     var imgResp = await client.messages.create({
-      model: MODEL,
+      model: HAIKU,
       max_tokens: 1024,
       system: imgSystem,
       messages: [
@@ -2216,7 +2217,7 @@ async function handleImportPlace(payload) {
     ].join("\n");
 
     var multiResult = await claude(
-      multiSystem, multiUser, 2048
+      multiSystem, multiUser, 2048, undefined, HAIKU
     );
     if (typeof multiResult.found !== "boolean") {
       multiResult.found = false;
@@ -2310,7 +2311,7 @@ async function handleImportPlace(payload) {
   ].join("\n");
 
   var textResult = await claude(
-    singleSystem, singleUser, 512
+    singleSystem, singleUser, 512, undefined, HAIKU
   );
   validateOutput(textResult, "import_place");
   var verified = await verifyWithGooglePlaces(
@@ -2509,7 +2510,7 @@ async function handleImportBooking(payload) {
   ].join("\n");
 
   var result = await claude(
-    sysLines.join("\n"), userPrompt, 512
+    sysLines.join("\n"), userPrompt, 512, undefined, HAIKU
   );
   validateOutput(result, "import_booking");
   return await verifyWithGooglePlaces(result, gpKey);
@@ -2984,42 +2985,18 @@ async function handlePlaceDetails(payload) {
     "types",
     "primaryTypeDisplayName",
     "currentOpeningHours",
-    "regularOpeningHours",
     "websiteUri",
     "nationalPhoneNumber",
-    "internationalPhoneNumber",
     "googleMapsUri",
     "photos",
     "editorialSummary",
     "reviews",
     "generativeSummary",
     "businessStatus",
-    "outdoorSeating",
-    "liveMusic",
     "reservable",
-    "servesBreakfast",
-    "servesLunch",
-    "servesDinner",
-    "servesBrunch",
-    "servesBeer",
-    "servesWine",
-    "servesCocktails",
-    "servesDessert",
-    "servesCoffee",
-    "servesVegetarianFood",
-    "goodForChildren",
-    "goodForGroups",
-    "goodForWatchingSports",
-    "allowsDogs",
-    "restroom",
-    "menuForChildren",
+    "dineIn",
     "takeout",
     "delivery",
-    "dineIn",
-    "curbsidePickup",
-    "accessibilityOptions",
-    "parkingOptions",
-    "paymentOptions",
   ].join(",");
   var resp = await fetch(url, {
     headers: {
@@ -3060,13 +3037,7 @@ async function handlePlacesNearby(payload) {
     "places.types",
     "places.primaryTypeDisplayName",
     "places.location",
-    "places.currentOpeningHours",
     "places.photos",
-    "places.editorialSummary",
-    "places.websiteUri",
-    "places.nationalPhoneNumber",
-    "places.googleMapsUri",
-    "places.reservable",
   ].join(",");
 
   // Always use searchText — it supports full keyword queries AND hard geographic
@@ -3587,7 +3558,7 @@ async function handleGenerateDescription(payload) {
   if (category) user += "\nCategory: " + category;
   if (type) user += "\nType: " + type;
 
-  var result = await claude(system, user, 200, 10000);
+  var result = await claude(system, user, 200, 10000, HAIKU);
   return { description: result.description || "" };
 }
 
@@ -3757,7 +3728,7 @@ Deno.serve(async (req) => {
     var usageCategory = getUsageCategory(action);
     var contentType = payload && payload.contentType ? payload.contentType : null;
 
-    if (false && userId && usageCategory) {
+    if (userId && usageCategory) {
       var usageCheck = await checkUsage(userId, action, contentType);
       if (!usageCheck.allowed) {
         return new Response(

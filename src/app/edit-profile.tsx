@@ -3,11 +3,15 @@ import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Image as ExpoImage } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, Radius } from '@/constants/theme';
 import { useProfile, TravelProfile } from '@/context/profile';
+import { useAuth } from '@/context/auth';
 import { useTheme } from '@/hooks/use-theme';
 import { clearOnboardingComplete } from '@/services/storage';
 
@@ -70,6 +74,12 @@ const MOBILITY_OPTIONS = [
   '🌿  Sensory-friendly environments',
 ];
 
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+function validateUsername(v: string): string {
+  if (!v) return '';
+  return USERNAME_RE.test(v) ? '' : 'Lowercase letters, numbers, underscores · 3–20 chars';
+}
+
 function ChipButton({ selected, label, onPress, theme }: { selected: boolean; label: string; onPress: () => void; theme: any }) {
   return (
     <Pressable
@@ -106,12 +116,25 @@ export default function EditProfileScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { profile, updateProfile, resetProfile } = useProfile();
+  const { user } = useAuth();
 
+  // Social profile fields — auto-fill from auth if not yet set
+  const authName = (user?.user_metadata?.full_name as string | undefined)
+    ?? user?.email?.split('@')[0]?.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim()
+    ?? '';
+  const derivedUsername = authName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 20);
+
+  const [displayName, setDisplayName] = useState(profile.displayName ?? authName);
+  const [username, setUsername] = useState(profile.username ?? derivedUsername);
+
+  const [avatarUri, setAvatarUri] = useState(profile.avatarUri ?? '');
+  const [usernameError, setUsernameError] = useState('');
+
+  // Travel preferences
   const [interests, setInterests] = useState([...profile.interests]);
   const [decisionPriorities, setDecisionPriorities] = useState([...(profile.decisionPriorities ?? [])]);
   const [crowdTolerance, setCrowdTolerance] = useState(profile.crowdTolerance ?? 'moderate');
   const [dietary, setDietary] = useState([...profile.dietaryRestrictions]);
-  const [dietaryNote, setDietaryNote] = useState(profile.dietaryNote ?? '');
   const [mobility, setMobility] = useState([...profile.mobilityNeeds]);
   const [customInterest, setCustomInterest] = useState('');
   const [customDietary, setCustomDietary] = useState('');
@@ -121,13 +144,37 @@ export default function EditProfileScreen() {
     return list.includes(item) ? list.filter((i) => i !== item) : [...list, item];
   }
 
+  async function handlePickAvatar() {
+    let { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      ({ status } = await ImagePicker.requestMediaLibraryPermissionsAsync());
+    }
+    if (status !== 'granted') {
+      Alert.alert('Photo Access Required', 'Allow Tripseek to access your photos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setAvatarUri(result.assets[0].uri);
+  }
+
   function handleSave() {
+    const usernameVal = username.trim().toLowerCase();
+    const err = validateUsername(usernameVal);
+    if (err) { setUsernameError(err); return; }
+
     updateProfile({
+      displayName: displayName.trim() || undefined,
+      username: usernameVal || undefined,
+
+      avatarUri: avatarUri || undefined,
       interests,
       decisionPriorities,
       crowdTolerance,
       dietaryRestrictions: dietary,
-      dietaryNote: dietaryNote.trim() || undefined,
       mobilityNeeds: mobility,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -159,7 +206,7 @@ export default function EditProfileScreen() {
         <Pressable onPress={() => router.back()} style={styles.headerBtn} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel">
           <ThemedText style={{ color: theme.textSecondary, fontSize: 16 }}>Cancel</ThemedText>
         </Pressable>
-        <ThemedText style={styles.headerTitle}>Edit Preferences</ThemedText>
+        <ThemedText style={styles.headerTitle}>Edit Profile</ThemedText>
         <Pressable onPress={handleSave} style={[styles.headerBtn, { alignItems: 'flex-end' }]} hitSlop={12} accessibilityRole="button" accessibilityLabel="Save">
           <ThemedText style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Save</ThemedText>
         </Pressable>
@@ -170,6 +217,55 @@ export default function EditProfileScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* ── Social profile ── */}
+          <Pressable onPress={handlePickAvatar} style={styles.editAvatarWrap} accessibilityRole="button" accessibilityLabel="Change profile photo">
+            {avatarUri ? (
+              <ExpoImage source={{ uri: avatarUri }} style={styles.editAvatar} contentFit="cover" />
+            ) : (
+              <View style={[styles.editAvatar, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                <ThemedText style={{ fontSize: 32, fontWeight: '700', color: theme.primary, lineHeight: 38, includeFontPadding: false }}>
+                  {(displayName[0] || (user?.user_metadata?.full_name as string | undefined)?.[0] || user?.email?.[0] || 'T').toUpperCase()}
+                </ThemedText>
+              </View>
+            )}
+            <View style={[styles.editCameraBadge, { backgroundColor: theme.backgroundElement, borderColor: theme.background }]}>
+              <SymbolView name="camera.fill" size={13} tintColor={theme.textSecondary} />
+            </View>
+          </Pressable>
+
+          <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>Name</ThemedText>
+          <TextInput
+            style={[styles.customInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement }]}
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="Your name"
+            placeholderTextColor={theme.textSecondary}
+            returnKeyType="next"
+            autoCorrect={false}
+          />
+
+          <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>Username</ThemedText>
+          <View style={[styles.usernameRow, { borderWidth: 1, borderRadius: Radius.lg, borderColor: usernameError ? theme.danger : theme.border, backgroundColor: theme.backgroundElement, marginTop: 4 }]}>
+            <ThemedText style={{ fontSize: 14, color: theme.textSecondary, paddingLeft: 14 }}>@</ThemedText>
+            <TextInput
+              style={{ flex: 1, color: theme.text, fontSize: 14, paddingHorizontal: 4, paddingVertical: 9 }}
+              value={username}
+              onChangeText={(v) => { const l = v.toLowerCase(); setUsername(l); setUsernameError(validateUsername(l)); }}
+              placeholder="username"
+              placeholderTextColor={theme.textSecondary}
+              returnKeyType="next"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          {usernameError ? (
+            <ThemedText style={{ fontSize: 12, color: theme.danger, marginTop: 4 }}>{usernameError}</ThemedText>
+          ) : null}
+
+          <View style={{ height: StyleSheet.hairlineWidth, marginVertical: 20, backgroundColor: theme.border }} />
+
+          {/* ── Travel preferences ── */}
+
           {/* Interests */}
           <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>What are you into?</ThemedText>
           <View style={styles.chipGrid}>
@@ -226,15 +322,6 @@ export default function EditProfileScreen() {
               returnKeyType="done"
             />
           </View>
-          <TextInput
-            style={[styles.customInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.backgroundElement, marginTop: 8 }]}
-            value={dietaryNote}
-            onChangeText={setDietaryNote}
-            placeholder="Notes (e.g. severe peanut allergy)..."
-            placeholderTextColor={theme.textSecondary}
-            returnKeyType="done"
-          />
-
           {/* Accessibility */}
           <ThemedText type="eyebrow" style={[styles.sectionLabel, { color: theme.textSecondary }]}>Accessibility needs</ThemedText>
           <View style={styles.chipGrid}>
@@ -286,4 +373,9 @@ const styles = StyleSheet.create({
   customInput: { borderWidth: 1, borderRadius: Radius.lg, paddingHorizontal: 14, paddingVertical: 9, fontSize: 14, width: '100%', marginTop: 4 },
   resetSection: { marginTop: 48, alignItems: 'center', gap: 8, paddingBottom: 24 },
   resetText: { fontSize: 15, fontWeight: '600' },
+  // Social profile
+  editAvatarWrap: { position: 'relative', alignSelf: 'center', marginTop: 8, marginBottom: 4 },
+  editAvatar: { width: 90, height: 90, borderRadius: 45 },
+  editCameraBadge: { position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  usernameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });

@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius } from '@/constants/theme';
@@ -102,6 +103,7 @@ export function TimePickerModal({
   onClose: () => void;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const parsed = parseTime(value);
   const [hour, setHour] = useState(parsed.hour12);
   const [minute, setMinute] = useState(parsed.minute);
@@ -117,7 +119,7 @@ export function TimePickerModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={pickerStyles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss">
+      <Pressable style={[pickerStyles.backdrop, { paddingTop: insets.top + 24 }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss">
         <Pressable style={[pickerStyles.sheet, { backgroundColor: theme.background }]} onPress={(e) => e.stopPropagation()} accessibilityRole="button" accessibilityLabel="Time picker">
           <View style={pickerStyles.handle} />
           <ThemedText type="subtitle" style={pickerStyles.title}>Set time</ThemedText>

@@ -212,9 +212,9 @@ function getDefaultSummary(): UsageSummary {
     imports_text_lifetime: 0,
     imports_image_lifetime: 0,
     limits: {
-      generations: 1,    // 1 trip generation/month on free
-      assistance: 20,    // 20 chat messages/month on free
-      imports: 3,        // 3 imports/month on free (unified across types)
+      generations: 1,   // 1 trip plan/month on free
+      assistance: 20,   // 20 messages/month on free
+      imports: 3,       // 3 imports/month on free
     },
   };
 }

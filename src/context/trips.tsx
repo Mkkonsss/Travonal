@@ -8,6 +8,7 @@ import { generateId } from '@/services/itinerary-engine';
 import { generateActivityId, normalizeTimeTo24 } from '@/services/ai-utils';
 import { useAuth } from '@/context/auth';
 import { pushTrips, pullTrips, deleteRemoteTrip, pullSharedTrips, subscribeToSharedTrips, leaveSharedTrip as syncLeaveSharedTrip, pushSharedTripData } from '@/services/sync';
+import { cancelAllTripNotifications, cancelOrphanedTripNotifications } from '@/services/notifications';
 
 export type ReservationType = 'restaurant' | 'hotel' | 'flight' | 'train' | 'activity' | 'other';
 
@@ -197,7 +198,6 @@ interface TripsContextType {
   removeActivity: (tripId: string, activityId: string, skipLockCheck?: boolean) => boolean;
   moveActivity: (tripId: string, activityId: string, newDay: number, newTime: string, skipLockCheck?: boolean) => boolean;
   toggleLock: (tripId: string, activityId: string) => void;
-  reorderActivities: (tripId: string, day: number, orderedIds: string[]) => void;
   replaceActivity: (tripId: string, oldActivityId: string, newActivity: Omit<Activity, 'id'>, skipLockCheck?: boolean) => boolean;
   setTripActivities: (tripId: string, activities: Activity[], changeDescription?: string, bypassLockProtection?: boolean) => void;
   updateTripPrepItems: (tripId: string, items: PrepItem[]) => void;
@@ -209,10 +209,6 @@ interface TripsContextType {
   removeReservation: (tripId: string, resId: string) => void;
   addInvitation: (tripId: string, inv: Omit<Invitation, 'id' | 'sentAt' | 'inviteCode'>) => string;
   removeInvitation: (tripId: string, invId: string) => void;
-  updateInvitationStatus: (tripId: string, invId: string, status: Invitation['status']) => void;
-  acceptInvitation: (tripId: string, invId: string) => void;
-  declineInvitation: (tripId: string, invId: string) => void;
-  addMember: (tripId: string, member: Omit<TripMember, 'id' | 'joinedAt'>) => void;
   removeMember: (tripId: string, memberId: string) => void;
   updateMemberRole: (tripId: string, memberId: string, role: TripMember['role']) => void;
   joinTrip: (trip: Trip, role: 'member' | 'viewer') => void;
@@ -234,8 +230,12 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadTripsSafe<Trip[]>(EMPTY_TRIPS).then((tripsResult) => {
       if (!tripsResult.ok) setTripsLoadError(true);
-      setTrips(tripsResult.data);
+      const loadedTrips = tripsResult.data;
+      setTrips(loadedTrips);
       setLoaded(true);
+      // Cancel any notifications from trips that no longer exist
+      const activeTripIds = new Set(loadedTrips.map((t) => t.id));
+      cancelOrphanedTripNotifications(activeTripIds).catch(() => {});
     });
   }, []);
 
@@ -394,6 +394,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   function deleteTrip(id: string) {
     setTrips((prev) => prev.filter((t) => t.id !== id));
     if (user?.id) deleteRemoteTrip(id);
+    cancelAllTripNotifications(id).catch(() => {});
   }
 
   const addActivity = useCallback((tripId: string, activity: Omit<Activity, 'id'>): boolean => {
@@ -861,7 +862,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         removeActivity,
         moveActivity,
         toggleLock,
-        reorderActivities,
         replaceActivity,
         setTripActivities,
         updateTripPrepItems,
@@ -873,10 +873,6 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         removeReservation,
         addInvitation,
         removeInvitation,
-        updateInvitationStatus,
-        acceptInvitation,
-        declineInvitation,
-        addMember,
         removeMember,
         updateMemberRole,
         joinTrip,

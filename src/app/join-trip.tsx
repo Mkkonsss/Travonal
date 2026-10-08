@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -9,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Trip } from '@/context/trips';
-import { findTripByInviteCode, claimInviteCode, getRoleForInviteCode } from '@/services/sync';
+import { findTripByInviteCode, claimInviteCode, getRoleForInviteCode, fetchOwnerIdentityForCode, type UserIdentity } from '@/services/sync';
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '';
@@ -26,6 +27,7 @@ export default function JoinTripScreen() {
   const [code, setCode] = useState(initialCode ?? '');
   const [searching, setSearching] = useState(false);
   const [foundTrip, setFoundTrip] = useState<Trip | null>(null);
+  const [ownerIdentity, setOwnerIdentity] = useState<UserIdentity | null>(null);
   const [error, setError] = useState('');
   const [joined, setJoined] = useState(false);
   const inputRef = useRef<TextInput>(null);
@@ -47,6 +49,7 @@ export default function JoinTripScreen() {
     if (q.length < 3) return;
     setError('');
     setFoundTrip(null);
+    setOwnerIdentity(null);
     setSearching(true);
     try {
       const trip = await findTripByInviteCode(q);
@@ -54,6 +57,7 @@ export default function JoinTripScreen() {
         setError('No trip found with that code. Check the code and try again.');
       } else {
         setFoundTrip(trip);
+        fetchOwnerIdentityForCode(q).then(setOwnerIdentity).catch(() => {});
       }
     } catch {
       setError('Something went wrong. Please try again.');
@@ -132,6 +136,27 @@ export default function JoinTripScreen() {
 
               <View style={[styles.cardDivider, { backgroundColor: theme.border }]} />
 
+              {ownerIdentity && (
+                <View style={styles.ownerRow}>
+                  {ownerIdentity.avatarUrl ? (
+                    <Image source={{ uri: ownerIdentity.avatarUrl }} style={styles.ownerAvatar} contentFit="cover" />
+                  ) : (
+                    <View style={[styles.ownerAvatar, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                      <ThemedText style={{ fontSize: 11, fontWeight: '700', color: theme.primary }}>
+                        {(ownerIdentity.displayName?.[0] ?? '?').toUpperCase()}
+                      </ThemedText>
+                    </View>
+                  )}
+                  <ThemedText style={[styles.ownerByline, { color: theme.textSecondary }]}>
+                    {ownerIdentity.username
+                      ? `Trip by @${ownerIdentity.username}`
+                      : ownerIdentity.displayName
+                        ? `Trip by ${ownerIdentity.displayName}`
+                        : 'Shared trip'}
+                  </ThemedText>
+                </View>
+              )}
+
               <ThemedText style={[styles.joinPrompt, { color: theme.textSecondary }]}>
                 You've been invited to join this trip
               </ThemedText>
@@ -190,7 +215,7 @@ export default function JoinTripScreen() {
               <TextInput
                 ref={inputRef}
                 value={normalized}
-                onChangeText={(t) => { setCode(t); setFoundTrip(null); setError(''); }}
+                onChangeText={(t) => { setCode(t); setFoundTrip(null); setOwnerIdentity(null); setError(''); }}
                 placeholder="e.g. TRV-A3X7K2"
                 placeholderTextColor={theme.textSecondary}
                 style={[styles.input, { color: theme.text }]}
@@ -226,6 +251,24 @@ export default function JoinTripScreen() {
                     <ThemedText style={[styles.previewActivities, { color: theme.textSecondary }]}>
                       {foundTrip.activities.length} activities planned
                     </ThemedText>
+                    {ownerIdentity && (
+                      <View style={[styles.ownerRow, { marginTop: 4 }]}>
+                        {ownerIdentity.avatarUrl ? (
+                          <Image source={{ uri: ownerIdentity.avatarUrl }} style={styles.ownerAvatar} contentFit="cover" />
+                        ) : (
+                          <View style={[styles.ownerAvatar, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                            <ThemedText style={{ fontSize: 9, fontWeight: '700', color: theme.primary }}>
+                              {(ownerIdentity.displayName?.[0] ?? '?').toUpperCase()}
+                            </ThemedText>
+                          </View>
+                        )}
+                        <ThemedText style={[styles.ownerByline, { color: theme.textSecondary }]}>
+                          {ownerIdentity.username
+                            ? `@${ownerIdentity.username}`
+                            : ownerIdentity.displayName ?? 'Shared trip'}
+                        </ThemedText>
+                      </View>
+                    )}
                   </View>
                 </View>
                 {alreadyJoined ? (
@@ -385,4 +428,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchBtnText: { fontSize: 16, fontWeight: '600' },
+
+  ownerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ownerAvatar: { width: 22, height: 22, borderRadius: 11 },
+  ownerByline: { fontSize: 13 },
 });

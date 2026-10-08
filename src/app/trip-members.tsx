@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
@@ -11,7 +11,10 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Invitation, type TripMember } from '@/context/trips';
-import { registerInviteCode } from '@/services/sync';
+import { registerInviteCode, fetchTripAllParticipants, fetchUserIdentities, type UserIdentity } from '@/services/sync';
+import { useProfile } from '@/context/profile';
+import { useAuth } from '@/context/auth';
+import { useGate } from '@/hooks/use-gate';
 
 const ROLE_LABELS: Record<string, string> = { owner: 'Owner', member: 'Can edit', viewer: 'View only' };
 
@@ -26,9 +29,33 @@ export default function TripMembersScreen() {
   const theme = useTheme();
   const { id: tripId } = useLocalSearchParams<{ id: string }>();
   const { trips, addInvitation, removeInvitation, removeMember, updateMemberRole, leaveSharedTrip } = useTrips();
+  const { profile } = useProfile();
+  const { user } = useAuth();
+  const inviteGate = useGate('invite_member');
 
   const trip = trips.find((t) => t.id === tripId);
   const inviteCode = trip?.invitations?.find((i) => i.status === 'pending')?.inviteCode;
+
+  const [participants, setParticipants] = useState<Array<{ userId: string; role: string }>>([]);
+  const [identities, setIdentities] = useState<Map<string, UserIdentity>>(() => {
+    // Seed with the current user's own identity immediately — no network needed
+    const map = new Map<string, UserIdentity>();
+    return map;
+  });
+
+  // Build current user's identity from local profile — used as instant fallback
+  const authName = (user?.user_metadata?.full_name as string | undefined)
+    ?? user?.email?.split('@')[0]?.replace(/[._-]+/g, ' ') ?? '';
+  const selfIdentity: UserIdentity | null = user?.id ? {
+    userId: user.id,
+    displayName: profile.displayName || authName || undefined,
+    username: profile.username || undefined,
+    avatarUrl: profile.avatarUri || undefined, // local URI is fine on own device
+  } : null;
+
+  // Always include the current user as a participant immediately
+  const currentUserRole = trip?.joinedAs ?? 'owner';
+  const selfParticipant = user?.id ? { userId: user.id, role: currentUserRole } : null;
 
   useEffect(() => {
     if (inviteCode) {
@@ -36,6 +63,23 @@ export default function TripMembersScreen() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteCode]);
+
+  useEffect(() => {
+    if (!tripId) return;
+    let cancelled = false;
+    fetchTripAllParticipants(tripId).then(async (rows) => {
+      if (cancelled) return;
+      setParticipants(rows);
+      const otherIds = rows.map((r) => r.userId).filter((id) => id !== user?.id);
+      const map = await fetchUserIdentities(otherIds);
+      // Always override current user's identity with local profile (includes local avatarUri)
+      if (user?.id && selfIdentity) map.set(user.id, selfIdentity);
+      if (!cancelled) setIdentities(map);
+    }).catch(() => {
+      // Even if fetch fails, show at least the current user
+    });
+    return () => { cancelled = true; };
+  }, [tripId, user?.id]);
 
   if (!trip) return null;
 
@@ -51,6 +95,7 @@ export default function TripMembersScreen() {
 
   async function handleShareInvite() {
     if (!trip) return;
+    if (!inviteGate.allowed) { inviteGate.showUpgrade(); return; }
     let code = inviteCode;
     if (!code) {
       code = addInvitation(tripId, { status: 'pending', role: 'member' });
@@ -138,41 +183,60 @@ export default function TripMembersScreen() {
           </View>
         )}
 
-        {/* Members */}
-        {members.length > 0 && (
-          <View style={styles.section}>
-            <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Members</ThemedText>
-            <View style={[styles.membersCard, { borderColor: theme.border }]}>
-              {members.map((member, i) => (
-                <Animated.View key={member.id} entering={FadeInDown.delay(i * 40).springify()}>
-                  <View style={[styles.memberRow, { borderBottomColor: theme.border }, i === members.length - 1 && { borderBottomWidth: 0 }]}>
-                    <View style={[styles.memberAvatar, { backgroundColor: theme.primaryMuted }]}>
-                      <ThemedText style={[styles.memberInitial, { color: theme.primary }]}>
-                        {(member.name || '?')[0].toUpperCase()}
-                      </ThemedText>
-                    </View>
-                    <View style={styles.memberInfo}>
-                      <ThemedText style={styles.memberName}>{member.name || 'Unnamed'}</ThemedText>
-                      <ThemedText style={[styles.memberRole, { color: theme.textSecondary }]}>
-                        {ROLE_LABELS[member.role] ?? member.role}
-                      </ThemedText>
-                    </View>
-                    {member.role !== 'owner' && (
-                      <View style={styles.memberActions}>
-                        <Pressable onPress={() => handleToggleRole(member)} hitSlop={8} style={styles.memberActionBtn}>
-                          <SymbolView name="arrow.left.arrow.right" size={14} tintColor={theme.textSecondary} />
-                        </Pressable>
-                        <Pressable onPress={() => handleRemoveMember(member)} hitSlop={8} style={styles.memberActionBtn}>
-                          <SymbolView name="xmark" size={14} tintColor={theme.danger ?? '#FF3B30'} />
-                        </Pressable>
+        {/* Members — always shown, seeded with current user instantly */}
+        {(() => {
+          const allParticipants = selfParticipant
+            ? [selfParticipant, ...participants.filter((p) => p.userId !== selfParticipant.userId)]
+            : participants;
+          const displayIdentities = new Map(identities);
+          if (selfParticipant && selfIdentity) displayIdentities.set(selfParticipant.userId, selfIdentity);
+          return (
+            <View style={styles.section}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Members</ThemedText>
+              <View style={[styles.membersCard, { borderColor: theme.border }]}>
+                {allParticipants.map((p, i) => {
+                  const identity = displayIdentities.get(p.userId);
+                  const displayName = identity?.displayName ?? (p.role === 'owner' ? 'Owner' : 'Member');
+                  const username = identity?.username;
+                  const avatarUrl = identity?.avatarUrl;
+                  const initial = (displayName[0] ?? '?').toUpperCase();
+                  const membersByRole = members.filter((m) => m.role === p.role);
+                  const roleIndex = allParticipants.filter((x) => x.role === p.role).indexOf(p);
+                  const tripMember = membersByRole[roleIndex];
+                  return (
+                    <Animated.View key={p.userId} entering={FadeInDown.delay(i * 40).springify()}>
+                      <View style={[styles.memberRow, { borderBottomColor: theme.border }, i === allParticipants.length - 1 && { borderBottomWidth: 0 }]}>
+                        {avatarUrl ? (
+                          <Image source={{ uri: avatarUrl }} style={styles.memberAvatar} contentFit="cover" />
+                        ) : (
+                          <View style={[styles.memberAvatar, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                            <ThemedText style={[styles.memberInitial, { color: theme.primary }]}>{initial}</ThemedText>
+                          </View>
+                        )}
+                        <View style={styles.memberInfo}>
+                          <ThemedText style={styles.memberName}>{displayName}</ThemedText>
+                          <ThemedText style={[styles.memberRole, { color: theme.textSecondary }]}>
+                            {username ? `@${username} · ` : ''}{ROLE_LABELS[p.role] ?? p.role}
+                          </ThemedText>
+                        </View>
+                        {p.role !== 'owner' && tripMember && (
+                          <View style={styles.memberActions}>
+                            <Pressable onPress={() => handleToggleRole(tripMember)} hitSlop={8} style={styles.memberActionBtn}>
+                              <SymbolView name="arrow.left.arrow.right" size={14} tintColor={theme.textSecondary} />
+                            </Pressable>
+                            <Pressable onPress={() => handleRemoveMember(tripMember)} hitSlop={8} style={styles.memberActionBtn}>
+                              <SymbolView name="xmark" size={14} tintColor={theme.danger ?? '#FF3B30'} />
+                            </Pressable>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
-                </Animated.View>
-              ))}
+                    </Animated.View>
+                  );
+                })}
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* Leave trip */}
         {trip.joinedAs && (

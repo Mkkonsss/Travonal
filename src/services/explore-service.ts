@@ -6,6 +6,7 @@
  * and editorial summaries.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NormalizedPlace, normalizeGooglePlace, mapGoogleTypeToCategory } from './place-model';
 import { searchPlace as photonSearch } from './geocoder';
 
@@ -23,6 +24,31 @@ export const CATEGORY_QUERIES: Record<string, { label: string; keyword: string; 
   'nightlife': { label: 'Nightlife', keyword: 'bars nightlife' },
   'shopping': { label: 'Shopping', keyword: 'shopping' },
 };
+
+/** Google place types that are not relevant for travel recommendations */
+const EXCLUDED_GOOGLE_TYPES = new Set([
+  // Retail / stores
+  'convenience_store', 'grocery_store', 'supermarket', 'department_store',
+  'drugstore', 'hardware_store', 'home_goods_store', 'furniture_store',
+  'clothing_store', 'shoe_store', 'jewelry_store', 'book_store',
+  'electronics_store', 'pet_store', 'bicycle_store', 'car_dealer',
+  'car_rental', 'gas_station', 'parking', 'auto_parts_store',
+  // Health / services
+  'hospital', 'doctor', 'dentist', 'pharmacy', 'physiotherapist',
+  'veterinary_care', 'insurance_agency', 'bank', 'atm',
+  'post_office', 'courier_service', 'laundry', 'hair_care',
+  'beauty_salon', 'storage', 'funeral_home', 'lawyer',
+  // Civic
+  'local_government_office', 'courthouse', 'police', 'fire_station',
+  'embassy', 'school', 'primary_school', 'secondary_school', 'university',
+]);
+
+/** Returns true if a place should be excluded from travel recommendations */
+function isTravelIrrelevant(place: NormalizedPlace): boolean {
+  const types = place.googleTypes ?? [];
+  // Exclude if any primary type matches the exclusion list
+  return types.some((t) => EXCLUDED_GOOGLE_TYPES.has(t));
+}
 
 /** Deduplicate places by placeId */
 export function dedupeByPlaceId(places: NormalizedPlace[]): NormalizedPlace[] {
@@ -162,15 +188,36 @@ async function callExploreEdge<T>(action: string, payload: unknown): Promise<T> 
   return json.data as T;
 }
 
-// ── In-memory results cache ──
+// ── Results cache (in-memory + AsyncStorage persistence) ──
 
 const resultsCache = new Map<string, { data: NormalizedPlace[]; ts: number }>();
-const RESULTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const RESULTS_CACHE_TTL = 30 * 60 * 1000; // 30 minutes (in-memory)
+const PERSIST_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours (AsyncStorage)
+const PERSIST_CACHE_PREFIX = 'explore_cache_';
 
 function resultsCacheKey(lat: number, lng: number, keyword: string): string {
   const rLat = Math.round(lat * 1000) / 1000;
   const rLng = Math.round(lng * 1000) / 1000;
   return `${rLat},${rLng},${keyword}`;
+}
+
+async function getPersistedCache(key: string): Promise<NormalizedPlace[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PERSIST_CACHE_PREFIX + key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data: NormalizedPlace[]; ts: number };
+    if (Date.now() - parsed.ts > PERSIST_CACHE_TTL) {
+      AsyncStorage.removeItem(PERSIST_CACHE_PREFIX + key).catch(() => {});
+      return null;
+    }
+    resultsCache.set(key, parsed);
+    return parsed.data;
+  } catch { return null; }
+}
+
+function persistCache(key: string, data: NormalizedPlace[]): void {
+  const entry = { data, ts: Date.now() };
+  AsyncStorage.setItem(PERSIST_CACHE_PREFIX + key, JSON.stringify(entry)).catch(() => {});
 }
 
 // ── Interest → query mapping for For You personalization ──
@@ -228,12 +275,12 @@ function buildForYouQueries(options: {
     : ['top attractions', 'popular cafes'];
 
   const combined = [
-    ...interestQueries.slice(0, 4),
+    ...interestQueries.slice(0, 2),
     ...(crowdQuery ? [crowdQuery] : []),
     ...(priorityQuery ? [priorityQuery] : []),
     ...defaults,
   ];
-  return [...new Set(combined)].slice(0, 6);
+  return [...new Set(combined)].slice(0, 3);
 }
 
 /** Soft-sort for crowd-sensitive users: deprioritize very high review-count places */
@@ -252,7 +299,7 @@ export async function fetchExplorePlaces(
   options?: { interests?: string[]; crowdTolerance?: string; decisionPriorities?: string[]; pace?: string },
 ): Promise<NormalizedPlace[]> {
   const coords = await resolveCoordinates(location);
-  if (!coords) return [];
+  if (!coords) throw new Error('GEOCODE_FAILED');
 
   const { lat, lng } = coords;
   const catQuery = CATEGORY_QUERIES[category] ?? CATEGORY_QUERIES.for_you;
@@ -270,6 +317,9 @@ export async function fetchExplorePlaces(
   if (cached && Date.now() - cached.ts < RESULTS_CACHE_TTL) {
     return cached.data;
   }
+  // Fallback: check persistent cache (AsyncStorage)
+  const persisted = await getPersistedCache(cKey);
+  if (persisted) return persisted;
 
   const initialRadius = location.type === 'current' ? 15000 : 20000;
 
@@ -287,7 +337,7 @@ export async function fetchExplorePlaces(
 
   // Fetch all keywords in parallel, with radius expansion for rural areas
   async function fetchWithExpansion(keyword: string): Promise<Record<string, unknown>[]> {
-    for (const radius of [initialRadius, initialRadius * 3, initialRadius * 6]) {
+    for (const radius of [initialRadius, initialRadius * 3]) {
       const result = await callExploreEdge<{ places: Record<string, unknown>[] }>(
         'places_nearby',
         { lat, lng, radius, keyword },
@@ -312,7 +362,7 @@ export async function fetchExplorePlaces(
 
   // Sort by distance
   places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
-  places = dedupeByPlaceId(places);
+  places = dedupeByPlaceId(places).filter((p) => !isTravelIrrelevant(p));
 
   // Filter stays to only actual lodging places, then rank by quality
   if (category === 'stays') {
@@ -328,7 +378,9 @@ export async function fetchExplorePlaces(
     places = applyCrowdSort(places, options.crowdTolerance);
   }
 
-  resultsCache.set(cKey, { data: places, ts: Date.now() });
+  const entry = { data: places, ts: Date.now() };
+  resultsCache.set(cKey, entry);
+  persistCache(cKey, places);
   return places;
 }
 
@@ -361,7 +413,7 @@ export async function searchExplorePlaces(
   });
   places.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
 
-  const deduped = dedupeByPlaceId(places);
+  const deduped = dedupeByPlaceId(places).filter((p) => !isTravelIrrelevant(p));
   // Apply stay ranking for hotel-like searches
   const isHotelSearch = /hotel|stay|accommodation|lodge|hostel/i.test(query);
   return isHotelSearch ? rankStayResults(deduped) : deduped;

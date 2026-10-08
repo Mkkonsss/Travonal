@@ -816,10 +816,10 @@ export default function HomeScreen() {
                 <ThemedText style={[styles.getStartedLabel, { color: theme.text }]}>Get started</ThemedText>
                 <View style={styles.ctaGrid}>
                   {([
-                    { label: 'Plan a trip', image: require('@/assets/images/sign-up-hero.png'), route: '/add-trip' },
-                    { label: 'Make a board', image: require('@/assets/images/icon-boards-empty.png'), route: '/inbox' },
-                    { label: 'My bookings', image: require('@/assets/images/onboarding-slide-2.png'), route: '/bookings' },
-                  ] as const).map(({ label, image, route }, i) => (
+                    { label: 'Plan a trip', image: require('@/assets/images/sign-up-hero.png'), route: '/add-trip', rotate: '0deg' },
+                    { label: 'Make a board', image: require('@/assets/images/icon-boards-empty.png'), route: '/inbox', rotate: '0deg' },
+                    { label: 'My bookings', image: require('@/assets/images/onboarding-slide-2.png'), route: '/bookings', rotate: '12deg' },
+                  ] as const).map(({ label, image, route, rotate }, i) => (
                     <React.Fragment key={label}>
                       {i > 0 && <View style={[styles.ctaDivider, { backgroundColor: '#000' }]} />}
                       <Pressable
@@ -828,7 +828,7 @@ export default function HomeScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={label}
                       >
-                        <ExpoImage source={image} style={{ width: 52, height: 52 }} contentFit="contain" />
+                        <ExpoImage source={image} style={{ width: 52, height: 52, transform: [{ rotate }] }} contentFit="contain" />
                         <ThemedText style={[styles.ctaSquareLabel, { color: theme.text }]}>{label}</ThemedText>
                       </Pressable>
                     </React.Fragment>
@@ -905,7 +905,7 @@ export default function HomeScreen() {
             {/* Active trips */}
             {activeTrips.length > 0 && (
               <View style={{ gap: 10 }}>
-                <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>In progress</ThemedText>
+                <ThemedText style={[styles.tripSectionTitle, { color: theme.text }]}>In progress</ThemedText>
                 <TripCardCarousel trips={activeTrips} onDelete={handleDeleteTrip} />
               </View>
             )}
@@ -913,7 +913,7 @@ export default function HomeScreen() {
             {/* Upcoming trips */}
             {upcomingTrips.length > 0 && (
               <View style={{ gap: 10 }}>
-                <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>Upcoming</ThemedText>
+                <ThemedText style={[styles.tripSectionTitle, { color: theme.text }]}>Upcoming</ThemedText>
                 <TripCardCarousel trips={upcomingTrips} onDelete={handleDeleteTrip} />
               </View>
             )}
@@ -921,7 +921,7 @@ export default function HomeScreen() {
             {/* Planned trips (dates TBD) */}
             {plannedTrips.length > 0 && (
               <View style={{ gap: 10 }}>
-                <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>Planned</ThemedText>
+                <ThemedText style={[styles.tripSectionTitle, { color: theme.text }]}>Planned</ThemedText>
                 <TripCardCarousel trips={plannedTrips} onDelete={handleDeleteTrip} />
               </View>
             )}
@@ -929,7 +929,7 @@ export default function HomeScreen() {
             {/* Draft trips */}
             {draftTrips.length > 0 && (
               <View style={{ gap: 10 }}>
-                <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>Drafts</ThemedText>
+                <ThemedText style={[styles.tripSectionTitle, { color: theme.text }]}>Drafts</ThemedText>
                 <TripCardCarousel trips={draftTrips} onDelete={handleDeleteTrip} />
               </View>
             )}
@@ -943,10 +943,10 @@ export default function HomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={showPastTrips ? 'Hide past trips' : 'Show past trips'}
                 >
-                  <ThemedText style={[styles.tripSectionTitle, { color: theme.textSecondary }]}>
+                  <ThemedText style={[styles.tripSectionTitle, { color: theme.text }]}>
                     Past ({pastTrips.length})
                   </ThemedText>
-                  <SymbolView name={showPastTrips ? 'chevron.up' : 'chevron.down'} size={12} tintColor={theme.textSecondary} />
+                  <SymbolView name={showPastTrips ? 'chevron.up' : 'chevron.down'} size={12} tintColor={theme.text} />
                 </Pressable>
                 {showPastTrips && (
                   <TripCardCarousel trips={pastTrips} onDelete={handleDeleteTrip} />

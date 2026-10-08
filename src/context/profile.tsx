@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { loadProfileSafe, saveProfile } from '@/services/storage';
 import { useAuth } from '@/context/auth';
-import { pushProfile, pullProfile } from '@/services/sync';
+import { pushProfile, pullProfile, pushPublicIdentity } from '@/services/sync';
 
 export interface TravelProfile {
   pace: 'relaxed' | 'moderate' | 'active';
@@ -29,6 +29,14 @@ export interface TravelProfile {
   recommendationStyle?: 'best' | 'few' | 'explore';
   /** Home city/airport for flight search (e.g. "New York" or "JFK") */
   departureCity?: string;
+  /** User-visible display name (overrides the email-derived name) */
+  displayName?: string;
+  /** @-handle (lowercase, alphanumeric + underscores, 3–20 chars) */
+  username?: string;
+  /** Short bio shown on the profile header (≤150 chars) */
+  bio?: string;
+  /** Local file URI of the avatar photo (from expo-image-picker) */
+  avatarUri?: string;
 }
 
 const DEFAULT_PROFILE: TravelProfile = {
@@ -112,6 +120,16 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     };
   }, [profile, loaded, user?.id]);
+
+  // Push public identity whenever the display fields change
+  useEffect(() => {
+    if (!loaded || !user?.id) return;
+    pushPublicIdentity(user.id, {
+      displayName: profile.displayName,
+      username: profile.username,
+      avatarUrl: profile.avatarUri,
+    }).catch(() => {});
+  }, [profile.displayName, profile.username, profile.avatarUri, loaded, user?.id]);
 
   function updateProfile(updates: Partial<TravelProfile>) {
     setProfile((prev) => ({ ...prev, ...updates }));

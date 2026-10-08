@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -10,6 +10,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Reservation, Trip } from '@/context/trips';
 import { searchFlightsAI, type FlightResult } from '@/services/ai';
+import { useActivityPhotos, type ActivityNameHint } from '@/hooks/use-activity-photos';
 
 // TODO: Replace with your real Booking.com affiliate ID once approved
 const BOOKING_AFFILIATE_ID = 'YOUR_AID_HERE';
@@ -84,7 +85,16 @@ export interface FlightsStripProps {
   reservations: Reservation[];
   departureCity?: string;
   onAddFlight: () => void;
-  onViewFlight: (reservation: Reservation) => void;
+  onViewFlight: (reservation: Reservation, logoUrl?: string) => void;
+  onRemoveFlight?: (reservation: Reservation) => void;
+}
+
+export function getAirlineLogoUrl(flightNumber?: string, title?: string): string | null {
+  const source = (flightNumber || title || '').trim();
+  const match = source.match(/^([A-Z]{2})\s*\d/i);
+  if (!match) return null;
+  const code = match[1].toUpperCase();
+  return `https://pics.avs.io/200/200/${code}.png`;
 }
 
 function formatRoute(origin?: string, destination?: string, title?: string): string {
@@ -119,10 +129,22 @@ export const FlightsStrip = memo(function FlightsStrip({
   departureCity,
   onAddFlight,
   onViewFlight,
+  onRemoveFlight,
 }: FlightsStripProps) {
   const theme = useTheme();
   const [suggestedFlights, setSuggestedFlights] = useState<FlightResult[]>([]);
   const [flightsLoading, setFlightsLoading] = useState(false);
+
+  // Fetch photos for saved flight reservations (same as My Bookings)
+  const flightPhotoHints = useMemo((): ActivityNameHint[] =>
+    reservations.map((r) => ({
+      key: `${r.title}::${trip.destination}`,
+      name: r.title,
+      destination: trip.destination,
+    })),
+    [reservations, trip.destination]
+  );
+  const { photos: flightPhotoMap } = useActivityPhotos([], undefined, flightPhotoHints);
 
   // Reset suggestions when trip changes
   useEffect(() => {
@@ -293,27 +315,59 @@ export const FlightsStrip = memo(function FlightsStrip({
           const booked = !!res.confirmationNumber;
           const route = formatRoute(res.origin, res.destination, res.title);
           const dateStr = formatFlightDate(res.date, res.time);
+          const photoUrl = flightPhotoMap.get(`${res.title}::${trip.destination}`);
+          const logoUrl = getAirlineLogoUrl(res.flightNumber, res.title);
 
           return (
             <Pressable
               key={res.id}
-              onPress={() => onViewFlight(res)}
+              onPress={() => onViewFlight(res, photoUrl ?? logoUrl ?? undefined)}
               style={({ pressed }) => [s.gridCard, pressed && { opacity: 0.85 }]}
               accessibilityRole="button"
               accessibilityLabel={route}
             >
               {/* Dark gradient background */}
               <LinearGradient colors={['#2a2f3d', '#1a1e28']} style={StyleSheet.absoluteFill} />
+              {/* Photo (from activity photos) or airline logo or airplane icon */}
+              {photoUrl ? (
+                <ExpoImage
+                  source={{ uri: photoUrl }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              ) : (
+                <View style={s.airlineLogoCenter}>
+                  {logoUrl ? (
+                    <ExpoImage
+                      source={{ uri: logoUrl }}
+                      style={s.airlineLogoImg}
+                      contentFit="contain"
+                      cachePolicy="memory-disk"
+                    />
+                  ) : (
+                    <SymbolView name="airplane" size={36} tintColor="rgba(255,255,255,0.25)" />
+                  )}
+                </View>
+              )}
               <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.75)']}
                 locations={[0.3, 1]}
                 style={StyleSheet.absoluteFill}
               />
 
-              {/* Airplane icon — top right */}
-              <View style={s.cardTypeIcon}>
-                <SymbolView name="airplane" size={16} tintColor="rgba(255,255,255,0.7)" />
-              </View>
+              {/* Remove button — top right */}
+              {onRemoveFlight && (
+                <Pressable
+                  onPress={(e) => { e.stopPropagation(); onRemoveFlight(res); }}
+                  hitSlop={8}
+                  style={s.cardTypeIcon}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove flight"
+                >
+                  <SymbolView name="xmark.circle.fill" size={22} tintColor="rgba(255,255,255,0.9)" />
+                </Pressable>
+              )}
 
               {/* Status badge — top left */}
               <View style={s.cardStatusPos}>
@@ -455,6 +509,15 @@ const s = StyleSheet.create({
     borderRadius: Radius.md,
     overflow: 'hidden',
     backgroundColor: '#1a1e28',
+  },
+  airlineLogoCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  airlineLogoImg: {
+    width: 72,
+    height: 72,
   },
   cardTypeIcon: {
     position: 'absolute',

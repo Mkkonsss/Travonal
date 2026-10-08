@@ -19,14 +19,11 @@ export type GatedAction =
   | 'generate_trip'
   | 'chat'
   | 'edit_trip'
-  | 'analyze_trip'
-  | 'prepare_fix'
   | 'natural_search'
-  | 'enhance_profile'
-  | 'rank_places'
   | 'import_place'
   | 'export_pdf'
-  | 'invite_member';
+  | 'invite_member'
+  | 'offline_trip';
 
 export interface GateResult {
   /** Whether the user is currently allowed to perform this action */
@@ -56,25 +53,9 @@ const UPGRADE_MESSAGES: Record<string, { title: string; desc: string }> = {
     title: 'AI trip editing',
     desc: 'Let AI restructure your itinerary based on your instructions.',
   },
-  analyze_trip: {
-    title: 'Trip analysis',
-    desc: 'Get a detailed breakdown of your trip\'s pacing, variety, and budget.',
-  },
-  prepare_fix: {
-    title: 'Smart trip fixes',
-    desc: 'Automatically resolve schedule conflicts and issues with one tap.',
-  },
   natural_search: {
     title: 'Natural language search',
     desc: 'Search for activities in plain English — "a cozy cafe near the museum".',
-  },
-  enhance_profile: {
-    title: 'Advanced personalization',
-    desc: 'Let AI learn deeper from your preferences for better recommendations.',
-  },
-  rank_places: {
-    title: 'Personalized recommendations',
-    desc: 'Get AI-ranked "For You" recommendations based on your taste.',
   },
   import_place: {
     title: 'Import more places',
@@ -88,6 +69,10 @@ const UPGRADE_MESSAGES: Record<string, { title: string; desc: string }> = {
     title: 'Invite travel companions',
     desc: 'Share your trip and plan together with Tripseek+.',
   },
+  offline_trip: {
+    title: 'Offline trip access',
+    desc: 'Download your trip to access it without an internet connection.',
+  },
 };
 
 export function useGate(action: GatedAction, contentType?: ImportContentType): GateResult {
@@ -95,15 +80,15 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
   const router = useRouter();
 
   const result = useMemo((): Omit<GateResult, 'showUpgrade'> => {
-    // Bypass gating in development
-    if (__DEV__) {
+    // Bypass gating in development (except offline_trip for UI testing)
+    if (__DEV__ && action !== 'offline_trip') {
       return { allowed: true, remaining: 99, total: 99, reason: '', isPlus };
     }
 
     const category = getActionCategory(action);
 
     // Plus-only actions that are gated by tier but not metered
-    if (action === 'export_pdf') {
+    if (action === 'export_pdf' || action === 'offline_trip') {
       if (!isPlus) {
         const msg = UPGRADE_MESSAGES[action]?.desc ?? 'Upgrade to Tripseek+ to use this feature.';
         return { allowed: false, remaining: 0, total: 0, reason: msg, isPlus: false };
@@ -130,7 +115,7 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve used all 5 AI plans this month.' : '',
+          reason: remaining <= 0 ? `You've used all ${limit} AI plans this month.` : '',
           isPlus,
         };
       }
@@ -141,7 +126,7 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve used all 100 AI messages this month.' : '',
+          reason: remaining <= 0 ? `You've used all ${limit} AI messages this month.` : '',
           isPlus,
         };
       }
@@ -152,7 +137,7 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
           allowed: remaining > 0,
           remaining: Math.max(0, remaining),
           total: limit,
-          reason: remaining <= 0 ? 'You\'ve added all 15 places from links this month.' : '',
+          reason: remaining <= 0 ? `You've added all ${limit} places this month.` : '',
           isPlus,
         };
       }
@@ -178,20 +163,18 @@ export function useGate(action: GatedAction, contentType?: ImportContentType): G
     }
 
     if (category === 'assistance') {
-      // Only chat is free (20/month)
       const limit = usage.limits.assistance ?? 20;
       const remaining = limit - usage.assistance_used;
       return {
         allowed: remaining > 0,
         remaining: Math.max(0, remaining),
         total: limit,
-        reason: remaining <= 0 ? 'You\'ve used your 20 free AI messages this month. Upgrade for 100 per month.' : '',
+        reason: remaining <= 0 ? `You've used your ${limit} free AI messages this month. Upgrade for 100 per month.` : '',
         isPlus: false,
       };
     }
 
     if (category === 'import') {
-      // Unified monthly limit across all import types
       const limit = usage.limits.imports ?? 3;
       const remaining = limit - usage.imports_used;
       return {

@@ -1629,11 +1629,15 @@ export default function ChatScreen() {
             <ChatMarkdown text={item.text} isUser={isUser} />
           </View>
           {isUser && (
-            <View style={[styles.avatarCircle, { backgroundColor: theme.primaryMuted }]}>
-              <ThemedText style={[styles.avatarLabel, { color: theme.primary }]}>
-                {((user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
-              </ThemedText>
-            </View>
+            profile.avatarUri ? (
+              <ExpoImage source={{ uri: profile.avatarUri }} style={styles.avatarCircle} contentFit="cover" />
+            ) : (
+              <View style={[styles.avatarCircle, { backgroundColor: theme.primaryMuted, alignItems: 'center', justifyContent: 'center' }]}>
+                <ThemedText style={[styles.avatarLabel, { color: theme.primary }]}>
+                  {(profile.displayName?.[0] ?? (user?.user_metadata?.full_name as string | undefined)?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase()}
+                </ThemedText>
+              </View>
+            )
           )}
         </View>
         {timeStr && (
@@ -1958,6 +1962,31 @@ export default function ChatScreen() {
               );})}
             </ScrollView>
 
+            {threads.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  Alert.alert('Clear all chats', 'This will permanently delete all your chat history.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Clear',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await Promise.all([saveChatMessages([]), saveChatThreads([])]);
+                        setThreads([]);
+                        setMessages([]);
+                        setActiveThreadId(null);
+                        setShowThreadList(false);
+                      },
+                    },
+                  ]);
+                }}
+                style={styles.clearChatsBtn}
+                accessibilityRole="button"
+              >
+                <ThemedText style={[styles.clearChatsBtnText, { color: theme.textSecondary }]}>Clear all chats</ThemedText>
+              </Pressable>
+            )}
+
             {/* Thread options overlay — rendered inside this modal so it appears on top */}
             {threadOptionsId && (() => {
               const optThread = threads.find((t) => t.id === threadOptionsId);
@@ -2279,6 +2308,15 @@ const styles = StyleSheet.create({
   threadNewBtnText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  clearChatsBtn: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  clearChatsBtnText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   threadList: {
     maxHeight: 400,

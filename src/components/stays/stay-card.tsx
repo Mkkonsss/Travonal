@@ -31,6 +31,7 @@ interface StayCardProps {
     danger: string;
   };
   onViewStay: (activity: Activity, reservation?: Reservation) => void;
+  onRemove?: (activity: Activity) => void;
 }
 
 export const StayCard = memo(function StayCard({
@@ -41,6 +42,7 @@ export const StayCard = memo(function StayCard({
   gridMode = false,
   theme,
   onViewStay,
+  onRemove,
 }: StayCardProps) {
   const b = block;
   const isCancelled = b.reservation?.cancelled;
@@ -103,6 +105,7 @@ export const StayCard = memo(function StayCard({
         style={StyleSheet.absoluteFill}
       />
 
+
       {/* Status badge — top right */}
       <View style={s.statusPos}>
         <View style={[s.statusBadge, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
@@ -142,6 +145,12 @@ const s = StyleSheet.create({
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  removeBtn: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    zIndex: 10,
   },
   statusPos: {
     position: 'absolute',

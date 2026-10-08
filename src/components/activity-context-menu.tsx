@@ -14,47 +14,97 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Activity } from '@/context/trips';
-import type { MemoryCategory } from '@/context/memory';
+import type { MemoryCategory, TravelMemoryEntry } from '@/context/memory';
 
 export interface ReactionOption {
   label: string;
   icon: string;
+  sentiment: 'positive' | 'negative';
+  memoryType: TravelMemoryEntry['type'];
   memoryDetail: (activity: Activity) => string;
   memoryCategory: MemoryCategory;
 }
 
-export const REACTIONS: ReactionOption[] = [
+const LIKED_REACTIONS: ReactionOption[] = [
+  {
+    label: 'Loved it',
+    icon: 'heart.fill',
+    sentiment: 'positive',
+    memoryType: 'preference_saved',
+    memoryDetail: (a) => `Loved "${a.title}"`,
+    memoryCategory: 'preference',
+  },
+  {
+    label: 'Great value',
+    icon: 'dollarsign.circle.fill',
+    sentiment: 'positive',
+    memoryType: 'preference_saved',
+    memoryDetail: (a) => `"${a.title}" was great value`,
+    memoryCategory: 'budget',
+  },
+  {
+    label: 'Hidden gem',
+    icon: 'sparkles',
+    sentiment: 'positive',
+    memoryType: 'preference_saved',
+    memoryDetail: (a) => `"${a.title}" was a hidden gem`,
+    memoryCategory: 'discovery',
+  },
+  {
+    label: 'Would return',
+    icon: 'arrow.uturn.left.circle.fill',
+    sentiment: 'positive',
+    memoryType: 'preference_saved',
+    memoryDetail: (a) => `Would return to "${a.title}"`,
+    memoryCategory: 'preference',
+  },
+];
+
+const DISLIKED_REACTIONS: ReactionOption[] = [
   {
     label: 'Not my vibe',
     icon: 'hand.raised.fill',
+    sentiment: 'negative',
+    memoryType: 'activity_skipped',
     memoryDetail: (a) => `Didn't like "${a.title}" — not my vibe`,
     memoryCategory: 'preference',
   },
   {
     label: 'Too touristy',
     icon: 'camera.badge.ellipsis.fill',
+    sentiment: 'negative',
+    memoryType: 'activity_skipped',
     memoryDetail: (a) => `Found "${a.title}" too touristy`,
     memoryCategory: 'crowds',
   },
   {
     label: 'Too expensive',
     icon: 'dollarsign.circle.fill',
+    sentiment: 'negative',
+    memoryType: 'activity_skipped',
     memoryDetail: (a) => `Found "${a.title}" too expensive`,
     memoryCategory: 'budget',
   },
   {
     label: 'Too far',
     icon: 'car.fill',
+    sentiment: 'negative',
+    memoryType: 'activity_skipped',
     memoryDetail: (a) => `"${a.title}" was too far from other activities`,
     memoryCategory: 'logistics',
   },
   {
     label: 'Wrong type',
     icon: 'xmark.circle.fill',
+    sentiment: 'negative',
+    memoryType: 'activity_skipped',
     memoryDetail: (a) => `Doesn't want ${a.type} activities like "${a.title}"`,
     memoryCategory: 'activity_type',
   },
 ];
+
+/** @deprecated Use LIKED_REACTIONS / DISLIKED_REACTIONS */
+export const REACTIONS = DISLIKED_REACTIONS;
 
 const TYPE_LABELS: Record<Activity['type'], string> = {
   flight: 'Flight',
@@ -171,21 +221,40 @@ export function ActivityContextMenu({
               {/* Reactions */}
               <View style={[styles.divider, { backgroundColor: theme.border }]} />
               <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-                WHAT'S WRONG WITH THIS?
+                What'd you think?
               </ThemedText>
-              {REACTIONS.map((reaction) => (
-                <MenuItem
-                  key={reaction.label}
-                  icon={reaction.icon}
-                  label={reaction.label}
-                  theme={theme}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    onClose();
-                    onReaction(activity, reaction);
-                  }}
-                />
-              ))}
+              <View style={styles.chipRow}>
+                {LIKED_REACTIONS.map((reaction) => (
+                  <Pressable
+                    key={reaction.label}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      onClose();
+                      onReaction(activity, reaction);
+                    }}
+                    style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? theme.primaryMuted : theme.backgroundElement }]}
+                  >
+                    <SymbolView name={reaction.icon as any} size={13} tintColor={theme.primary} />
+                    <ThemedText style={[styles.chipLabel, { color: theme.text }]}>{reaction.label}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={[styles.chipRow, { marginTop: 6 }]}>
+                {DISLIKED_REACTIONS.map((reaction) => (
+                  <Pressable
+                    key={reaction.label}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      onClose();
+                      onReaction(activity, reaction);
+                    }}
+                    style={({ pressed }) => [styles.chip, { backgroundColor: pressed ? theme.primaryMuted : theme.backgroundElement }]}
+                  >
+                    <SymbolView name={reaction.icon as any} size={13} tintColor={theme.text} />
+                    <ThemedText style={[styles.chipLabel, { color: theme.text }]}>{reaction.label}</ThemedText>
+                  </Pressable>
+                ))}
+              </View>
             </ScrollView>
           </Pressable>
         </Animated.View>
@@ -291,7 +360,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
-    marginBottom: 4,
+    marginBottom: 8,
     marginLeft: 12,
   },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 4, marginBottom: 4 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: Radius.full,
+  },
+  chipLabel: { fontSize: 13, fontWeight: '500' },
 });

@@ -34,6 +34,7 @@ export interface StaysStripProps {
   activityPhotos: Map<string, string>;
   onAddStay: (prefilledDay?: number) => void;
   onViewStay: (activity: Activity, reservation?: Reservation) => void;
+  onRemoveStay: (activity: Activity) => void;
   onBookSuggestion: (hotel: NormalizedPlace) => void;
   onBrowseMore: () => void;
 }
@@ -47,6 +48,7 @@ export const StaysStrip = memo(function StaysStrip({
   activityPhotos,
   onAddStay,
   onViewStay,
+  onRemoveStay,
   onBookSuggestion,
   onBrowseMore,
 }: StaysStripProps) {
@@ -175,6 +177,7 @@ export const StaysStrip = memo(function StaysStrip({
                 gridMode
                 theme={theme}
                 onViewStay={onViewStay}
+                onRemove={onRemoveStay}
               />
             </View>
           );

@@ -34,8 +34,8 @@ import {
 } from 'expo-iap';
 
 export const PRODUCT_IDS = {
-  monthly: 'com.toveli.plus.monthly',
-  annual: 'com.toveli.plus.annual',
+  monthly: 'com.tripseek.app.plus.monthly',
+  annual: 'com.tripseek.app.plus.annual',
 } as const;
 
 export type PlanId = keyof typeof PRODUCT_IDS;

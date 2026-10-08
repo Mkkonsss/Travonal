@@ -39,13 +39,14 @@ import { categoryToActivityType, type NormalizedPlace } from '@/services/place-m
 import { hasDestinationData } from '@/services/alternatives-pool';
 import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI, getTripAlertsAI, TripAlertResult } from '@/services/ai';
 import { AddBookingModal } from '@/components/add-booking-modal';
-import { FlightsStrip } from '@/components/flights-strip';
+import { FlightsStrip, getAirlineLogoUrl } from '@/components/flights-strip';
 import { ConfirmedBookingSheet } from '@/components/confirmed-booking-sheet';
 import { UnbookedStaySheet } from '@/components/unbooked-stay-sheet';
 import { TripBookingsTab } from '@/components/trip-bookings-tab';
 import { ChatPlaceCard, placeStyles as chatPlaceStyles } from '@/components/chat-place-card';
 import { ChatMarkdown } from '@/components/chat-markdown';
 import { useGate } from '@/hooks/use-gate';
+import { downloadTripForOffline, isOfflineAvailable, deleteOfflineTrip, formatOfflineSize, getOfflineSize, getOfflinePhotoMap } from '@/services/offline-trips';
 import { UpgradePrompt } from '@/components/upgrade-prompt';
 import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
@@ -691,9 +692,13 @@ export default function TripWorkspace() {
   const editGate = useGate('edit_trip');
   const searchGate = useGate('natural_search');
   const exportGate = useGate('export_pdf');
+  const offlineGate = useGate('offline_trip');
   const { refresh: refreshSubscription } = useSubscription();
+  const [isOffline, setIsOffline] = useState(false);
+  const [offlineDownloading, setOfflineDownloading] = useState(false);
+  const [offlineProgress, setOfflineProgress] = useState<{ done: number; total: number } | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place' | 'chat' | 'export_pdf'>('edit_trip');
+  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place' | 'chat' | 'export_pdf' | 'offline_trip'>('edit_trip');
   const [showShareSheet, setShowShareSheet] = useState(false);
 
   const trip = trips.find((t) => t.id === id);
@@ -703,6 +708,13 @@ export default function TripWorkspace() {
       navigation.setOptions({ headerShown: false });
     }
   }, [trip, navigation]);
+
+  // Navigate away if the trip is deleted while this screen is mounted
+  useEffect(() => {
+    if (tripsLoaded && !trip) {
+      router.back();
+    }
+  }, [tripsLoaded, trip]);
 
   // Set filter to specific day when navigated with ?day=N
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -862,7 +874,66 @@ export default function TripWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip?.id, trip?.activities.length],
   );
-  const { photos: activityPhotos } = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
+  const { photos: activityPhotosNetwork } = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
+  const [offlinePhotoMap, setOfflinePhotoMap] = useState<Map<string, string>>(new Map());
+
+  // Merge: offline local URIs take precedence so photos work without network
+  const activityPhotos = useMemo(() => {
+    if (offlinePhotoMap.size === 0) return activityPhotosNetwork;
+    const merged = new Map(activityPhotosNetwork);
+    for (const [k, v] of offlinePhotoMap) merged.set(k, v);
+    return merged;
+  }, [activityPhotosNetwork, offlinePhotoMap]);
+
+  // Check if this trip is downloaded for offline
+  useEffect(() => {
+    if (!trip?.id) return;
+    isOfflineAvailable(trip.id).then((available) => {
+      setIsOffline(available);
+      if (available) {
+        getOfflinePhotoMap(trip.id).then((map) => {
+          if (map) setOfflinePhotoMap(map);
+        });
+      }
+    });
+  }, [trip?.id]);
+
+  async function handleOfflineToggle() {
+    if (!currentTrip) return;
+    if (!offlineGate.allowed) { setUpgradeFeature('offline_trip'); setShowUpgradePrompt(true); return; }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isOffline) {
+      Alert.alert('Remove offline copy?', 'The trip will still be available when connected.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: async () => {
+          await deleteOfflineTrip(currentTrip.id);
+          setIsOffline(false);
+        }},
+      ]);
+    } else {
+      if (activityPhotos.size === 0) {
+        Alert.alert('No photos yet', 'Photos are still loading. Try again in a moment.');
+        return;
+      }
+      setOfflineDownloading(true);
+      setOfflineProgress({ done: 0, total: activityPhotos.size });
+      try {
+        await downloadTripForOffline(currentTrip.id, activityPhotos, (done, total) => {
+          setOfflineProgress({ done, total });
+        });
+        setIsOffline(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const size = await getOfflineSize(currentTrip.id);
+        Alert.alert('Downloaded', `Trip saved for offline use (${formatOfflineSize(size)}).`);
+      } catch (e) {
+        console.error('[offline] download failed:', e);
+        Alert.alert('Download failed', String(e instanceof Error ? e.message : e));
+      } finally {
+        setOfflineDownloading(false);
+        setOfflineProgress(null);
+      }
+    }
+  }
 
   // Weather forecast for weather-aware pulse alerts
   const [weatherForecast, setWeatherForecast] = useState<import('@/services/weather').TripWeatherForecast | null>(null);
@@ -955,11 +1026,7 @@ export default function TripWorkspace() {
   }
 
   if (!trip) {
-    return (
-      <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ThemedText style={{ fontSize: 18 }}>Trip not found</ThemedText>
-      </ThemedView>
-    );
+    return null;
   }
 
   // Capture as non-null for closures
@@ -1140,9 +1207,8 @@ export default function TripWorkspace() {
 
   // Activity reaction handler — saves memory signal + triggers smart replace
   function handleActivityReaction(activity: Activity, reaction: ReactionOption) {
-    // Save to memory
     addMemoryEntry({
-      type: 'activity_skipped',
+      type: reaction.memoryType,
       category: reaction.memoryCategory,
       detail: reaction.memoryDetail(activity),
       tripId: currentTrip.id,
@@ -1150,9 +1216,8 @@ export default function TripWorkspace() {
       origin: `Reaction on "${activity.title}" in ${currentTrip.destination}`,
       destination: currentTrip.destination,
     });
-    showToast('Preference saved', 'success');
-    // Trigger smart replace to find an alternative
-    handleSmartReplace(activity);
+    const msg = reaction.sentiment === 'positive' ? 'Got it, noted!' : 'Got it, preference saved';
+    showToast(msg, 'success');
   }
 
   // Booking handler — opens affiliate/deep link in the in-app browser
@@ -2865,6 +2930,24 @@ export default function TripWorkspace() {
               >
                 <SymbolView name="person.2" size={18} tintColor="#fff" />
               </Pressable>
+              <Pressable
+                onPress={handleOfflineToggle}
+                hitSlop={8}
+                style={styles.heroIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel={isOffline ? 'Remove offline copy' : 'Download for offline'}
+                disabled={offlineDownloading}
+              >
+                {offlineDownloading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <SymbolView
+                    name={isOffline ? 'checkmark.icloud.fill' : 'icloud.and.arrow.down'}
+                    size={18}
+                    tintColor="#fff"
+                  />
+                )}
+              </Pressable>
             </View>
           </View>
 
@@ -3608,6 +3691,12 @@ export default function TripWorkspace() {
                       if (hotel.photos?.[0]?.reference) url += `&photoRef=${encodeURIComponent(hotel.photos[0].reference)}`;
                       router.push(url as any);
                     }}
+                    onRemoveStay={(activity) => {
+                      Alert.alert('Remove stay?', `Remove "${activity.title}" from this trip?`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: () => removeActivity(currentTrip.id, activity.id, true) },
+                      ]);
+                    }}
                     onBrowseMore={() => setShowStaySearchModal(true)}
                   />
                 </View>
@@ -3622,8 +3711,18 @@ export default function TripWorkspace() {
                       setPendingImportData(null);
                       setShowBookingModal(true);
                     }}
-                    onViewFlight={(res) => {
-                      setBookingSheetData({ res, trip: currentTrip, photoUrl: undefined });
+                    onViewFlight={(res, logoUrl) => {
+                      setBookingSheetData({ res, trip: currentTrip, photoUrl: logoUrl });
+                    }}
+                    onRemoveFlight={(res) => {
+                      Alert.alert(
+                        'Remove Flight',
+                        `Remove "${res.title ?? 'this flight'}" from the trip?`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => removeReservation(currentTrip.id, res.id) },
+                        ]
+                      );
                     }}
                   />
                 </View>
@@ -6059,6 +6158,12 @@ export default function TripWorkspace() {
       <UnbookedStaySheet
         data={unbookedStayData}
         onClose={() => setUnbookedStayData(null)}
+        onRemove={(activity) => {
+          Alert.alert('Remove stay?', `Remove "${activity.title}" from this trip?`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Remove', style: 'destructive', onPress: () => removeActivity(currentTrip.id, activity.id, true) },
+          ]);
+        }}
       />
 
       {/* Confirmed Booking Sheet */}
@@ -6125,6 +6230,7 @@ export default function TripWorkspace() {
           upgradeFeature === 'analyze_trip' ? 'Trip analysis' :
           upgradeFeature === 'natural_search' ? 'AI search' :
           upgradeFeature === 'export_pdf' ? 'Export your itinerary' :
+          upgradeFeature === 'offline_trip' ? 'Offline trip access' :
           'More imports'
         }
         description={
@@ -6132,6 +6238,7 @@ export default function TripWorkspace() {
           upgradeFeature === 'analyze_trip' ? 'Get deep AI analysis of your trips with Tripseek+.' :
           upgradeFeature === 'natural_search' ? 'Search and discover places with AI using Tripseek+.' :
           upgradeFeature === 'export_pdf' ? 'Save or print your trip as a PDF with Tripseek+.' :
+          upgradeFeature === 'offline_trip' ? 'Download your trip to access it without an internet connection.' :
           'Import places from links, text, and screenshots with Tripseek+.'
         }
         icon={
@@ -6139,6 +6246,7 @@ export default function TripWorkspace() {
           upgradeFeature === 'analyze_trip' ? 'chart.bar' :
           upgradeFeature === 'natural_search' ? 'magnifyingglass' :
           upgradeFeature === 'export_pdf' ? 'doc.text' :
+          upgradeFeature === 'offline_trip' ? 'icloud.and.arrow.down' :
           'link'
         }
         onClose={() => setShowUpgradePrompt(false)}
