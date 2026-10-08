@@ -81,6 +81,22 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   // On sign-in, pull remote profile — only apply fields the remote actually has set
   useEffect(() => {
     if (!loaded || !user?.id) return;
+
+    // Seed displayName from auth provider metadata if profile doesn't have one yet
+    const meta = user.user_metadata;
+    if (meta) {
+      const providerName =
+        meta.full_name as string | undefined ??
+        meta.name as string | undefined ??
+        [meta.given_name, meta.family_name].filter(Boolean).join(' ') ||
+        undefined;
+      if (providerName) {
+        setProfile((prev) =>
+          prev.displayName ? prev : { ...prev, displayName: providerName },
+        );
+      }
+    }
+
     pullProfile(user.id).then((result) => {
       if (!result) return;
       const remote = result.profile;

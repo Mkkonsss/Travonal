@@ -423,7 +423,7 @@ export default function OnboardingScreen() {
           <ExpoImage
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             source={require('@/assets/images/logo-dark.png')}
-            style={{ width: 120, height: 32 }}
+            style={{ width: 160, height: 44 }}
             contentFit="contain"
           />
         </Animated.View>
