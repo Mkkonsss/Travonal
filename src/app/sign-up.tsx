@@ -54,7 +54,11 @@ export default function SignUpScreen() {
     setSocialLoading('apple');
     const { error } = await signInWithApple();
     setSocialLoading(null);
-    if (error) setError(error.message);
+    if (error) {
+      setError(error.message);
+    } else {
+      router.replace('/(tabs)');
+    }
   }
 
   async function handleGoogleSignIn() {
@@ -62,7 +66,11 @@ export default function SignUpScreen() {
     setSocialLoading('google');
     const { error } = await signInWithGoogle();
     setSocialLoading(null);
-    if (error) setError(error.message);
+    if (error) {
+      setError(error.message);
+    } else {
+      router.replace('/(tabs)');
+    }
   }
 
   async function handleSignUp() {
