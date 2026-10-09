@@ -1,13 +1,38 @@
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const CORS_ORIGIN = "*";
-const CORS_HEADERS = "authorization, x-client-info, apikey, content-type";
+// CORS: Allow requests from the app's domains and local development.
+// Mobile native clients don't enforce CORS, so this mainly protects
+// against browser-based abuse of the edge function endpoints.
+const ALLOWED_ORIGINS = [
+  "https://tripseekapp.com",
+  "https://www.tripseekapp.com",
+  "http://localhost:8081",
+  "http://localhost:19006",
+];
+
+function getCorsOrigin(req) {
+  var origin = req.headers.get("origin") || "";
+  // Allow listed origins, or any non-browser request (no Origin header = mobile/server)
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || "*";
+  return ALLOWED_ORIGINS[0]; // Deny by returning a non-matching origin
+}
+
+const CORS_HEADERS_STATIC = "authorization, x-client-info, apikey, content-type";
 const CORS_METHODS = "POST, OPTIONS";
 
+function makeCorsHeaders(req) {
+  return {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": CORS_HEADERS_STATIC,
+    "Access-Control-Allow-Methods": CORS_METHODS,
+  };
+}
+
+// Fallback static headers for places where req is not available
 const corsHeaders = {
-  "Access-Control-Allow-Origin": CORS_ORIGIN,
-  "Access-Control-Allow-Headers": CORS_HEADERS,
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": CORS_HEADERS_STATIC,
   "Access-Control-Allow-Methods": CORS_METHODS,
 };
 
@@ -2945,12 +2970,25 @@ async function handlePlacePhoto(payload) {
   return { url: url };
 }
 
-// --- Photo API Key (for client-side URL building) ---
+// --- Resolve photo URL server-side (keeps API key on server) ---
 
-async function handleGetPhotoKey() {
+async function handleResolvePhotoUrl(payload) {
   var gKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || "";
   if (!gKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
-  return { key: gKey };
+  var reference = String(payload.reference || "");
+  if (!reference) throw new Error("reference is required");
+  var maxW = Number(payload.maxWidth) || 1024;
+  var resp = await fetch(
+    "https://places.googleapis.com/v1/" + reference + "/media" +
+    "?maxWidthPx=" + maxW +
+    "&skipHttpRedirect=true" +
+    "&key=" + gKey
+  );
+  if (!resp.ok) {
+    throw new Error("Photo fetch failed: " + resp.status);
+  }
+  var data = await resp.json();
+  return { url: data.photoUri || null };
 }
 
 // --- Place Details ---
@@ -3492,8 +3530,8 @@ async function checkUsage(userId, action, contentType) {
 
   if (error) {
     console.error("[usage] check_and_use error:", error.message);
-    // Fail open — allow the action
-    return { allowed: true, remaining: 0 };
+    // Fail closed — deny the action on error to prevent abuse
+    return { allowed: false, remaining: 0, reason: "Usage service temporarily unavailable. Please try again." };
   }
 
   return data;
@@ -3519,16 +3557,33 @@ async function rollbackUsageServer(userId, action, contentType) {
   });
 }
 
-// Extract user ID from the JWT in the Authorization header
-function getUserIdFromRequest(req) {
+// Verify JWT via Supabase auth and extract user ID.
+// Caches the result per-request to avoid redundant network calls.
+var _verifiedUserCache = new Map();
+
+async function getUserIdFromRequest(req) {
   var auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
   var token = auth.slice(7);
+
+  // Return cached result if we already verified this token in this request
+  if (_verifiedUserCache.has(token)) return _verifiedUserCache.get(token);
+
   try {
-    // Decode JWT payload (middle segment)
-    var payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.sub || null;
+    var sbUrl = Deno.env.get("SUPABASE_URL");
+    var sbAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    var sb = createClient(sbUrl, sbAnonKey, {
+      global: { headers: { Authorization: "Bearer " + token } },
+    });
+    var { data, error } = await sb.auth.getUser();
+    if (error || !data?.user) {
+      _verifiedUserCache.set(token, null);
+      return null;
+    }
+    _verifiedUserCache.set(token, data.user.id);
+    return data.user.id;
   } catch (_e) {
+    _verifiedUserCache.set(token, null);
     return null;
   }
 }
@@ -3565,14 +3620,30 @@ async function handleGenerateDescription(payload) {
 // --- Router ---
 
 Deno.serve(async (req) => {
+  var dynamicCors = makeCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: dynamicCors });
   }
 
   try {
     const body = await req.json();
     const action = body.action;
     const payload = body.payload;
+
+    // Basic input validation
+    if (!action || typeof action !== "string") {
+      return new Response(
+        JSON.stringify({ success: false, error: "Missing or invalid 'action' field" }),
+        { status: 400, headers: { ...dynamicCors, "Content-Type": "application/json" } }
+      );
+    }
+    if (payload !== undefined && payload !== null && typeof payload !== "object") {
+      return new Response(
+        JSON.stringify({ success: false, error: "'payload' must be an object or null" }),
+        { status: 400, headers: { ...dynamicCors, "Content-Type": "application/json" } }
+      );
+    }
 
     var handler;
     if (action === "generate_trip") {
@@ -3599,8 +3670,10 @@ Deno.serve(async (req) => {
       handler = handleNaturalSearch;
     } else if (action === "place_photo") {
       handler = handlePlacePhoto;
-    } else if (action === "get_photo_key") {
-      handler = handleGetPhotoKey;
+    } else if (action === "get_photo_key" || action === "resolve_photo_url") {
+      handler = async function() {
+        return handleResolvePhotoUrl(payload);
+      };
     } else if (action === "place_details") {
       handler = handlePlaceDetails;
     } else if (action === "city_autocomplete") {
@@ -3742,7 +3815,7 @@ Deno.serve(async (req) => {
           {
             status: 403,
             headers: {
-              ...corsHeaders,
+              ...dynamicCors,
               "Content-Type": "application/json",
             },
           }
@@ -3772,7 +3845,7 @@ Deno.serve(async (req) => {
         {
           status: 500,
           headers: {
-            ...corsHeaders,
+            ...dynamicCors,
             "Content-Type": "application/json",
           },
         }
@@ -3783,7 +3856,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ success: true, data: data }),
       {
         headers: {
-          ...corsHeaders,
+          ...dynamicCors,
           "Content-Type": "application/json",
         },
       }
@@ -3795,7 +3868,7 @@ Deno.serve(async (req) => {
       JSON.stringify({ success: false, error: msg }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...dynamicCors, "Content-Type": "application/json" },
       }
     );
   }

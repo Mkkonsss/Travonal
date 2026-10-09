@@ -22,7 +22,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://tripseekapp.com",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -477,6 +477,22 @@ async function processInboundEmail(req: Request) {
   if (req.method !== "POST") {
     console.log("[inbound-booking] Ignoring non-POST request:", req.method);
     return;
+  }
+
+  // Verify webhook secret — SendGrid sends this as basic auth or a URL param.
+  // Set via: supabase secrets set INBOUND_WEBHOOK_SECRET=<random-secret>
+  // Configure SendGrid Inbound Parse URL as:
+  //   https://<project>.supabase.co/functions/v1/inbound-booking?secret=<secret>
+  const webhookSecret = Deno.env.get("INBOUND_WEBHOOK_SECRET");
+  if (webhookSecret) {
+    const url = new URL(req.url);
+    const providedSecret = url.searchParams.get("secret") || "";
+    if (providedSecret !== webhookSecret) {
+      console.error("[inbound-booking] Invalid webhook secret");
+      return;
+    }
+  } else {
+    console.warn("[inbound-booking] INBOUND_WEBHOOK_SECRET not set — webhook auth disabled");
   }
 
   // ── Parse multipart/form-data from SendGrid ──

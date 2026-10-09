@@ -313,25 +313,14 @@ export interface PlacePhotoResult {
   url: string;
 }
 
-// Cached Google Places API key — fetched once per session, then URL building
-// happens client-side (eliminates a ~300ms round-trip per photo).
-let _photoApiKey: string | null = null;
-
-async function getPhotoApiKey(): Promise<string> {
-  if (_photoApiKey) return _photoApiKey;
-  const result = await callEdgeFunction<{ key: string }>('get_photo_key', {});
-  _photoApiKey = result.key;
-  return _photoApiKey;
-}
-
 export async function getPlacePhotoAI(params: {
   reference: string;
   maxWidth?: number;
 }): Promise<PlacePhotoResult> {
-  const maxW = params.maxWidth || 1024;
-  const key = await getPhotoApiKey();
-  const url = `https://places.googleapis.com/v1/${params.reference}/media?maxWidthPx=${maxW}&key=${key}`;
-  return { url };
+  return callEdgeFunction('resolve_photo_url', {
+    reference: params.reference,
+    maxWidth: params.maxWidth || 1024,
+  });
 }
 
 // ─── 10. Place Details ──────────────────────────────────────────────────────

@@ -10,10 +10,25 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const ALLOWED_ORIGINS = [
+  'https://tripseekapp.com',
+  'https://www.tripseekapp.com',
+  'http://localhost:8081',
+  'http://localhost:19006',
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get('origin') || '';
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || '*';
+  return ALLOWED_ORIGINS[0];
+}
+
+function makeCorsHeaders(req: Request) {
+  return {
+    'Access-Control-Allow-Origin': getCorsOrigin(req),
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
 
 function generateId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -388,6 +403,8 @@ function showTab(id, btn) {
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = makeCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

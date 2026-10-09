@@ -1,7 +1,28 @@
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ── CORS (same pattern as ai-toveli) ──────────────────────────────────────
+// ── CORS ──────────────────────────────────────────────────────────────────
+
+const ALLOWED_ORIGINS = [
+  "https://tripseekapp.com",
+  "https://www.tripseekapp.com",
+  "http://localhost:8081",
+  "http://localhost:19006",
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || "*";
+  return ALLOWED_ORIGINS[0];
+}
+
+function makeCorsHeaders(req: Request) {
+  return {
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,15 +44,19 @@ const MODEL = "claude-haiku-4-5-20251001";
 // Max emails to process per sync run
 const MAX_EMAILS_PER_SYNC = 20;
 
-// ── Auth helper (same JWT decode as ai-toveli) ────────────────────────────
+// ── Auth helper — verifies JWT via Supabase auth server ───────────────────
 
-function getUserIdFromRequest(req: Request): string | null {
+async function getUserIdFromRequest(req: Request): Promise<string | null> {
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
   const token = auth.slice(7);
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload.sub || null;
+    const sb = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || "", {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data, error } = await sb.auth.getUser();
+    if (error || !data?.user) return null;
+    return data.user.id;
   } catch {
     return null;
   }
@@ -45,10 +70,12 @@ function getAdminClient() {
 
 // ── Response helpers ────────────────────────────────────────────────────────
 
+let _currentCors = corsHeaders;
+
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ..._currentCors, "Content-Type": "application/json" },
   });
 }
 
@@ -566,12 +593,14 @@ async function syncGmail(userId: string): Promise<Response> {
 // ── Router ──────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  _currentCors = makeCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: _currentCors });
   }
 
   try {
-    const userId = getUserIdFromRequest(req);
+    const userId = await getUserIdFromRequest(req);
     if (!userId) {
       return errorResponse("Unauthorized", 401);
     }

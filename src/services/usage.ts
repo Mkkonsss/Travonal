@@ -127,8 +127,8 @@ export async function checkAndUseAction(
 
   if (error) {
     console.warn('[usage] check_and_use error:', error.message);
-    // On RPC error, allow the action (fail-open for UX, server still validates)
-    return { allowed: true, remaining: 0, total: 0, is_plus: false };
+    // Fail closed — deny the action on error to prevent abuse
+    return { allowed: false, remaining: 0, total: 0, is_plus: false, reason: 'Usage service temporarily unavailable. Please try again.' };
   }
 
   return data as UsageCheckResult;
