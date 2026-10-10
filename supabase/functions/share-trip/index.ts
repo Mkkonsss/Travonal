@@ -77,7 +77,7 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-function renderTripHtml(trip: any, permission: string): string {
+function renderTripHtml(trip: any, permission: string, inviteCode?: string): string {
   const title = escapeHtml(trip.title || trip.destination || 'Trip');
   const destination = escapeHtml(trip.destination || '');
   const emoji = escapeHtml(trip.emoji || '✈️');
@@ -396,8 +396,9 @@ ${showBudget ? `<div id="tab-budget" class="tab-panel">${budgetHtml}</div>` : ''
 ${showPrep ? `<div id="tab-prep" class="tab-panel">${prepHtml}</div>` : ''}
 
 <div class="get-app">
-  <p class="get-app-text">Shared via Tripseek</p>
-  <a href="https://tripseekapp.com" class="get-app-btn">✦ Get Tripseek</a>
+  ${inviteCode ? `<a href="https://tripseekapp.com/join/${escapeHtml(inviteCode)}" class="get-app-btn">✦ Open in Tripseek</a>
+  <p class="get-app-text" style="margin-top:12px">Don't have the app? <a href="https://tripseekapp.com" style="color:#888;text-decoration:underline">Get Tripseek</a></p>` : `<p class="get-app-text">Shared via Tripseek</p>
+  <a href="https://tripseekapp.com" class="get-app-btn">✦ Get Tripseek</a>`}
 </div>
 
 <script>
@@ -445,7 +446,7 @@ Deno.serve(async (req: Request) => {
 
     const { data, error } = await supabase
       .from('shared_trips')
-      .select('trip_data, permission')
+      .select('trip_data, permission, invite_code')
       .eq('id', shareId)
       .single();
 
@@ -456,7 +457,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const html = renderTripHtml(data.trip_data, data.permission);
+    const html = renderTripHtml(data.trip_data, data.permission, data.invite_code);
     return new Response(html, {
       headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
     });
@@ -492,7 +493,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { tripId, permission, tripData } = body;
+    const { tripId, permission, tripData, inviteCode } = body;
 
     if (!tripId || !tripData) {
       return new Response(JSON.stringify({ error: 'Missing tripId or tripData' }), {
@@ -522,6 +523,7 @@ Deno.serve(async (req: Request) => {
       trip_id: tripId,
       permission: permission || 'view',
       trip_data: tripData,
+      invite_code: inviteCode || null,
     });
 
     if (insertError) {

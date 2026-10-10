@@ -58,7 +58,7 @@ export function TripPulseProvider({ children }: { children: ReactNode }) {
   }
 
   function resetAll() {
-    setEnabledState(true);
+    setEnabledState(false);
   }
 
   return (

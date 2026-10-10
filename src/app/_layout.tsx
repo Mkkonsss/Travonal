@@ -26,7 +26,7 @@ import { SubscriptionProvider } from '@/context/subscription';
 import { TripsProvider, useTrips } from '@/context/trips';
 import { BookingsProvider, useBookings } from '@/context/bookings';
 import { loadNotificationPermissionState, onNotificationTap } from '@/services/notifications';
-import { isOnboardingComplete, resetAllData, loadLastUserId, saveLastUserId } from '@/services/storage';
+import { isOnboardingComplete, resetAllData, loadLastUserId, saveLastUserId, clearLastUserId } from '@/services/storage';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -49,6 +49,7 @@ function UserSwitchHandler() {
     if (!user) {
       // Signed out — wipe all account-specific state so next user starts fresh
       resetAllData();
+      clearLastUserId();
       resetTrips();
       resetMemory();
       resetInbox();

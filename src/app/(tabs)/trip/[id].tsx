@@ -52,7 +52,7 @@ import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
 import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts } from '@/services/storage';
-import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats } from '@/services/sync';
+import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats, registerInviteCode, pushTrips } from '@/services/sync';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
 import { usePulseHistory } from '@/context/pulse-history';
 import { type StayBlock, type StaysData } from '@/components/stays-section';
@@ -525,6 +525,16 @@ export default function TripWorkspace() {
   const [actSelectedPlace, setActSelectedPlace] = useState<NormalizedPlace | null>(null);
   const [actConfirmStep, setActConfirmStep] = useState<'preview' | 'time'>('preview');
   const [actConfirmTime, setActConfirmTime] = useState('10:00');
+
+  // Reset stale confirmation overlay state whenever the add-activity modal opens.
+  // Without this, a leftover actSelectedPlace from a prior session could immediately
+  // render the dark overlay (rgba(0,0,0,0.4)) on top of the search UI.
+  useEffect(() => {
+    if (addingToDay !== null) {
+      setActSelectedPlace(null);
+      setActConfirmStep('preview');
+    }
+  }, [addingToDay]);
   const [newTitle, setNewTitle] = useState('');
   const [newTime, setNewTime] = useState('10:00');
   const [newType, setNewType] = useState<Activity['type']>('activity');
@@ -2781,6 +2791,19 @@ export default function TripWorkspace() {
         expenses: currentTrip.expenses ?? [],
       };
 
+      // Generate invite code so the recipient can join the trip in the app
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let inviteCode = '';
+      for (let i = 0; i < 6; i++) inviteCode += chars[Math.floor(Math.random() * chars.length)];
+      inviteCode = `TRV-${inviteCode}`;
+
+      // Ensure trip data is on the server and invite code is registered
+      const userId = session?.user?.id;
+      if (userId) {
+        await pushTrips(userId, [currentTrip]);
+      }
+      await registerInviteCode(currentTrip.id, inviteCode, permission === 'edit' ? 'member' : 'viewer');
+
       const res = await fetch(edgeFnUrl, {
         method: 'POST',
         headers: {
@@ -2788,7 +2811,7 @@ export default function TripWorkspace() {
           'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tripId: currentTrip.id, permission, tripData }),
+        body: JSON.stringify({ tripId: currentTrip.id, permission, tripData, inviteCode }),
       });
 
       if (!res.ok) throw new Error('Failed to create link');
@@ -4723,6 +4746,13 @@ export default function TripWorkspace() {
                 <ThemedText style={styles.alertsEmptyTitle}>Stay in the know</ThemedText>
                 <ThemedText style={[styles.alertsEmptyDesc, { color: theme.textSecondary }]}>
                   Turn on alerts to monitor schedule conflicts, weather, venue closures, travel advisories, and more.
+                </ThemedText>
+              </View>
+            ) : alertsLoading && (activePulseAlerts.length + activeClosureAndExternal.length) === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 48 }}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <ThemedText style={{ fontSize: 13, color: theme.textSecondary, marginTop: 12 }}>
+                  Checking for alerts…
                 </ThemedText>
               </View>
             ) : (activePulseAlerts.length + activeClosureAndExternal.length) === 0 && !alertsLoading ? (

@@ -6,7 +6,7 @@
  * rendering is handled inline by each consumer with WebView/Leaflet).
  */
 
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import Svg, { Path } from 'react-native-svg';
@@ -68,6 +68,16 @@ const NativeMap = forwardRef<NativeMapRef, NativeMapProps>(function NativeMap(
           };
         })()
       : initialRegionProp ?? { latitude: 0, longitude: 0, latitudeDelta: 90, longitudeDelta: 180 };
+
+  // Animate to destination when coordinates arrive after initial mount (e.g. geocoding resolves)
+  const hasAnimatedToRegion = useRef(false);
+  useEffect(() => {
+    if (hasAnimatedToRegion.current || !mapRef.current || markers.length > 0) return;
+    if (initialRegionProp) {
+      mapRef.current.animateToRegion(initialRegionProp, 400);
+      hasAnimatedToRegion.current = true;
+    }
+  }, [initialRegionProp, markers.length]);
 
   return (
     <MapView

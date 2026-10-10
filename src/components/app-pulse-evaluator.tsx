@@ -11,6 +11,7 @@ import { fetchWeatherForecast, TripWeatherForecast } from '@/services/weather';
 import {
   scheduleLocalNotification,
   onPermissionChange,
+  loadNotificationPermissionState,
 } from '@/services/notifications';
 
 function isUpcomingOrActive(trip: Trip): boolean {
@@ -167,10 +168,14 @@ export function AppPulseEvaluator() {
   }, [tripsLoaded, pulseHistory.loaded, pulseLoaded, pulseEnabled, fingerprint, permVersion]);
 
   // AppState foreground listener — uses refs for current data
+  // Also refreshes notification permission state so UI reflects iOS Settings changes
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && pulseHistoryRef.current.loaded && shouldRunTripPulse(pulseLoadedRef.current, pulseEnabledRef.current)) {
-        evaluateNow();
+      if (state === 'active') {
+        loadNotificationPermissionState();
+        if (pulseHistoryRef.current.loaded && shouldRunTripPulse(pulseLoadedRef.current, pulseEnabledRef.current)) {
+          evaluateNow();
+        }
       }
     });
     return () => subscription.remove();

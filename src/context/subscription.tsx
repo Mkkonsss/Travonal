@@ -17,7 +17,6 @@ import {
   type UsageSummary,
 } from '@/services/usage';
 import {
-  verifyEntitlement,
   listenForPurchaseUpdates,
   acknowledgePurchase,
   validatePurchaseOnServer,
@@ -54,21 +53,16 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
 
   const loadState = useCallback(async () => {
     try {
-      // Fetch from server
+      // Fetch from server — server is the source of truth for subscription state
       const summary = await fetchUsageSummary();
       if (summary) {
         setIsPlus(summary.is_plus);
         setPlan(summary.plan);
         setUsage(summary);
       }
-
-      // Also verify via StoreKit in case server is behind
-      const storeEntitled = await verifyEntitlement();
-      if (storeEntitled && !summary?.is_plus) {
-        // Store says subscribed but server doesn't know yet —
-        // trust the store for display, server will catch up
-        setIsPlus(true);
-      }
+      // Do NOT override with StoreKit's verifyEntitlement() here.
+      // getAvailablePurchases() returns purchases for the Apple ID, not the app account.
+      // Users who need to associate a purchase with their account should use "Restore Purchases".
     } catch {
       // Failed to load — keep cached state
     } finally {

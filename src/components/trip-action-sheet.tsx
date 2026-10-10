@@ -70,7 +70,7 @@ export function TripActionSheet({
 
           <Pressable
             style={({ pressed }) => [styles.action, pressed && { opacity: 0.7 }]}
-            onPress={onDelete}
+            onPress={() => { onClose(); onDelete(); }}
             accessibilityRole="button"
             accessibilityLabel="Delete trip"
           >
