@@ -496,8 +496,7 @@ function MapPreview({
         category: place.category,
       }).then((r) => {
         if (r?.url) {
-          const escaped = r.url.replace(/'/g, "\\'");
-          fullScreenWebViewRef.current?.injectJavaScript(`setPhotoUrl(${i},'${escaped}');true;`);
+          fullScreenWebViewRef.current?.injectJavaScript(`setPhotoUrl(${i},${JSON.stringify(r.url)});true;`);
         }
       }).catch(() => {});
     });

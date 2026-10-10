@@ -188,7 +188,6 @@ export default function PlaceDetailScreen() {
   // Resolve name: prefer paramName (new flow), fall back to paramTitle (old flow)
   const title = paramName ?? paramTitle ?? '';
   const destination = paramDest ?? '';
-  console.log('[PLACE-DETAIL] Opened with params:', { name: paramName, title: paramTitle, placeId: paramPlaceId, rating: paramRating, destination: paramDest, imageUrl: paramImageUrl, photoRef: paramPhotoRef, openNow: paramOpenNow, address: paramAddress });
 
   // Photo URL — use image passed from caller (e.g. board) immediately if available
   const [photoUrl, setPhotoUrl] = useState<string | null>(paramImageUrl ?? null);
@@ -196,7 +195,6 @@ export default function PlaceDetailScreen() {
   const [googleDetails, setGoogleDetails] = useState<Record<string, unknown> | null>(
     () => {
       const cached = paramPlaceId ? getCachedPlaceDetails(paramPlaceId) : null;
-      console.log('[PLACE-DETAIL] Cache hit?', !!cached, 'placeId:', paramPlaceId);
       return cached;
     }
   );

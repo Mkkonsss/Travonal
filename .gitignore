@@ -47,5 +47,8 @@ example
 # Archives
 *.zip
 
+# Supabase temp files
+supabase/.temp/
+
 # Claude Code settings
 .claude/

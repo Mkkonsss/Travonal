@@ -57,10 +57,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // Restore session from AsyncStorage on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
+    // Validate session with the server on mount (getUser round-trips to Supabase auth).
+    // Falls back to getSession for offline/cached access if getUser fails.
+    supabase.auth.getUser().then(({ data: { user }, error }) => {
+      if (user && !error) {
+        // User is valid — get the full session for token access
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          setLoading(false);
+        });
+      } else {
+        // Invalid or no user — clear session
+        setSession(null);
+        setLoading(false);
+      }
+    }).catch(() => {
+      // Network error — fall back to cached session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        setLoading(false);
+      });
     });
 
     // Keep session in sync with Supabase auth state changes
