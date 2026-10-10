@@ -24,7 +24,7 @@ const ALLOWED_ORIGINS = [
 
 function getCorsOrigin(req: Request): string {
   const origin = req.headers.get('origin') || '';
-  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || '*';
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || ALLOWED_ORIGINS[0];
   return ALLOWED_ORIGINS[0];
 }
 
@@ -32,7 +32,15 @@ function makeCorsHeaders(req: Request) {
   return {
     'Access-Control-Allow-Origin': getCorsOrigin(req),
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
   };
+}
+
+// Validate required env vars at startup — fail fast
+const _REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const _MISSING_ENV = _REQUIRED_ENV.filter((k) => !Deno.env.get(k));
+if (_MISSING_ENV.length > 0) {
+  throw new Error("[delete-account] Missing required env vars: " + _MISSING_ENV.join(", "));
 }
 
 Deno.serve(async (req: Request) => {
@@ -40,6 +48,13 @@ Deno.serve(async (req: Request) => {
 
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {
@@ -90,8 +105,8 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: message }), {
+    console.error('[delete-account]', err instanceof Error ? err.message : 'Unknown error');
+    return new Response(JSON.stringify({ error: 'An internal error occurred' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

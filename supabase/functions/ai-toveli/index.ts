@@ -14,7 +14,7 @@ const ALLOWED_ORIGINS = [
 function getCorsOrigin(req) {
   var origin = req.headers.get("origin") || "";
   // Allow listed origins, or any non-browser request (no Origin header = mobile/server)
-  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || "*";
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || ALLOWED_ORIGINS[0];
   return ALLOWED_ORIGINS[0]; // Deny by returning a non-matching origin
 }
 
@@ -26,17 +26,18 @@ function makeCorsHeaders(req) {
     "Access-Control-Allow-Origin": getCorsOrigin(req),
     "Access-Control-Allow-Headers": CORS_HEADERS_STATIC,
     "Access-Control-Allow-Methods": CORS_METHODS,
+    "Vary": "Origin",
   };
 }
 
-// Fallback static headers for places where req is not available
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": CORS_HEADERS_STATIC,
-  "Access-Control-Allow-Methods": CORS_METHODS,
-};
-
-const client = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+// Validate required environment variables at startup — fail fast
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+const _REQUIRED_ENV = ["ANTHROPIC_API_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "GOOGLE_PLACES_API_KEY"];
+const _MISSING_ENV = _REQUIRED_ENV.filter((k) => !Deno.env.get(k));
+if (_MISSING_ENV.length > 0) {
+  throw new Error("[ai-toveli] Missing required env vars: " + _MISSING_ENV.join(", "));
+}
+const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY! });
 const SONNET = "claude-sonnet-4-6";
 const HAIKU = "claude-haiku-4-5-20251001";
 
@@ -1914,9 +1915,28 @@ async function _fetchHTML(fullUrl, ua) {
 
 // Main URL fetcher — combines OEmbed, HTML, and
 // URL pattern extraction for maximum coverage
+function isPublicUrl(urlStr) {
+  try {
+    var u = new URL(urlStr);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    var host = u.hostname.toLowerCase();
+    // Block private/internal IPs and metadata endpoints
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return false;
+    if (host.startsWith("10.") || host.startsWith("192.168.")) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    if (host.startsWith("169.254.")) return false; // AWS IMDS / link-local
+    if (host.endsWith(".internal") || host.endsWith(".local")) return false;
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
 async function fetchAndExtractUrl(url) {
+  if (!isPublicUrl(url)) throw new Error("URL not allowed");
   // Resolve short URLs first (vm.tiktok.com etc.)
   var resolved = await resolveShortUrl(url);
+  if (!isPublicUrl(resolved)) throw new Error("Resolved URL not allowed");
   var sections = [];
   // 1. URL pattern context (instant, no network)
   var urlCtx = extractUrlContext(resolved);
@@ -3558,8 +3578,19 @@ async function rollbackUsageServer(userId, action, contentType) {
 }
 
 // Verify JWT via Supabase auth and extract user ID.
-// Caches the result per-request to avoid redundant network calls.
+// Bounded cache to avoid unbounded memory growth in long-lived isolates.
 var _verifiedUserCache = new Map();
+var _verifiedUserCacheMaxSize = 500;
+
+// Rate limiting: per-user request counts (in-memory, resets per isolate/deploy)
+var _rateLimitMap = new Map();
+// Periodically prune stale entries (every 5 minutes)
+setInterval(function() {
+  var now = Date.now();
+  _rateLimitMap.forEach(function(v, k) { if (now - v.windowStart > 120000) _rateLimitMap.delete(k); });
+  // Also prune _verifiedUserCache
+  if (_verifiedUserCache.size > _verifiedUserCacheMaxSize) _verifiedUserCache.clear();
+}, 300000);
 
 async function getUserIdFromRequest(req) {
   var auth = req.headers.get("authorization") || "";
@@ -3577,13 +3608,13 @@ async function getUserIdFromRequest(req) {
     });
     var { data, error } = await sb.auth.getUser();
     if (error || !data?.user) {
-      _verifiedUserCache.set(token, null);
+      if (_verifiedUserCache.size < _verifiedUserCacheMaxSize) _verifiedUserCache.set(token, null);
       return null;
     }
-    _verifiedUserCache.set(token, data.user.id);
+    if (_verifiedUserCache.size < _verifiedUserCacheMaxSize) _verifiedUserCache.set(token, data.user.id);
     return data.user.id;
   } catch (_e) {
-    _verifiedUserCache.set(token, null);
+    if (_verifiedUserCache.size < _verifiedUserCacheMaxSize) _verifiedUserCache.set(token, null);
     return null;
   }
 }
@@ -3624,6 +3655,22 @@ Deno.serve(async (req) => {
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: dynamicCors });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ success: false, error: "Method not allowed" }),
+      { status: 405, headers: { ...dynamicCors, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Reject oversized payloads (2 MB limit)
+  const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+  if (contentLength > 2 * 1024 * 1024) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Request body too large" }),
+      { status: 413, headers: { ...dynamicCors, "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -3694,13 +3741,13 @@ Deno.serve(async (req) => {
       handler = handlePrepareFix;
     } else if (action === "get_booking_email") {
       handler = async function() {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         return { email: "bookings+" + uid + "@toveli.com" };
       };
     } else if (action === "get_parsed_bookings") {
       handler = async function() {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         var sbUrl = Deno.env.get("SUPABASE_URL");
         var sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -3714,7 +3761,7 @@ Deno.serve(async (req) => {
       };
     } else if (action === "dismiss_parsed_booking") {
       handler = async function(p) {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         var sbUrl = Deno.env.get("SUPABASE_URL");
         var sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -3726,7 +3773,7 @@ Deno.serve(async (req) => {
       };
     } else if (action === "mark_booking_imported") {
       handler = async function(p) {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         var sbUrl = Deno.env.get("SUPABASE_URL");
         var sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -3739,7 +3786,7 @@ Deno.serve(async (req) => {
     } else if (action === "gmail_auth_url" || action === "gmail_exchange_code" || action === "gmail_disconnect" || action === "gmail_status") {
       // Gmail auth actions — proxy to gmail-auth edge function
       handler = async function(p) {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         var sbUrl = Deno.env.get("SUPABASE_URL");
         var token = req.headers.get("Authorization") || "";
@@ -3779,7 +3826,7 @@ Deno.serve(async (req) => {
     } else if (action === "gmail_sync") {
       // Gmail sync — proxy to gmail-sync edge function
       handler = async function() {
-        var uid = getUserIdFromRequest(req);
+        var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
         var sbUrl = Deno.env.get("SUPABASE_URL");
         var token = req.headers.get("Authorization") || "";
@@ -3795,9 +3842,36 @@ Deno.serve(async (req) => {
       throw new Error("Unknown action: " + action);
     }
 
+    // --- Authentication gate ---
+    // Actions that consume paid APIs (Anthropic, Google Places, etc.) require auth.
+    // Only truly public/cheap actions (photo_cache_lookup) are allowed without auth.
+    var AUTH_EXEMPT_ACTIONS = { "photo_cache_lookup": true };
+    var userId = await getUserIdFromRequest(req);
+    if (!userId && !AUTH_EXEMPT_ACTIONS[action]) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Authentication required", code: "AUTH_REQUIRED" }),
+        { status: 401, headers: { ...dynamicCors, "Content-Type": "application/json" } }
+      );
+    }
+
+    // --- Rate limiting (per-user, in-memory) ---
+    if (userId) {
+      var now = Date.now();
+      var userRL = _rateLimitMap.get(userId);
+      if (!userRL || now - userRL.windowStart > 60000) {
+        userRL = { windowStart: now, count: 0 };
+        _rateLimitMap.set(userId, userRL);
+      }
+      userRL.count++;
+      if (userRL.count > 60) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Rate limit exceeded. Please slow down.", code: "RATE_LIMIT" }),
+          { status: 429, headers: { ...dynamicCors, "Content-Type": "application/json", "Retry-After": "60" } }
+        );
+      }
+    }
+
     // --- Usage gating (server-side enforcement) ---
-    // TODO: Re-enable before launch
-    var userId = getUserIdFromRequest(req);
     var usageCategory = getUsageCategory(action);
     var contentType = payload && payload.contentType ? payload.contentType : null;
 
@@ -3837,10 +3911,17 @@ Deno.serve(async (req) => {
         await rollbackUsageServer(userId, action, contentType);
       }
 
+      // Return a safe error message — don't leak internals
+      var safeMsg = "An error occurred processing your request";
+      // Allow usage-related messages and auth errors through
+      if (hMsg === "Not authenticated" || hMsg.includes("Usage") || hMsg.includes("limit")) {
+        safeMsg = hMsg;
+      }
+
       return new Response(
         JSON.stringify({
           success: false,
-          error: hMsg,
+          error: safeMsg,
         }),
         {
           status: 500,
@@ -3862,10 +3943,9 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[ai-toveli]", msg);
+    console.error("[ai-toveli]", error instanceof Error ? error.message : "Unknown error");
     return new Response(
-      JSON.stringify({ success: false, error: msg }),
+      JSON.stringify({ success: false, error: "An internal error occurred" }),
       {
         status: 500,
         headers: { ...dynamicCors, "Content-Type": "application/json" },

@@ -12,7 +12,7 @@ const ALLOWED_ORIGINS = [
 
 function getCorsOrigin(req: Request): string {
   const origin = req.headers.get("origin") || "";
-  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || "*";
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || ALLOWED_ORIGINS[0];
   return ALLOWED_ORIGINS[0];
 }
 
@@ -21,17 +21,23 @@ function makeCorsHeaders(req: Request) {
     "Access-Control-Allow-Origin": getCorsOrigin(req),
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
   };
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+const DEFAULT_CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 // ── Environment ─────────────────────────────────────────────────────────────
 
+// Validate required env vars at startup — fail fast
+const _REQUIRED_ENV = ["ANTHROPIC_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+const _MISSING_ENV = _REQUIRED_ENV.filter((k) => !Deno.env.get(k));
+if (_MISSING_ENV.length > 0) {
+  throw new Error("[gmail-sync] Missing required env vars: " + _MISSING_ENV.join(", "));
+}
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
@@ -70,7 +76,7 @@ function getAdminClient() {
 
 // ── Response helpers ────────────────────────────────────────────────────────
 
-let _currentCors = corsHeaders;
+let _currentCors: Record<string, string> = DEFAULT_CORS_HEADERS;
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -183,8 +189,7 @@ async function getValidAccessToken(
   });
 
   if (!resp.ok) {
-    const errBody = await resp.text();
-    console.error("[gmail-sync] token refresh failed:", errBody);
+    console.error("[gmail-sync] token refresh failed — status:", resp.status);
     throw new Error("Failed to refresh Gmail access token. User may need to reconnect.");
   }
 
@@ -556,7 +561,7 @@ async function syncGmail(userId: string): Promise<Response> {
             continue;
           }
           console.error("[gmail-sync] insert error:", insertError);
-          errors.push("Insert failed for " + msg.id);
+          errors.push(msg.id);
         } else {
           newBookings++;
         }
@@ -569,7 +574,7 @@ async function syncGmail(userId: string): Promise<Response> {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       console.error("[gmail-sync] error processing message " + msg.id + ":", errMsg);
-      errors.push(msg.id + ": " + errMsg);
+      errors.push(msg.id); // track count only; details stay in server logs
       // Continue processing remaining emails
     }
   }
@@ -586,7 +591,7 @@ async function syncGmail(userId: string): Promise<Response> {
     processed,
     total_found: messages.length,
     already_processed: messages.length - newMessages.length,
-    ...(errors.length > 0 ? { errors } : {}),
+    ...(errors.length > 0 ? { error_count: errors.length } : {}),
   });
 }
 
@@ -599,6 +604,10 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: _currentCors });
   }
 
+  if (req.method !== "POST") {
+    return errorResponse("Method not allowed", 405);
+  }
+
   try {
     const userId = await getUserIdFromRequest(req);
     if (!userId) {
@@ -607,8 +616,7 @@ Deno.serve(async (req) => {
 
     return await syncGmail(userId);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Internal error";
-    console.error("[gmail-sync]", msg);
-    return errorResponse(msg, 500);
+    console.error("[gmail-sync]", err instanceof Error ? err.message : "Internal error");
+    return errorResponse("An internal error occurred", 500);
   }
 });

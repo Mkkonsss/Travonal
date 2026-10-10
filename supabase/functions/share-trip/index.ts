@@ -19,7 +19,7 @@ const ALLOWED_ORIGINS = [
 
 function getCorsOrigin(req: Request): string {
   const origin = req.headers.get('origin') || '';
-  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || '*';
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) return origin || ALLOWED_ORIGINS[0];
   return ALLOWED_ORIGINS[0];
 }
 
@@ -27,14 +27,17 @@ function makeCorsHeaders(req: Request) {
   return {
     'Access-Control-Allow-Origin': getCorsOrigin(req),
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Vary': 'Origin',
   };
 }
 
 function generateId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
   let id = '';
   for (let i = 0; i < 8; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
+    id += chars[bytes[i] % chars.length];
   }
   return id;
 }
@@ -44,7 +47,8 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatTime12(time: string): string {
@@ -76,7 +80,7 @@ function addDays(dateStr: string, days: number): string {
 function renderTripHtml(trip: any, permission: string): string {
   const title = escapeHtml(trip.title || trip.destination || 'Trip');
   const destination = escapeHtml(trip.destination || '');
-  const emoji = trip.emoji || '✈️';
+  const emoji = escapeHtml(trip.emoji || '✈️');
   const startDate = trip.startDate || '';
   const endDate = trip.endDate || '';
   const activities: any[] = trip.activities || [];
@@ -402,6 +406,13 @@ function showTab(id, btn) {
 </html>`;
 }
 
+// Validate required env vars at startup — fail fast
+const _REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY"];
+const _MISSING_ENV = _REQUIRED_ENV.filter((k) => !Deno.env.get(k));
+if (_MISSING_ENV.length > 0) {
+  throw new Error("[share-trip] Missing required env vars: " + _MISSING_ENV.join(", "));
+}
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = makeCorsHeaders(req);
 
@@ -411,8 +422,9 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  // Use anon key — RLS policies handle access control
+  const supabase = createClient(supabaseUrl, anonKey);
 
   // GET — serve shared trip HTML
   // Path will be like /share-trip/abc123 or ?id=abc123
@@ -445,6 +457,15 @@ Deno.serve(async (req: Request) => {
 
   // POST — create a shared trip
   if (req.method === 'POST') {
+    // Reject oversized payloads before parsing (1.5 MB — trip data limit is 1 MB)
+    const contentLength = parseInt(req.headers.get('content-length') || '0', 10);
+    if (contentLength > 1.5 * 1024 * 1024) {
+      return new Response(JSON.stringify({ error: 'Request body too large' }), {
+        status: 413,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Extract user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -473,8 +494,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Validate tripData size to prevent storage abuse (max 1MB)
+    const tripDataStr = JSON.stringify(tripData);
+    if (tripDataStr.length > 1_000_000) {
+      return new Response(JSON.stringify({ error: 'Trip data too large' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Use an authenticated client so the RLS insert policy (auth.uid() = user_id) is satisfied
+    const authClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
     const id = generateId();
-    const { error: insertError } = await supabase.from('shared_trips').insert({
+    const { error: insertError } = await authClient.from('shared_trips').insert({
       id,
       user_id: user.id,
       trip_id: tripId,
@@ -483,7 +518,8 @@ Deno.serve(async (req: Request) => {
     });
 
     if (insertError) {
-      return new Response(JSON.stringify({ error: insertError.message }), {
+      console.error('[share-trip] insert error:', insertError.message);
+      return new Response(JSON.stringify({ error: 'Failed to create shared trip' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

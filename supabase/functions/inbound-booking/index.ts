@@ -25,7 +25,15 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "https://tripseekapp.com",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
 };
+
+// Validate required env vars at startup — fail fast
+const _REQUIRED_ENV = ["ANTHROPIC_API_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "INBOUND_WEBHOOK_SECRET"];
+const _MISSING_ENV = _REQUIRED_ENV.filter((k) => !Deno.env.get(k));
+if (_MISSING_ENV.length > 0) {
+  throw new Error("[inbound-booking] Missing required env vars: " + _MISSING_ENV.join(", "));
+}
 
 const MODEL = "claude-haiku-4-5-20251001";
 
@@ -479,20 +487,20 @@ async function processInboundEmail(req: Request) {
     return;
   }
 
-  // Verify webhook secret — SendGrid sends this as basic auth or a URL param.
+  // Verify webhook secret — SendGrid Inbound Parse can only authenticate via URL param
+  // (it cannot set custom headers). The secret travels over HTTPS so it's encrypted in transit.
   // Set via: supabase secrets set INBOUND_WEBHOOK_SECRET=<random-secret>
   // Configure SendGrid Inbound Parse URL as:
   //   https://<project>.supabase.co/functions/v1/inbound-booking?secret=<secret>
   const webhookSecret = Deno.env.get("INBOUND_WEBHOOK_SECRET");
-  if (webhookSecret) {
-    const url = new URL(req.url);
-    const providedSecret = url.searchParams.get("secret") || "";
-    if (providedSecret !== webhookSecret) {
-      console.error("[inbound-booking] Invalid webhook secret");
-      return;
-    }
-  } else {
-    console.warn("[inbound-booking] INBOUND_WEBHOOK_SECRET not set — webhook auth disabled");
+  if (!webhookSecret) {
+    console.error("[inbound-booking] INBOUND_WEBHOOK_SECRET not set — rejecting request");
+    return;
+  }
+  const providedSecret = req.headers.get("x-webhook-secret") || new URL(req.url).searchParams.get("secret") || "";
+  if (providedSecret !== webhookSecret) {
+    console.error("[inbound-booking] Invalid webhook secret");
+    return;
   }
 
   // ── Parse multipart/form-data from SendGrid ──
@@ -561,6 +569,16 @@ async function processInboundEmail(req: Request) {
         } catch (_e) { /* non-fatal */ }
 
       } else if (mimeType === 'application/pdf' || filename.endsWith('.pdf')) {
+        const MAX_PDF_BYTES = 5 * 1024 * 1024; // 5 MB per PDF
+        const MAX_PDF_COUNT = 3;
+        if (file.size > MAX_PDF_BYTES) {
+          console.warn('[inbound-booking] Skipping oversized PDF:', filename, file.size);
+          continue;
+        }
+        if (pdfAttachments.length >= MAX_PDF_COUNT) {
+          console.warn('[inbound-booking] PDF limit reached, skipping:', filename);
+          continue;
+        }
         try {
           const buffer = await file.arrayBuffer();
           pdfAttachments.push(arrayBufferToBase64(buffer));
@@ -593,15 +611,23 @@ async function processInboundEmail(req: Request) {
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  const { data: userList, error: userError } = await supabase.auth.admin.listUsers();
-  if (userError) {
-    console.error("[inbound-booking] Error listing users:", userError.message);
-    return;
+  // Paginate through all users to find the one matching senderEmail
+  let matchedUser: { id: string; email?: string } | undefined;
+  let page = 1;
+  const perPage = 1000;
+  while (!matchedUser) {
+    const { data: userList, error: userError } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (userError) {
+      console.error("[inbound-booking] Error listing users:", userError.message);
+      return;
+    }
+    matchedUser = userList.users.find(
+      (u) => u.email?.toLowerCase() === senderEmail
+    );
+    // If we got fewer users than perPage, we've exhausted the list
+    if (userList.users.length < perPage) break;
+    page++;
   }
-
-  const matchedUser = userList.users.find(
-    (u) => u.email?.toLowerCase() === senderEmail
-  );
 
   if (!matchedUser) {
     console.error("[inbound-booking] No user found with email:", senderEmail);
