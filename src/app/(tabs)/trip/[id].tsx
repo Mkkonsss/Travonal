@@ -3,7 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, InteractionManager, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
@@ -712,7 +712,10 @@ export default function TripWorkspace() {
   // Navigate away if the trip is deleted while this screen is mounted
   useEffect(() => {
     if (tripsLoaded && !trip) {
-      router.back();
+      InteractionManager.runAfterInteractions(() => {
+        if (router.canGoBack()) router.back();
+        else router.replace('/(tabs)' as any);
+      });
     }
   }, [tripsLoaded, trip]);
 
@@ -874,7 +877,7 @@ export default function TripWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip?.id, trip?.activities.length],
   );
-  const { photos: activityPhotosNetwork } = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
+  const { photos: activityPhotosNetwork, loading: activityPhotosLoading } = useActivityPhotos(activityPlaceIds, activityPhotoHints, activityNameHints);
   const [offlinePhotoMap, setOfflinePhotoMap] = useState<Map<string, string>>(new Map());
 
   // Merge: offline local URIs take precedence so photos work without network
@@ -912,7 +915,13 @@ export default function TripWorkspace() {
       ]);
     } else {
       if (activityPhotos.size === 0) {
-        Alert.alert('No photos yet', 'Photos are still loading. Try again in a moment.');
+        if (activityPhotosLoading) {
+          Alert.alert('Photos loading', 'Photos are still loading. Try again in a moment.');
+        } else if (currentTrip.activities.length === 0) {
+          Alert.alert('No activities', 'Add activities to your trip first to download photos.');
+        } else {
+          Alert.alert('No photos available', 'No photos were found for this trip\'s activities.');
+        }
         return;
       }
       setOfflineDownloading(true);
@@ -2789,7 +2798,7 @@ export default function TripWorkspace() {
         message: `Check out my trip to ${currentTrip.destination}!\n${url}`,
       });
     } catch {
-      showToast('Could not create link — sharing as text');
+      showToast('Could not create link. Sharing as text instead.');
       // Fallback to text
       let text = `${currentTrip.title ?? currentTrip.destination} — ${currentTrip.destination}\n`;
       for (let d = 1; d <= totalDays; d++) {
@@ -5665,6 +5674,7 @@ export default function TripWorkspace() {
               )}
               {actSearchResults.map((place) => (
                 <StaySearchResultRow key={place.placeId ?? place.name} place={place} theme={theme} onPress={() => {
+                  Keyboard.dismiss();
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   const t = categoryToActivityType(place.category);
                   setActConfirmTime(addingToDay ? suggestTimeForActivity(currentTrip.activities, addingToDay, t) : defaultTimeForType(t));
@@ -5681,6 +5691,7 @@ export default function TripWorkspace() {
                       </ThemedText>
                       {actSuggestions.map((place) => (
                         <StaySearchResultRow key={place.placeId ?? place.name} place={place} theme={theme} onPress={() => {
+                          Keyboard.dismiss();
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                           const t = categoryToActivityType(place.category);
                           setActConfirmTime(addingToDay ? suggestTimeForActivity(currentTrip.activities, addingToDay, t) : defaultTimeForType(t));

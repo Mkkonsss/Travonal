@@ -32,6 +32,7 @@ import {
   type Purchase,
   type ExpoPurchaseError,
 } from 'expo-iap';
+import { supabase } from './supabase';
 
 export const PRODUCT_IDS = {
   monthly: 'com.tripseek.app.plus.monthly',
@@ -130,6 +131,8 @@ export async function restorePurchases(): Promise<{ isSubscribed: boolean; error
     for (const p of purchases) {
       if (plusIds.has(p.productId)) {
         await finishTransaction({ purchase: p, isConsumable: false });
+        // Ensure the server knows about this restored purchase
+        await validatePurchaseOnServer(p);
       }
     }
     return { isSubscribed };
@@ -182,6 +185,33 @@ export function listenForPurchaseUpdates(
  */
 export async function acknowledgePurchase(purchase: Purchase): Promise<void> {
   await finishTransaction({ purchase, isConsumable: false });
+}
+
+/**
+ * Validate a purchase on the server and update user_subscriptions.
+ * This is the critical step that makes the server recognize the subscription.
+ */
+export async function validatePurchaseOnServer(purchase: Purchase): Promise<boolean> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+
+    const { error } = await supabase.functions.invoke('validate-purchase', {
+      body: {
+        productId: purchase.productId,
+        transactionId: purchase.transactionId,
+      },
+    });
+
+    if (error) {
+      console.warn('[subscription] validate-purchase error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[subscription] validate-purchase failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
 }
 
 /**

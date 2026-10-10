@@ -254,7 +254,7 @@ export default function BoardsScreen() {
             />
             <ThemedText type="headline">No boards yet</ThemedText>
             <ThemedText style={[styles.emptyDesc, { color: theme.textSecondary }]}>
-{"Create a board to collect and organize your travel inspiration — places you want to visit, ideas, and anything that catches your eye."}
+{"Create a board to collect and organize your travel inspiration. Save places you want to visit, ideas, and anything that catches your eye."}
             </ThemedText>
             <Pressable
               onPress={handleOpenCreate}

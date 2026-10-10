@@ -156,8 +156,8 @@ async function fetchGooglePlaces(query, apiKey, locationBias?) {
     textQuery: query,
     pageSize: 20,
   };
-  // Always set a location bias so Google doesn't fall back to server IP geolocation
-  if (locationBias?.lat != null && locationBias?.lng != null) {
+  // Set a location bias if valid coordinates are provided (skip for global search)
+  if (locationBias?.lat != null && locationBias?.lng != null && !(locationBias.lat === 0 && locationBias.lng === 0)) {
     reqBody.locationBias = {
       circle: {
         center: { latitude: locationBias.lat, longitude: locationBias.lng },

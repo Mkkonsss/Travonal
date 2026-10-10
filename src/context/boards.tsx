@@ -18,6 +18,8 @@ export interface BoardItem {
   sourceType: 'link' | 'screenshot' | 'text' | 'explore';
   mediaUri?: string;
   mediaType?: 'image' | 'video';
+  /** Google Places photo reference for regenerating fresh photo URLs */
+  photoRef?: string;
   placeId?: string; // Google Place ID
   address?: string;
   lat?: number;

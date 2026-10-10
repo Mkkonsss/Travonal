@@ -20,7 +20,7 @@ export function MemoryTracker() {
   // Register first-memory onboarding toast
   useEffect(() => {
     setOnFirstEntry(() => {
-      showToast('Noted — Tripseek will remember this for future trips', 'info');
+      showToast('Noted! Tripseek will remember this for future trips.', 'info');
     });
     return () => setOnFirstEntry(null);
   }, [setOnFirstEntry, showToast]);

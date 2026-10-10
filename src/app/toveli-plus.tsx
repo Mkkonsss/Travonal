@@ -29,10 +29,10 @@ const SLIDE_PADDING = 24;
 // ─── Slide 1: Features ─────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: 'sparkles', image: require('@/assets/images/icon-chat-empty.png'), imageScale: 1, title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month — one for every adventure' },
+  { icon: 'sparkles', image: require('@/assets/images/icon-chat-empty.png'), imageScale: 1, title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month, one for every adventure' },
   { icon: 'bubble.left.and.bubble.right', image: require('@/assets/images/plus-feature-chat.png'), imageScale: 1.1, title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
-  { icon: 'square.and.arrow.down', image: require('@/assets/images/plus-feature-import.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere — Tripseek finds the place' },
-  { icon: 'icloud.and.arrow.down', image: require('@/assets/images/plus-feature-offline.png'), imageScale: 1, title: 'Offline trip access', desc: 'Download your trip and access it anywhere — no internet needed' },
+  { icon: 'square.and.arrow.down', image: require('@/assets/images/plus-feature-import.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere. Tripseek finds the place' },
+  { icon: 'icloud.and.arrow.down', image: require('@/assets/images/plus-feature-offline.png'), imageScale: 1, title: 'Offline trip access', desc: 'Download your trip and access it anywhere, no internet needed' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {

@@ -399,7 +399,8 @@ export default function PlaceDetailScreen() {
           rating: ratingVal ?? 5,
           date: relTime ?? '',
         };
-      }).filter((r) => r.text.length > 0);
+      }).filter((r) => r.text.length > 0)
+        .sort((a, b) => b.rating - a.rating);
     }
 
     // Review summary from overview text (distinct from description)
@@ -665,6 +666,7 @@ export default function PlaceDetailScreen() {
       lng: place.lng,
       rating: place.rating,
       ...(photoUrl ? { mediaUri: photoUrl, mediaType: 'image' as const } : {}),
+      ...(effectivePhotoRef ? { photoRef: effectivePhotoRef } : {}),
     });
     showToast(`"${place.title}" saved to board`, 'success');
     setBoardPickerVisible(false);

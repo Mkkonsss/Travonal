@@ -41,7 +41,7 @@ const FEATURE_CONTENT: Record<string, { image: any; title: string; desc: string 
   natural_search: {
     image: require('@/assets/images/icon-chat-empty.png'),
     title: 'Natural language search',
-    desc: 'Search for activities in plain English — "a cozy cafe near the museum".',
+    desc: 'Search for activities in plain English, like "a cozy cafe near the museum".',
   },
   import_place: {
     image: require('@/assets/images/plus-feature-import.png'),
@@ -56,7 +56,7 @@ const FEATURE_CONTENT: Record<string, { image: any; title: string; desc: string 
   offline_trip: {
     image: require('@/assets/images/plus-feature-offline.png'),
     title: 'Offline trip access',
-    desc: 'Download your trip to access it anywhere — no internet needed.',
+    desc: 'Download your trip to access it anywhere, no internet needed.',
   },
 };
 

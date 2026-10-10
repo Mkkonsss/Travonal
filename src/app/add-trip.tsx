@@ -804,7 +804,7 @@ export default function AddTripScreen() {
           {quickStep === 2 && (
             <>
               <ThemedText style={[styles.wizardHint, { color: theme.textSecondary }]}>
-                {"Don't worry if you're not sure yet — you can always change this later."}
+                {"Don't worry if you're not sure yet. You can always change this later."}
               </ThemedText>
 
               <View style={[styles.dateModeRow, { marginTop: 4 }]}>

@@ -20,6 +20,7 @@ import {
   verifyEntitlement,
   listenForPurchaseUpdates,
   acknowledgePurchase,
+  validatePurchaseOnServer,
   openIAPConnection,
 } from '@/services/subscription';
 
@@ -49,6 +50,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+  const lastUserId = useRef<string | null>(null);
 
   const loadState = useCallback(async () => {
     try {
@@ -77,15 +79,17 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // Initial load when session changes
   useEffect(() => {
     if (session) {
+      lastUserId.current = session.user.id;
       setLoading(true);
       loadState();
     } else {
-      // Signed out — reset
+      // Signed out — reset and clear this user's cache
       setIsPlus(false);
       setPlan('free');
       setUsage(null);
       setLoading(false);
-      clearUsageCache();
+      clearUsageCache(lastUserId.current ?? undefined);
+      lastUserId.current = null;
     }
   }, [session, loadState]);
 
@@ -110,7 +114,9 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         cleanup = listenForPurchaseUpdates(
           async (purchase) => {
             await acknowledgePurchase(purchase);
-            // Refresh state after successful purchase
+            // Register the purchase on the server so usage RPCs see the correct plan
+            await validatePurchaseOnServer(purchase);
+            // Refresh state — server now knows about the purchase
             await loadState();
           },
           (_error) => {

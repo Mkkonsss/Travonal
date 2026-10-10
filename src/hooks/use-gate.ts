@@ -55,7 +55,7 @@ const UPGRADE_MESSAGES: Record<string, { title: string; desc: string }> = {
   },
   natural_search: {
     title: 'Natural language search',
-    desc: 'Search for activities in plain English — "a cozy cafe near the museum".',
+    desc: 'Search for activities in plain English, like "a cozy cafe near the museum".',
   },
   import_place: {
     title: 'Import more places',

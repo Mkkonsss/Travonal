@@ -421,8 +421,8 @@ export async function searchExplorePlaces(
 
 /**
  * Search for a specific place by name without a location restriction.
- * Passes lat:0/lng:0 to the edge function which skips locationRestriction
- * when both values are falsy — giving a pure global text search.
+ * Passes lat/lng as null so the edge function skips locationBias entirely,
+ * giving a pure global text search.
  * Use this when you have a place name but no reliable nearby coordinates
  * (e.g. booking confirmation cards).
  */
@@ -434,7 +434,7 @@ export async function searchPlaceByName(
   try {
     const result = await callExploreEdge<{ places: Record<string, unknown>[] }>(
       'places_nearby',
-      { lat: 0, lng: 0, radius: 0, keyword },
+      { lat: null, lng: null, radius: 0, keyword },
     );
     return (result.places ?? []).map(normalizeGooglePlace);
   } catch {

@@ -208,7 +208,7 @@ function getSubtitle(
   }
 
   if (boards.filter(b => b.items.length > 0).length > 0) {
-    return "You've got places saved. Ask me anything — I know your boards, trips, and preferences.";
+    return "You've got places saved. Ask me anything about your boards, trips, and preferences.";
   }
 
   return "Ask me anything about travel. I know your whole account.";
@@ -266,7 +266,7 @@ function TypingIndicator({ userMessage }: { userMessage?: string }) {
 
   // After 15s for trip creation, show a reassuring slow-loading message
   const slowMessage = isTripCreation && elapsed >= 15
-    ? 'This can take up to a minute for longer trips — hang tight!'
+    ? 'This can take up to a minute for longer trips. Hang tight!'
     : null;
 
   useEffect(() => {
@@ -1555,7 +1555,7 @@ export default function ChatScreen() {
         role: 'assistant',
         text: isUsageLimit
           ? String((err as any).message ?? 'Message limit reached. Upgrade to Tripseek+ for more.')
-          : "Something went wrong — trying again...",
+          : "Something went wrong. Trying again...",
         timestamp: Date.now(),
         failed: !isUsageLimit,
       };

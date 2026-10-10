@@ -45,7 +45,20 @@ function UserSwitchHandler() {
   const { resetAll: resetBookings } = useBookings();
 
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading) return;
+    if (!user) {
+      // Signed out — wipe all account-specific state so next user starts fresh
+      resetAllData();
+      resetTrips();
+      resetMemory();
+      resetInbox();
+      resetTripPulse();
+      resetPulseHistory();
+      resetProfile();
+      resetBoards();
+      resetBookings();
+      return;
+    }
     loadLastUserId().then((lastId) => {
       if (lastId && lastId !== user.id) {
         // Different user — wipe everything
@@ -73,6 +86,7 @@ function RootLayoutNav() {
   const { session, loading: authLoading, isRecovery } = useAuth();
   const [loaded, setLoaded] = useState(false);
   const hasNavigated = useRef(false);
+  const pendingJoinCode = useRef<string | null>(null);
 
   // Phase 1: check onboarding state and show the Stack
   useEffect(() => {
@@ -97,6 +111,14 @@ function RootLayoutNav() {
     } else {
       router.replace('/onboarding');
     }
+    // Process any deep link that arrived before auth resolved
+    if (pendingJoinCode.current) {
+      const code = pendingJoinCode.current;
+      pendingJoinCode.current = null;
+      setTimeout(() => {
+        router.push({ pathname: '/join-trip' as any, params: { code } });
+      }, 100);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, authLoading, session, isRecovery]);
 
@@ -118,7 +140,14 @@ function RootLayoutNav() {
     function handleUrl({ url }: { url: string }) {
       const match = url.match(/(?:tripseekapp\.com\/join\/|tripseek:\/\/join\?code=)([A-Z0-9-]+)/i);
       if (match) {
-        router.push({ pathname: '/join-trip' as any, params: { code: match[1].toUpperCase() } });
+        const code = match[1].toUpperCase();
+        if (hasNavigated.current) {
+          // Auth already resolved — navigate immediately
+          router.push({ pathname: '/join-trip' as any, params: { code } });
+        } else {
+          // Auth still loading — store for Phase 2 to pick up
+          pendingJoinCode.current = code;
+        }
       }
     }
     const sub = Linking.addEventListener('url', handleUrl);

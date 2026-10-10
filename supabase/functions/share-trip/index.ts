@@ -232,8 +232,15 @@ function renderTripHtml(trip: any, permission: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${emoji} ${title} — Tripseek</title>
-<meta name="description" content="${destination}${dateRange ? ` · ${dateRange}` : ''}">
+<title>${emoji} ${title} | Tripseek</title>
+<meta name="description" content="${destination}${dateRange ? ` · ${dateRange}` : ''} · ${activities.length} activities across ${totalDays} days">
+<meta property="og:title" content="${emoji} ${title}">
+<meta property="og:description" content="${destination}${dateRange ? ` · ${dateRange}` : ''} · ${activities.length} activities across ${totalDays} days">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tripseek">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${emoji} ${title}">
+<meta name="twitter:description" content="${destination}${dateRange ? ` · ${dateRange}` : ''} · ${activities.length} activities across ${totalDays} days">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f2f2f7;color:#111;-webkit-font-smoothing:antialiased;min-height:100vh}

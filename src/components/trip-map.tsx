@@ -219,6 +219,15 @@ export function TripMap({ activities, destination, totalDays, topInset = 0, onAc
       .then((data) => {
         if (!cancelled && data?.[0]) {
           setDestinationCoords({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        } else if (!cancelled) {
+          // Nominatim returned no results — try adding "city" to the query
+          return fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(destination + ' city')}&format=json&limit=1`, {
+            headers: { 'User-Agent': 'TripseekApp/1.0' },
+          }).then((r2) => r2.json()).then((data2) => {
+            if (!cancelled && data2?.[0]) {
+              setDestinationCoords({ lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) });
+            }
+          });
         }
       })
       .catch(() => {});

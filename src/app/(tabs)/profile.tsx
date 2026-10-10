@@ -291,7 +291,7 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   useEffect(() => {
-    setSyncErrorCallback(() => showToast('Profile sync failed — changes saved locally', 'error'));
+    setSyncErrorCallback(() => showToast('Profile sync failed. Changes saved locally.', 'error'));
   }, [setSyncErrorCallback, showToast]);
 
   useEffect(() => {
@@ -412,7 +412,7 @@ export default function ProfileScreen() {
         showToast('Data exported successfully', 'success');
       }
     } catch {
-      showToast('Export failed — please try again', 'error');
+      showToast('Export failed. Please try again.', 'error');
     }
   }
 
@@ -553,7 +553,7 @@ export default function ProfileScreen() {
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.memorySheetScroll}>
                 <SettingToggle
                   label="Learn from my choices"
-                  sublabel={learningEnabled ? 'Tripseek remembers your preferences' : 'Paused — existing memories are kept'}
+                  sublabel={learningEnabled ? 'Tripseek remembers your preferences' : 'Paused, existing memories are kept'}
                   value={learningEnabled}
                   onToggle={setLearningEnabled}
                   theme={theme}
@@ -620,7 +620,7 @@ export default function ProfileScreen() {
               <View style={styles.subSection}>
                 <SettingToggle
                   label="Push notifications"
-                  sublabel={notificationsEnabled ? 'Enabled — manage in Settings' : 'Disabled — tap to enable'}
+                  sublabel={notificationsEnabled ? 'Manage in Settings' : 'Tap to enable'}
                   value={notificationsEnabled}
                   onToggle={async (val) => {
                     if (val) {
@@ -746,7 +746,7 @@ export default function ProfileScreen() {
                     />
                     <NavRow
                       label="Create account"
-                      sublabel="Free — keeps your trips backed up"
+                      sublabel="Free, keeps your trips backed up"
                       onPress={() => router.push('/sign-up' as any)}
                       theme={theme}
                     />

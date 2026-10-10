@@ -392,6 +392,8 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   }
 
   function deleteTrip(id: string) {
+    // Sync ref first so other consumers see the deletion immediately
+    tripsRef.current = tripsRef.current.filter((t) => t.id !== id);
     setTrips((prev) => prev.filter((t) => t.id !== id));
     if (user?.id) deleteRemoteTrip(id);
     cancelAllTripNotifications(id).catch(() => {});

@@ -10,7 +10,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-const CACHE_KEY = '@toveli/usage_summary';
+const LEGACY_CACHE_KEY = '@toveli/usage_summary';
+
+/** User-scoped cache key prevents cross-account subscription leakage */
+function cacheKey(userId: string): string {
+  return `@tripseek/usage_${userId}`;
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -174,23 +179,23 @@ export async function fetchUsageSummary(): Promise<UsageSummary | null> {
 
   if (error) {
     console.warn('[usage] get_usage_summary error:', error.message);
-    return getCachedSummary();
+    return getCachedSummary(session.user.id);
   }
 
   const summary = data as UsageSummary;
 
-  // Cache for offline display
+  // Cache for offline display (scoped to this user)
   try {
-    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(summary));
+    await AsyncStorage.setItem(cacheKey(session.user.id), JSON.stringify(summary));
   } catch { /* ignore cache write errors */ }
 
   return summary;
 }
 
 /** Get cached summary for offline display */
-async function getCachedSummary(): Promise<UsageSummary | null> {
+async function getCachedSummary(userId: string): Promise<UsageSummary | null> {
   try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    const raw = await AsyncStorage.getItem(cacheKey(userId));
     return raw ? JSON.parse(raw) as UsageSummary : getDefaultSummary();
   } catch {
     return getDefaultSummary();
@@ -220,8 +225,12 @@ function getDefaultSummary(): UsageSummary {
 }
 
 /** Clear cached usage on sign-out */
-export async function clearUsageCache(): Promise<void> {
+export async function clearUsageCache(userId?: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(CACHE_KEY);
+    if (userId) {
+      await AsyncStorage.removeItem(cacheKey(userId));
+    }
+    // Also clear legacy key from older app versions
+    await AsyncStorage.removeItem(LEGACY_CACHE_KEY);
   } catch { /* ignore */ }
 }

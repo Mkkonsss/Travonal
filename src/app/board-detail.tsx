@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -20,7 +21,7 @@ import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { searchPlaceByName, fetchPlaceDetails } from '@/services/explore-service';
 import { normalizeGooglePlace, type NormalizedPlace } from '@/services/place-model';
-import { prefetchPhotosFromCache, getCachedPhotoUrl } from '@/services/free-photos';
+import { prefetchPhotosFromCache, getCachedPhotoUrl, getPlacePhoto } from '@/services/free-photos';
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
 import { importPlaceAI } from '@/services/ai';
 import { useGate } from '@/hooks/use-gate';
@@ -62,50 +63,82 @@ function PinCardContent({
   const imageUrl = item.mediaUri ?? resolvedPhotoUrl;
   const icon = CATEGORY_ICONS[item.category ?? ''] ?? CATEGORY_ICONS[item.type] ?? 'mappin';
 
+  const cardHeight = pinWidth * 1.15;
+
   return (
     <View style={[
       styles.pinCard,
-      { backgroundColor: theme.backgroundElement },
+      { height: imageUrl ? cardHeight : undefined, backgroundColor: theme.backgroundElement },
       isDragging && styles.pinCardDragging,
     ]}>
       {imageUrl ? (
-        <ExpoImage
-          source={{ uri: imageUrl }}
-          style={[styles.pinImage, { height: pinWidth * 0.85 }]}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-        />
-      ) : (
-        <View style={[styles.pinPlaceholder, { height: pinWidth * 0.55, backgroundColor: theme.border }]}>
-          <SymbolView name={icon as any} size={24} tintColor={theme.textSecondary} />
-        </View>
-      )}
-      <View style={styles.pinInfo}>
-        <View style={styles.pinInfoRow}>
-          <ThemedText style={[styles.pinTitle, { flex: 1 }]} numberOfLines={2}>{item.title}</ThemedText>
+        <>
+          <ExpoImage
+            source={{ uri: imageUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+          <LinearGradient
+            colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)']}
+            locations={[0, 0.45, 1]}
+            style={StyleSheet.absoluteFill}
+          />
           {onMenuPress && (
-            <Pressable
-              onPress={onMenuPress}
-              hitSlop={8}
-              style={styles.pinMenuBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Options"
-            >
-              <SymbolView name="ellipsis" size={14} tintColor={theme.textSecondary} />
-            </Pressable>
+            <View style={styles.pinMenuOverlay}>
+              <Pressable
+                onPress={onMenuPress}
+                hitSlop={8}
+                style={styles.pinMenuBtnOverlay}
+                accessibilityRole="button"
+                accessibilityLabel="Options"
+              >
+                <SymbolView name="ellipsis" size={14} tintColor="#fff" />
+              </Pressable>
+            </View>
           )}
-        </View>
-        {item.destination && (
-          <ThemedText style={[styles.pinDest, { color: theme.textSecondary }]} numberOfLines={1}>
-            {item.destination}
-          </ThemedText>
-        )}
-        {item.notes && (
-          <ThemedText style={[styles.pinNotes, { color: theme.textSecondary }]} numberOfLines={2}>
-            {item.notes}
-          </ThemedText>
-        )}
-      </View>
+          <View style={styles.pinInfoOverlay}>
+            <ThemedText style={styles.pinTitleOverlay} numberOfLines={2}>{item.title}</ThemedText>
+            {item.destination && (
+              <ThemedText style={styles.pinDestOverlay} numberOfLines={1}>
+                {item.destination}
+              </ThemedText>
+            )}
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={[styles.pinPlaceholder, { height: pinWidth * 0.55, backgroundColor: theme.border }]}>
+            <SymbolView name={icon as any} size={24} tintColor={theme.textSecondary} />
+          </View>
+          <View style={styles.pinInfo}>
+            <View style={styles.pinInfoRow}>
+              <ThemedText style={[styles.pinTitle, { flex: 1 }]} numberOfLines={2}>{item.title}</ThemedText>
+              {onMenuPress && (
+                <Pressable
+                  onPress={onMenuPress}
+                  hitSlop={8}
+                  style={styles.pinMenuBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Options"
+                >
+                  <SymbolView name="ellipsis" size={14} tintColor={theme.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+            {item.destination && (
+              <ThemedText style={[styles.pinDest, { color: theme.textSecondary }]} numberOfLines={1}>
+                {item.destination}
+              </ThemedText>
+            )}
+            {item.notes && (
+              <ThemedText style={[styles.pinNotes, { color: theme.textSecondary }]} numberOfLines={2}>
+                {item.notes}
+              </ThemedText>
+            )}
+          </View>
+        </>
+      )}
       {item.plannedTripId && (
         <View style={[styles.plannedDot, { backgroundColor: theme.live }]} />
       )}
@@ -528,6 +561,35 @@ export default function BoardDetailScreen() {
     });
   }, [photoKey]);
 
+  // Resolve photos via photoRef for items whose mediaUri has expired
+  const photoRefKey = useMemo(
+    () => (board?.items ?? [])
+      .filter((i) => i.photoRef && i.placeId && !resolvedPhotos[i.placeId])
+      .map((i) => `${i.placeId}:${i.photoRef}`)
+      .join(','),
+    [board?.items, resolvedPhotos],
+  );
+  useEffect(() => {
+    if (!photoRefKey || !board) return;
+    let cancelled = false;
+    const items = board.items.filter((i) => i.photoRef && i.placeId && !resolvedPhotos[i.placeId!]);
+    (async () => {
+      const urls: Record<string, string> = {};
+      for (const item of items) {
+        if (cancelled) break;
+        try {
+          const result = await getPlacePhoto({ cacheKey: item.placeId!, photoRef: item.photoRef! });
+          if (result?.url && !cancelled) urls[item.placeId!] = result.url;
+        } catch { /* skip */ }
+      }
+      if (!cancelled && Object.keys(urls).length > 0) {
+        setResolvedPhotos((prev) => ({ ...prev, ...urls }));
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoRefKey]);
+
   // For items with no image AND no placeId, resolve via Google Places to get a placeId
   // (which then enables the photo cache above). Saves the result so it only happens once.
   const needsResolutionKey = useMemo(
@@ -761,7 +823,14 @@ export default function BoardDetailScreen() {
     if (!gate.allowed) { gate.showUpgrade(); return; }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      showToast('Photo library access is required', 'error');
+      Alert.alert(
+        'Photo Access Required',
+        'Tripseek needs photo library access to import screenshots. Please enable it in Settings.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
       return;
     }
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
@@ -1859,6 +1928,11 @@ const styles = StyleSheet.create({
   },
   pinDest: { fontSize: 11 },
   pinNotes: { fontSize: 11, fontStyle: 'italic', marginTop: 3 },
+  pinMenuOverlay: { position: 'absolute', top: 8, right: 8 },
+  pinMenuBtnOverlay: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center' },
+  pinInfoOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10, gap: 3 },
+  pinTitleOverlay: { fontSize: 13, fontWeight: '700', color: '#fff', lineHeight: 17 },
+  pinDestOverlay: { fontSize: 11, color: 'rgba(255,255,255,0.75)' },
   plannedDot: {
     position: 'absolute',
     top: 8,

@@ -474,7 +474,7 @@ export default function GeneratingTripScreen() {
               </ThemedText>
               {hasBlockingConflicts && (
                 <ThemedText style={[styles.conflictNote, { color: theme.textSecondary }]}>
-                  Some activities have timing conflicts — tap View my trip to fix them.
+                  Some activities have timing conflicts. Tap View my trip to fix them.
                 </ThemedText>
               )}
               {memoryCount > 0 && !hasBlockingConflicts && (

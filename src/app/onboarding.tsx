@@ -40,6 +40,8 @@ import { useTripPulse } from '@/context/trip-pulse';
 import { useTheme } from '@/hooks/use-theme';
 import { setOnboardingComplete } from '@/services/storage';
 import { requestNotificationPermission } from '@/services/notifications';
+import { useAuth } from '@/context/auth';
+import { pushProfile } from '@/services/sync';
 
 // ---------- phases ----------
 type Phase = 'welcome' | 'survey' | 'reveal';
@@ -261,6 +263,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { profile, updateProfile } = useProfile();
+  const { user } = useAuth();
   const { learningEnabled: travelMemoryEnabled, setLearningEnabled: setTravelMemoryEnabled } = useMemory();
   const { enabled: tripPulseEnabled, setEnabled: setTripPulseEnabled } = useTripPulse();
 
@@ -382,7 +385,13 @@ export default function OnboardingScreen() {
     if (step < STEPS.length - 1) {
       goToStep(step + 1);
     } else {
-      updateProfile(getProfileUpdates());
+      const updates = getProfileUpdates();
+      updateProfile(updates);
+      // Immediately push to server so preferences survive app restart
+      // (the normal debounced sync may not fire before the user navigates away)
+      if (user?.id) {
+        pushProfile(user.id, { ...profile, ...updates }).catch(() => {});
+      }
       // Request notification permission if user enabled Trip Alerts
       if (tripPulseEnabled) {
         requestNotificationPermission();

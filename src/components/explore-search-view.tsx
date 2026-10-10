@@ -50,6 +50,7 @@ import {
   CATEGORY_QUERIES,
   fetchExplorePlaces,
   searchExplorePlaces,
+  searchPlaceByName,
 } from '@/services/explore-service';
 import {
   getPlacePhoto,
@@ -909,9 +910,9 @@ export function ExploreSearchView() {
         if (!cancelled) {
           setPlaces([]);
           if (e?.message === 'GEOCODE_FAILED') {
-            showToast("Couldn't find that location — try a different city name", 'error');
+            showToast("Couldn't find that location. Try a different city name.", 'error');
           } else {
-            showToast('Could not load places — check your internet connection', 'error');
+            showToast('Could not load places. Check your internet connection.', 'error');
           }
         }
       })
@@ -936,7 +937,15 @@ export function ExploreSearchView() {
         return;
       }
       searchExplorePlaces(search.trim(), exploreLocation)
-        .then((results) => setSearchResults(results))
+        .then(async (results) => {
+          if (results.length > 0) {
+            setSearchResults(results);
+          } else {
+            // No local results — try global search as fallback
+            const global = await searchPlaceByName(search.trim());
+            setSearchResults(global);
+          }
+        })
         .catch(() => setSearchResults([]))
         .finally(() => setSearchLoading(false));
     }, 400);
