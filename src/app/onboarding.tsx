@@ -39,7 +39,7 @@ import { useProfile, TravelProfile } from '@/context/profile';
 import { useMemory } from '@/context/memory';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useTheme } from '@/hooks/use-theme';
-import { setOnboardingComplete } from '@/services/storage';
+import { setOnboardingComplete, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
 import { requestNotificationPermission } from '@/services/notifications';
 import { useAuth } from '@/context/auth';
 import { pushProfile } from '@/services/sync';
@@ -392,14 +392,6 @@ export default function OnboardingScreen() {
       // (the normal debounced sync may not fire before the user navigates away)
       if (user?.id) {
         pushProfile(user.id, { ...profile, ...updates }).catch(() => {});
-      }
-      // Request notification permission if user enabled Trip Alerts
-      if (tripPulseEnabled) {
-        const granted = await requestNotificationPermission();
-        if (!granted) {
-          // Permission denied — disable Trip Alerts so the UI reflects reality
-          setTripPulseEnabled(false);
-        }
       }
       handleFinish();
     }
@@ -960,16 +952,22 @@ export default function OnboardingScreen() {
                     value={tripPulseEnabled}
                     onValueChange={async (val) => {
                       Haptics.selectionAsync();
+                      setTripPulseEnabled(val);
                       if (val) {
-                        const granted = await requestNotificationPermission();
-                        setTripPulseEnabled(granted);
-                        if (!granted) {
-                          Alert.alert('Enable Notifications', 'Tripseek needs notification permission to send Trip Alerts. You can enable it in Settings.', [
-                            { text: 'OK', style: 'default' },
-                          ]);
+                        const alreadyShown = await loadPushPromptShown();
+                        if (!alreadyShown) {
+                          savePushPromptShown();
+                          Alert.alert(
+                            'Get Phone Notifications?',
+                            'Want Trip Alerts delivered to your lock screen? You can enable Push Notifications in Profile settings.',
+                            [
+                              { text: 'Not Now', style: 'cancel' },
+                              { text: 'Enable', onPress: () => {
+                                requestNotificationPermission();
+                              }},
+                            ],
+                          );
                         }
-                      } else {
-                        setTripPulseEnabled(false);
                       }
                     }}
                     trackColor={{ false: theme.border, true: theme.primary }}

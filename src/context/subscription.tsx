@@ -21,6 +21,8 @@ import {
   acknowledgePurchase,
   validatePurchaseOnServer,
   openIAPConnection,
+  isPurchaseInProgress,
+  clearPurchaseInProgress,
 } from '@/services/subscription';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -108,9 +110,14 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         cleanup = listenForPurchaseUpdates(
           async (purchase) => {
             await acknowledgePurchase(purchase);
-            // Register the purchase on the server so usage RPCs see the correct plan
-            await validatePurchaseOnServer(purchase);
-            // Refresh state — server now knows about the purchase
+            // Only validate on the server if this was a user-initiated purchase.
+            // StoreKit replays unfinished transactions for the Apple ID on connection,
+            // which would incorrectly register another user's subscription.
+            if (isPurchaseInProgress()) {
+              await validatePurchaseOnServer(purchase);
+              clearPurchaseInProgress();
+            }
+            // Refresh state from server regardless
             await loadState();
           },
           (_error) => {

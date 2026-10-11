@@ -2862,18 +2862,25 @@ async function handleDestinationPhoto(payload) {
   var apiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
 
+  // Preferred place types — landmarks, scenic areas, and tourist attractions
+  var preferredTypes = [
+    "landmark", "tourist_attraction", "national_park", "natural_feature",
+    "point_of_interest", "city_hall", "church", "mosque", "hindu_temple",
+    "monument", "museum", "palace", "castle",
+  ];
+
   // Use New Places API v1 Text Search — returns photos[i].name resource paths
   var searchUrl = "https://places.googleapis.com/v1/places:searchText";
   var searchBody = {
-    textQuery: destination + " landmark scenic",
-    maxResultCount: 5,
+    textQuery: destination + " famous landmark skyline",
+    maxResultCount: 10,
   };
   var searchResp = await fetch(searchUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "places.id,places.photos",
+      "X-Goog-FieldMask": "places.id,places.photos,places.types,places.displayName",
     },
     body: JSON.stringify(searchBody),
   });
@@ -2884,20 +2891,36 @@ async function handleDestinationPhoto(payload) {
   var searchData = await searchResp.json();
   var places = searchData.places || [];
 
-  // Walk results to find first usable photo resource name
-  var photoName = null;
+  // Score places: prefer landmarks/tourist attractions with many photos
+  var bestPhoto = null;
+  var bestScore = -1;
   for (var i = 0; i < places.length; i++) {
     var photos = places[i].photos || [];
-    if (photos.length > 0 && photos[0].name) {
-      photoName = photos[0].name;
-      break;
+    if (photos.length === 0 || !photos[0].name) continue;
+
+    var types = places[i].types || [];
+    var score = 0;
+    // Boost places whose types match preferred scenic/landmark types
+    for (var t = 0; t < types.length; t++) {
+      if (preferredTypes.indexOf(types[t]) !== -1) {
+        score += 10;
+      }
+    }
+    // More photos = more likely a photogenic/popular place
+    score += Math.min(photos.length, 10);
+    // Slight position bias — earlier results tend to be more relevant
+    score -= i * 0.5;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestPhoto = photos[0].name;
     }
   }
 
-  if (!photoName) return { url: null };
+  if (!bestPhoto) return { url: null };
 
   // Build photo URL using Places API v1 media endpoint
-  var photoUrl = "https://places.googleapis.com/v1/" + photoName + "/media?maxWidthPx=1600&key=" + apiKey;
+  var photoUrl = "https://places.googleapis.com/v1/" + bestPhoto + "/media?maxWidthPx=1600&key=" + apiKey;
   return { url: photoUrl };
 }
 

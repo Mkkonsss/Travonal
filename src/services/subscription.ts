@@ -39,6 +39,15 @@ export const PRODUCT_IDS = {
   annual: 'com.tripseek.app.plus.annual',
 } as const;
 
+/**
+ * Flag set to true while a user-initiated purchase is in progress.
+ * Prevents auto-validating replayed StoreKit transactions (which belong
+ * to the Apple ID, not the app account) against the wrong user.
+ */
+let _purchaseInProgress = false;
+export function isPurchaseInProgress(): boolean { return _purchaseInProgress; }
+export function clearPurchaseInProgress(): void { _purchaseInProgress = false; }
+
 export type PlanId = keyof typeof PRODUCT_IDS;
 export type ProductId = (typeof PRODUCT_IDS)[PlanId];
 
@@ -102,6 +111,7 @@ export async function loadSubscriptionProducts(): Promise<SubscriptionProduct[]>
 export async function purchaseSubscription(planId: PlanId): Promise<{ error?: string }> {
   try {
     await openIAPConnection();
+    _purchaseInProgress = true;
     const sku = PRODUCT_IDS[planId];
     // requestPurchase is event-driven — listen via purchaseUpdatedListener for result.
     await requestPurchase({
@@ -113,6 +123,7 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
     });
     return {};
   } catch (e: unknown) {
+    _purchaseInProgress = false;
     const msg = e instanceof Error ? e.message : 'Purchase failed.';
     return { error: msg };
   }

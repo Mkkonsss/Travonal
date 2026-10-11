@@ -1,6 +1,7 @@
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useIsFocused, useNavigation, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, InteractionManager, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
@@ -51,7 +52,7 @@ import { UpgradePrompt } from '@/components/upgrade-prompt';
 import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
-import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts } from '@/services/storage';
+import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats, registerInviteCode, pushTrips } from '@/services/sync';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
 import { usePulseHistory } from '@/context/pulse-history';
@@ -60,7 +61,7 @@ import { StaysStrip } from '@/components/stays-strip';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useToast } from '@/context/toast';
 import { TripMap } from '@/components/trip-map';
-import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings } from '@/services/notifications';
+import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings, requestNotificationPermission } from '@/services/notifications';
 import { exportTripPDF } from '@/services/trip-export';
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '\u20AC', GBP: '\u00A3', JPY: '\u00A5', AUD: 'A$', CAD: 'C$', CHF: 'CHF', CNY: '\u00A5', KRW: '\u20A9', THB: '\u0E3F', INR: '\u20B9', MXN: 'MX$', BRL: 'R$' };
@@ -454,6 +455,7 @@ export default function TripWorkspace() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
 
   const [askVisible, setAskVisible] = useState(false);
   const [aiEditLoading, setAiEditLoading] = useState(false);
@@ -628,6 +630,7 @@ export default function TripWorkspace() {
   const [editTravelWith, setEditTravelWith] = useState<'solo' | 'partner' | 'family' | 'friends' | 'group'>('solo');
   const [editRestrictions, setEditRestrictions] = useState('');
   const [editTripInstructions, setEditTripInstructions] = useState('');
+  const [editCustomImage, setEditCustomImage] = useState<string | undefined>(undefined);
   const [showEditStartPicker, setShowEditStartPicker] = useState(false);
   const [showEditEndPicker, setShowEditEndPicker] = useState(false);
 
@@ -719,14 +722,14 @@ export default function TripWorkspace() {
     }
   }, [trip, navigation]);
 
-  // Navigate away if the trip is deleted while this screen is mounted
+  // Navigate away if the trip is deleted while this screen is focused.
+  // If the screen is in the background (user deleted from list), just let it
+  // return null below — navigating from a background screen causes crashes.
   useEffect(() => {
-    if (tripsLoaded && !trip) {
-      InteractionManager.runAfterInteractions(() => {
-        router.replace('/(tabs)' as any);
-      });
+    if (tripsLoaded && !trip && isFocused) {
+      router.replace('/(tabs)' as any);
     }
-  }, [tripsLoaded, trip]);
+  }, [tripsLoaded, trip, isFocused]);
 
   // Set filter to specific day when navigated with ?day=N
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -771,6 +774,7 @@ export default function TripWorkspace() {
       setEditStartDate(trip.startDate);
       setEditEndDate(trip.endDate);
       setEditNotes(trip.notes || '');
+      setEditCustomImage(trip.customImageUri);
       setShowTripEdit(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2624,6 +2628,7 @@ export default function TripWorkspace() {
     setEditTravelWith(currentTrip.travelWith || profile.travelWith || 'solo');
     setEditRestrictions(currentTrip.restrictions || '');
     setEditTripInstructions(currentTrip.tripInstructions || '');
+    setEditCustomImage(currentTrip.customImageUri);
     setShowTripEdit(true);
   }
 
@@ -2649,6 +2654,7 @@ export default function TripWorkspace() {
         travelWith: editTravelWith,
         restrictions: editRestrictions.trim() || undefined,
         tripInstructions: editTripInstructions.trim() || undefined,
+        customImageUri: editCustomImage,
       });
       if (outOfRange.length > 0) {
         const keepActivities = currentTrip.activities.filter((a) => a.day <= newTotalDays);
@@ -2914,9 +2920,9 @@ export default function TripWorkspace() {
         {/* Hero — photo background with gradient overlay */}
         {viewMode !== 'ai' && <View style={[styles.hero, { height: 260 + insets.top }]}>
           {/* Photo or gradient fallback */}
-          {heroPhoto ? (
+          {(currentTrip.customImageUri || heroPhoto) ? (
             <ExpoImage
-              source={{ uri: heroPhoto }}
+              source={{ uri: currentTrip.customImageUri || heroPhoto! }}
               style={[StyleSheet.absoluteFill, styles.heroBgImage]}
               contentFit="cover"
               cachePolicy="memory-disk"
@@ -4725,10 +4731,26 @@ export default function TripWorkspace() {
               <ThemedText style={{ fontSize: 14, color: theme.textSecondary }}>Trip alerts</ThemedText>
               <Switch
                 value={alertsEnabled}
-                onValueChange={(val) => {
+                onValueChange={async (val) => {
                   setAlertsEnabled(val);
-                  if (val && alertsFetchedForRef.current !== currentTrip.id) {
-                    fetchTripAlerts();
+                  if (val) {
+                    if (alertsFetchedForRef.current !== currentTrip.id) {
+                      fetchTripAlerts();
+                    }
+                    const alreadyShown = await loadPushPromptShown();
+                    if (!alreadyShown) {
+                      savePushPromptShown();
+                      Alert.alert(
+                        'Get Phone Notifications?',
+                        'Want Trip Alerts delivered to your lock screen? You can enable Push Notifications in Profile settings.',
+                        [
+                          { text: 'Not Now', style: 'cancel' },
+                          { text: 'Enable', onPress: () => {
+                            requestNotificationPermission();
+                          }},
+                        ],
+                      );
+                    }
                   }
                 }}
                 trackColor={{ false: theme.border, true: theme.primary }}
@@ -5269,7 +5291,8 @@ export default function TripWorkspace() {
           || editDest !== currentTrip.destination
           || editStartDate !== currentTrip.startDate
           || editEndDate !== currentTrip.endDate
-          || editNotes !== (currentTrip.notes || '');
+          || editNotes !== (currentTrip.notes || '')
+          || editCustomImage !== currentTrip.customImageUri;
         if (hasChanges) {
           Alert.alert('Discard changes?', 'You have unsaved changes.', [
             { text: 'Keep editing', style: 'cancel' },
@@ -5289,7 +5312,8 @@ export default function TripWorkspace() {
                   || editDest !== currentTrip.destination
                   || editStartDate !== currentTrip.startDate
                   || editEndDate !== currentTrip.endDate
-                  || editNotes !== (currentTrip.notes || '');
+                  || editNotes !== (currentTrip.notes || '')
+                  || editCustomImage !== currentTrip.customImageUri;
                 if (hasChanges) {
                   Alert.alert('Discard changes?', 'You have unsaved changes.', [
                     { text: 'Keep editing', style: 'cancel' },
@@ -5308,6 +5332,71 @@ export default function TripWorkspace() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+              {/* ─── Trip Photo ─── */}
+              <ThemedText type="eyebrow" style={{ color: theme.textSecondary, marginBottom: 12 }}>Trip Photo</ThemedText>
+              <Pressable
+                onPress={async () => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (status !== 'granted') {
+                    Alert.alert('Photo Access Required', 'Allow Toveli to access your photos to set a trip cover image.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                    ]);
+                    return;
+                  }
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ['images'],
+                    quality: 0.8,
+                    allowsEditing: true,
+                    aspect: [16, 9],
+                  });
+                  if (!result.canceled && result.assets?.length) {
+                    setEditCustomImage(result.assets[0].uri);
+                  }
+                }}
+                style={[{
+                  height: 140,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  marginBottom: 8,
+                  backgroundColor: theme.backgroundElement,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }]}
+                accessibilityRole="button"
+                accessibilityLabel="Change trip photo"
+              >
+                {(editCustomImage || heroPhoto) ? (
+                  <ExpoImage
+                    source={{ uri: editCustomImage || heroPhoto! }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <ThemedText style={{ fontSize: 32 }}>📷</ThemedText>
+                  </View>
+                )}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.6)']}
+                  style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end', padding: 12 }]}
+                >
+                  <ThemedText style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Tap to change photo</ThemedText>
+                </LinearGradient>
+              </Pressable>
+              {editCustomImage && (
+                <Pressable
+                  onPress={() => setEditCustomImage(undefined)}
+                  style={{ alignSelf: 'flex-end', marginBottom: 16 }}
+                  hitSlop={8}
+                >
+                  <ThemedText style={{ fontSize: 13, color: theme.primary }}>Reset to auto</ThemedText>
+                </Pressable>
+              )}
+              {!editCustomImage && <View style={{ height: 16 }} />}
+
               {(() => {
                 const isAITrip = !!currentTrip.generatedAt;
                 if (isAITrip) {

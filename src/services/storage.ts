@@ -28,6 +28,7 @@ const KEYS = {
   BOOKING_REMINDERS_ENABLED: '@toveli/booking_reminders_enabled',
   DEPARTURE_REMINDER_ENABLED: '@toveli/departure_reminder_enabled',
   DAILY_BRIEFING_ENABLED: '@toveli/daily_briefing_enabled',
+  PUSH_PROMPT_SHOWN: '@toveli/push_prompt_shown',
 } as const;
 
 /**
@@ -346,9 +347,9 @@ export async function saveNotifDismissed(dismissed: boolean): Promise<void> {
 export async function loadTripPulseEnabled(): Promise<boolean> {
   try {
     const val = await AsyncStorage.getItem(KEYS.TRIP_PULSE_ENABLED);
-    return val === 'true'; // default false
+    return val !== 'false'; // default true
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -444,6 +445,23 @@ export async function saveDailyBriefingEnabled(enabled: boolean): Promise<void> 
     await AsyncStorage.setItem(KEYS.DAILY_BRIEFING_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
     console.warn('Failed to save daily briefing setting:', e);
+  }
+}
+
+export async function loadPushPromptShown(): Promise<boolean> {
+  try {
+    const val = await AsyncStorage.getItem(KEYS.PUSH_PROMPT_SHOWN);
+    return val === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function savePushPromptShown(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(KEYS.PUSH_PROMPT_SHOWN, 'true');
+  } catch (e) {
+    console.warn('Failed to save push prompt shown:', e);
   }
 }
 

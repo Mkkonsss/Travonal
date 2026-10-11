@@ -56,7 +56,8 @@ function daysUntil(dateStr: string) {
 function NextTripHero({ trip, onDelete }: { trip: Trip; onDelete: (trip: Trip) => void }) {
   const router = useRouter();
   const photoQuery = `${trip.destination}, ${trip.country}`;
-  const photoUrl = useDestinationPhoto(photoQuery);
+  const autoPhoto = useDestinationPhoto(photoQuery);
+  const photoUrl = trip.customImageUri || autoPhoto;
   const imgOpacity = useSharedValue(0);
   const imgStyle = useAnimatedStyle(() => ({ opacity: imgOpacity.value }));
   const [gradStart, gradEnd] = tripGradient(trip.destination);

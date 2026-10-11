@@ -122,6 +122,8 @@ export interface Trip {
   members?: TripMember[];
   /** Set when the user joined this trip via invite code. Undefined = user is the owner. */
   joinedAs?: 'member' | 'viewer';
+  /** User-selected hero image URI (overrides auto-fetched destination photo) */
+  customImageUri?: string;
 }
 
 export interface PrepItem {
