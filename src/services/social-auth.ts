@@ -91,10 +91,37 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
 
     if (result.type === 'success') {
-      const code = new URL(result.url).searchParams.get('code');
-      if (!code) return { error: new Error('No authorization code in redirect URL') };
-      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-      return { error: sessionError };
+      // Split URL into query and fragment — avoid new URL() which can fail with custom schemes in Hermes
+      const [urlBeforeHash, hashString] = result.url.split('#');
+      const [, queryString] = urlBeforeHash.split('?');
+      const params = new URLSearchParams(queryString ?? '');
+
+      // Surface OAuth errors from the redirect (e.g. redirect URL not whitelisted)
+      const oauthError = params.get('error_description') || params.get('error');
+      if (oauthError) return { error: new Error(oauthError) };
+
+      // PKCE flow: authorization code in query params
+      const code = params.get('code');
+      if (code) {
+        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+        return { error: sessionError };
+      }
+
+      // Implicit flow fallback: tokens in URL fragment (#access_token=...&refresh_token=...)
+      if (hashString) {
+        const hashParams = new URLSearchParams(hashString);
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        if (accessToken && refreshToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          return { error: sessionError };
+        }
+      }
+
+      return { error: new Error('No authorization code in redirect URL') };
     }
 
     // User dismissed the browser — not an error, but not a success either

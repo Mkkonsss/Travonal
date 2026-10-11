@@ -71,17 +71,16 @@ function BookingImage({ uri, typeKey, iconSize = 28, photosLoading = false }: { 
 }
 
 function findMatchingTrip(bookingData: Record<string, unknown>, trips: Trip[]): Trip | null {
-  const location = (
-    (bookingData.location as string) ||
-    (bookingData.destination as string) ||
-    ''
-  ).toLowerCase();
-  if (!location) return null;
-  const matches = trips.filter(
-    (t) =>
-      location.includes(t.destination.toLowerCase()) ||
-      t.destination.toLowerCase().includes(location),
-  );
+  // Check location and destination independently — for flights, destination is the
+  // arrival city while location may be empty or set to the origin, so we need both.
+  const candidates = [bookingData.location, bookingData.destination]
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .map((s) => s.toLowerCase());
+  if (candidates.length === 0) return null;
+  const matches = trips.filter((t) => {
+    const tripDest = t.destination.toLowerCase();
+    return candidates.some((c) => c.includes(tripDest) || tripDest.includes(c));
+  });
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0];
   // Multiple matches — pick the trip whose start date is closest to the booking date
@@ -197,11 +196,12 @@ export default function BookingsScreen() {
             cancellationPolicy: (data.cancellationPolicy as string) ?? undefined,
             duration: (data.duration as string) ?? undefined,
           };
-          addStandaloneBooking(payload);
-          // Also link to matching trip if destination matches
+          // Link to matching trip if destination matches, otherwise keep as standalone
           const matchedTrip = findMatchingTrip(data, trips);
           if (matchedTrip) {
             addReservation(matchedTrip.id, payload);
+          } else {
+            addStandaloneBooking(payload);
           }
           markBookingImportedAI(booking.id).catch(() => {});
         }

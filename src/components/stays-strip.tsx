@@ -164,9 +164,8 @@ export const StaysStrip = memo(function StaysStrip({
       {/* Stay cards — 2-column grid */}
       <View style={s.grid}>
         {blocks.map((b) => {
-          const photoUrl = b.hotel.placeId
-            ? activityPhotos.get(b.hotel.placeId)
-            : hotelPhotoUrls.get(b.hotel.title);
+          const photoUrl = activityPhotos.get(b.hotel.placeId ?? b.hotel.id)
+            ?? hotelPhotoUrls.get(b.hotel.title);
           return (
             <View key={b.hotel.id} style={s.gridItem}>
               <StayCard

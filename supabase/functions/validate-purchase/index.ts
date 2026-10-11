@@ -39,10 +39,12 @@ function makeCorsHeaders(req: Request) {
   };
 }
 
-// Product ID → plan mapping
+// Product ID → plan mapping (support both current and legacy App Store Connect IDs)
 const PRODUCT_PLAN_MAP: Record<string, 'monthly' | 'annual'> = {
   'com.tripseek.app.plus.monthly': 'monthly',
   'com.tripseek.app.plus.annual': 'annual',
+  'com.toveli.plus.monthly': 'monthly',
+  'com.toveli.plus.annual': 'annual',
 };
 
 // Validate required env vars at startup
@@ -113,6 +115,32 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Use service-role client (bypasses RLS)
+    const adminClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+
+    // Never downgrade an active annual subscription to monthly.
+    // This can happen when StoreKit replays old monthly transactions
+    // or restorePurchases sends multiple products.
+    if (plan === 'monthly') {
+      const { data: existing } = await adminClient
+        .from('user_subscriptions')
+        .select('plan, status, expires_at')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existing?.plan === 'annual' && existing?.status === 'active' &&
+          existing?.expires_at && new Date(existing.expires_at) > new Date()) {
+        // Annual is still active — don't overwrite with monthly
+        return new Response(
+          JSON.stringify({ success: true, plan: existing.plan, expires_at: existing.expires_at }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
     // Calculate expiry: monthly = +31 days, annual = +366 days
     // (generous buffer; real expiry comes from App Store renewal notifications)
     const now = new Date();
@@ -122,12 +150,6 @@ Deno.serve(async (req: Request) => {
     } else {
       expiresAt.setDate(expiresAt.getDate() + 366);
     }
-
-    // Use service-role client to upsert subscription (bypasses RLS)
-    const adminClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
 
     const { error: upsertError } = await adminClient
       .from('user_subscriptions')

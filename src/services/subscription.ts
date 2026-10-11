@@ -7,8 +7,8 @@
  * EXTERNAL SETUP REQUIRED before purchases can succeed:
  *   1. Create a Tripseek Plus subscription group in App Store Connect.
  *   2. Create two auto-renewable subscription products with these exact IDs:
- *        Monthly: com.toveli.plus.monthly
- *        Annual:  com.toveli.plus.annual
+ *        Monthly: com.tripseek.app.plus.monthly
+ *        Annual:  com.tripseek.app.plus.annual
  *   3. Set pricing, metadata, and localizations for each product.
  *   4. Complete agreements, tax, and banking in App Store Connect.
  *   5. Configure sandbox testers in App Store Connect for TestFlight testing.
@@ -138,14 +138,23 @@ export async function restorePurchases(): Promise<{ isSubscribed: boolean; error
     await openIAPConnection();
     const purchases = await getAvailablePurchases();
     const plusIds = new Set<string>(Object.values(PRODUCT_IDS));
-    const isSubscribed = purchases.some((p: Purchase) => plusIds.has(p.productId));
-    for (const p of purchases) {
-      if (plusIds.has(p.productId)) {
-        await finishTransaction({ purchase: p, isConsumable: false });
-        // Ensure the server knows about this restored purchase
-        await validatePurchaseOnServer(p);
-      }
+    const plusPurchases = purchases.filter((p: Purchase) => plusIds.has(p.productId));
+    const isSubscribed = plusPurchases.length > 0;
+
+    // Finish all plus transactions
+    for (const p of plusPurchases) {
+      await finishTransaction({ purchase: p, isConsumable: false });
     }
+
+    // Only validate the highest-tier purchase on the server (annual > monthly).
+    // The server upserts by user_id, so the last validated purchase wins —
+    // if we validate monthly after annual, it would downgrade the subscription.
+    const annualId = PRODUCT_IDS.annual;
+    const best = plusPurchases.find((p) => p.productId === annualId) ?? plusPurchases[0];
+    if (best) {
+      await validatePurchaseOnServer(best);
+    }
+
     return { isSubscribed };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Restore failed.';

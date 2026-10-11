@@ -56,16 +56,24 @@ export async function deleteRemoteTrip(tripId: string): Promise<void> {
 export async function findTripByInviteCode(inviteCode: string): Promise<Trip | null> {
   const code = inviteCode.toUpperCase().trim();
 
+  // Primary: RPC checks trip_members → trips table
   const { data, error } = await supabase.rpc('lookup_trip_by_invite_code', {
     p_invite_code: code,
   });
 
-  if (error) {
-    console.warn('[sync] findTripByInviteCode failed:', error.message);
-    return null;
-  }
+  if (!error && data) return data as Trip;
+  if (error) console.warn('[sync] findTripByInviteCode RPC failed:', error.message);
 
-  return (data as Trip) ?? null;
+  // Fallback: check shared_trips (trip data stored at share time, readable by anyone)
+  const { data: shared } = await supabase
+    .from('shared_trips')
+    .select('trip_data')
+    .eq('invite_code', code)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return (shared?.trip_data as Trip) ?? null;
 }
 
 /**

@@ -660,6 +660,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
         fixed: true,
         locked: true,
         reservationId: newRes.id,
+        bookingStatus: 'booked' as const,
       };
       newActivities = [...trip.activities, newActivity];
     }

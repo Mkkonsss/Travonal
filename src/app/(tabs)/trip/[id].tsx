@@ -54,6 +54,7 @@ import { normalizeActivity, mergeDayScopedActivities, generateActivityId, valida
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
 import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats, registerInviteCode, pushTrips } from '@/services/sync';
+import { supabase } from '@/services/supabase';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
 import { usePulseHistory } from '@/context/pulse-history';
 import { type StayBlock, type StaysData } from '@/components/stays-section';
@@ -2801,10 +2802,15 @@ export default function TripWorkspace() {
       }
       await registerInviteCode(currentTrip.id, inviteCode, permission === 'edit' ? 'member' : 'viewer');
 
+      // Get fresh token — pushTrips/registerInviteCode may have triggered an auto-refresh
+      // that hasn't propagated to React state yet
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      const freshToken = freshSession?.access_token ?? token;
+
       const res = await fetch(edgeFnUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${freshToken}`,
           'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
           'Content-Type': 'application/json',
         },
