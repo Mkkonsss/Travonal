@@ -59,7 +59,9 @@ export default function TripMembersScreen() {
 
   useEffect(() => {
     if (inviteCode) {
-      registerInviteCode(tripId, inviteCode, 'member').catch(() => {});
+      registerInviteCode(tripId, inviteCode, 'member').catch((err) => {
+        console.warn('[trip-members] Failed to re-register invite code:', err);
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inviteCode]);
@@ -99,7 +101,12 @@ export default function TripMembersScreen() {
     let code = inviteCode;
     if (!code) {
       code = addInvitation(tripId, { status: 'pending', role: 'member' });
-      registerInviteCode(tripId, code, 'member').catch(() => {});
+      try {
+        await registerInviteCode(tripId, code, 'member');
+      } catch {
+        Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
+        return;
+      }
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const tripName = trip.title ?? trip.destination;

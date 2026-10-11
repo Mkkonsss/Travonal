@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { Session, User, AuthError } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/services/supabase';
-import { signInWithApple, signInWithGoogle, type SocialAuthError } from '@/services/social-auth';
+import { signInWithApple, signInWithGoogle, type SocialAuthResult } from '@/services/social-auth';
 
 // Deep link scheme — must match app.json "scheme"
 const APP_SCHEME = 'tripseek';
@@ -16,8 +16,8 @@ interface AuthContextType {
   clearRecovery: () => void;
   signUp: (email: string, password: string, name: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signInWithApple: () => Promise<{ error: SocialAuthError }>;
-  signInWithGoogle: () => Promise<{ error: SocialAuthError }>;
+  signInWithApple: () => Promise<SocialAuthResult>;
+  signInWithGoogle: () => Promise<SocialAuthResult>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
 }

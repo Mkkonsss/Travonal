@@ -78,12 +78,12 @@ export async function registerInviteCode(
   role: 'member' | 'viewer' = 'member',
 ): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) throw new Error('Not authenticated');
   const { error } = await supabase.from('trip_members').upsert(
     { trip_id: tripId, role, invite_code: code.toUpperCase().trim(), invited_by: user.id },
     { onConflict: 'invite_code', ignoreDuplicates: true },
   );
-  if (error) console.warn('[sync] registerInviteCode failed:', error.message);
+  if (error) throw new Error(error.message);
 }
 
 /**

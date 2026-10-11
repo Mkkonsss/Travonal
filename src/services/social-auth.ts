@@ -8,6 +8,7 @@ import type { AuthError } from '@supabase/supabase-js';
 WebBrowser.maybeCompleteAuthSession();
 
 export type SocialAuthError = AuthError | Error | null;
+export type SocialAuthResult = { error: SocialAuthError; cancelled?: boolean };
 
 /**
  * Apple Sign In — iOS only.
@@ -19,7 +20,7 @@ export type SocialAuthError = AuthError | Error | null;
  *   2. Apple Developer → App ID → enable "Sign In with Apple" capability
  *   3. Apple Developer → create Services ID + Key, add to Supabase
  */
-export async function signInWithApple(): Promise<{ error: SocialAuthError }> {
+export async function signInWithApple(): Promise<SocialAuthResult> {
   if (Platform.OS !== 'ios') {
     return { error: new Error('Apple Sign In is only available on iOS') };
   }
@@ -54,8 +55,8 @@ export async function signInWithApple(): Promise<{ error: SocialAuthError }> {
 
     return { error };
   } catch (err: any) {
-    // User tapped Cancel — not an error
-    if (err?.code === 'ERR_REQUEST_CANCELED') return { error: null };
+    // User tapped Cancel — not an error, but not a success either
+    if (err?.code === 'ERR_REQUEST_CANCELED') return { error: null, cancelled: true };
     return { error: err instanceof Error ? err : new Error('Apple sign-in failed') };
   }
 }
@@ -72,7 +73,7 @@ export async function signInWithApple(): Promise<{ error: SocialAuthError }> {
  *   3. Supabase Dashboard → Auth → Providers → Google → enable,
  *      paste Web Client ID + Secret
  */
-export async function signInWithGoogle(): Promise<{ error: SocialAuthError }> {
+export async function signInWithGoogle(): Promise<SocialAuthResult> {
   try {
     const redirectUri = makeRedirectUri({ scheme: 'tripseek', path: 'auth/callback' });
 
@@ -94,8 +95,8 @@ export async function signInWithGoogle(): Promise<{ error: SocialAuthError }> {
       return { error: sessionError };
     }
 
-    // User dismissed the browser — not an error
-    return { error: null };
+    // User dismissed the browser — not an error, but not a success either
+    return { error: null, cancelled: true };
   } catch (err) {
     return { error: err instanceof Error ? err : new Error('Google sign-in failed') };
   }

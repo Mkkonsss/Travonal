@@ -49,8 +49,9 @@ export default function SignInScreen() {
   async function handleAppleSignIn() {
     setError(null);
     setSocialLoading('apple');
-    const { error } = await signInWithApple();
+    const { error, cancelled } = await signInWithApple();
     setSocialLoading(null);
+    if (cancelled) return;
     if (error) {
       setError(error.message);
     } else {
@@ -61,8 +62,9 @@ export default function SignInScreen() {
   async function handleGoogleSignIn() {
     setError(null);
     setSocialLoading('google');
-    const { error } = await signInWithGoogle();
+    const { error, cancelled } = await signInWithGoogle();
     setSocialLoading(null);
+    if (cancelled) return;
     if (error) {
       setError(error.message);
     } else {
