@@ -16,7 +16,6 @@
       ],
       "entitlements": {
         "com.apple.developer.applesignin": [
-          "Default",
           "Default"
         ]
       },
@@ -52,7 +51,10 @@
               "pathPrefix": "/join"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -96,6 +98,12 @@
       "eas": {
         "projectId": "bdb9ce43-7fcb-4ede-a7e3-e591c2ef72ee"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bdb9ce43-7fcb-4ede-a7e3-e591c2ef72ee"
     }
   }
 }
