@@ -124,6 +124,8 @@ export interface Trip {
   joinedAs?: 'member' | 'viewer';
   /** User-selected hero image URI (overrides auto-fetched destination photo) */
   customImageUri?: string;
+  /** Auto-fetched destination photo URI (set during trip generation) */
+  destinationImageUri?: string;
 }
 
 export interface PrepItem {

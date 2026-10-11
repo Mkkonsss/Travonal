@@ -59,9 +59,11 @@ export function useDestinationPhoto(destination: string): string | null {
         const { url } = await getDestinationPhotoAI(destination);
         if (cancelled) return;
 
-        photoCache.set(key, url);
-        persistCache();
-        if (url) ExpoImage.prefetch(url).catch(() => {});
+        if (url) {
+          photoCache.set(key, url);
+          persistCache();
+          ExpoImage.prefetch(url).catch(() => {});
+        }
         setPhotoUrl(url);
       } catch {
         if (!cancelled) {

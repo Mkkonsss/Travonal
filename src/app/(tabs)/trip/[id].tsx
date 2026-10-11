@@ -1038,21 +1038,13 @@ export default function TripWorkspace() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.id, trip?.activities.length]);
 
-  // Loading state while AsyncStorage hydrates
-  if (!tripsLoaded) {
-    return (
-      <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>Loading trip...</ThemedText>
-      </ThemedView>
-    );
-  }
-
-  if (!trip) {
-    return null;
-  }
-
-  // Capture as non-null for closures
-  const currentTrip = trip;
+  // Never conditionally return before hooks — React requires the same hook count every render.
+  // Use a sentinel trip when deleted so useMemo/useEffect hooks below keep running.
+  const tripDeleted = tripsLoaded && !trip;
+  const currentTrip = trip ?? {
+    id: '', destination: '', country: '', startDate: '2099-01-01', endDate: '2099-01-02',
+    notes: '', emoji: '', activities: [] as Activity[], datesKnown: false,
+  } as Trip;
   const totalDays = getTripDayCount(currentTrip.startDate, currentTrip.endDate);
 
   // Stays data — compute night-by-night hotel coverage
@@ -2873,6 +2865,16 @@ export default function TripWorkspace() {
   // Filter days based on day selector
   const visibleDays = filterDay ? allDays.filter((d) => d === filterDay) : allDays;
 
+  if (!tripsLoaded) {
+    return (
+      <ThemedView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>Loading trip...</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (tripDeleted) return null;
+
   return (
     <ThemedView style={styles.container}>
       {viewMode === 'map' ? (
@@ -2920,9 +2922,9 @@ export default function TripWorkspace() {
         {/* Hero — photo background with gradient overlay */}
         {viewMode !== 'ai' && <View style={[styles.hero, { height: 260 + insets.top }]}>
           {/* Photo or gradient fallback */}
-          {(currentTrip.customImageUri || heroPhoto) ? (
+          {(currentTrip.customImageUri || currentTrip.destinationImageUri || heroPhoto) ? (
             <ExpoImage
-              source={{ uri: currentTrip.customImageUri || heroPhoto! }}
+              source={{ uri: currentTrip.customImageUri || currentTrip.destinationImageUri || heroPhoto! }}
               style={[StyleSheet.absoluteFill, styles.heroBgImage]}
               contentFit="cover"
               cachePolicy="memory-disk"
@@ -5367,9 +5369,9 @@ export default function TripWorkspace() {
                 accessibilityRole="button"
                 accessibilityLabel="Change trip photo"
               >
-                {(editCustomImage || heroPhoto) ? (
+                {(editCustomImage || currentTrip.destinationImageUri || heroPhoto) ? (
                   <ExpoImage
-                    source={{ uri: editCustomImage || heroPhoto! }}
+                    source={{ uri: editCustomImage || currentTrip.destinationImageUri || heroPhoto! }}
                     style={StyleSheet.absoluteFill}
                     contentFit="cover"
                     cachePolicy="memory-disk"

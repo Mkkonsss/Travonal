@@ -22,7 +22,7 @@ export function shouldRunTripPulse(loaded: boolean, enabled: boolean): boolean {
 }
 
 export function TripPulseProvider({ children }: { children: ReactNode }) {
-  const [enabled, setEnabledState] = useState(false);
+  const [enabled, setEnabledState] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const { user } = useAuth();
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

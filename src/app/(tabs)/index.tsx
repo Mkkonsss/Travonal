@@ -57,7 +57,7 @@ function NextTripHero({ trip, onDelete }: { trip: Trip; onDelete: (trip: Trip) =
   const router = useRouter();
   const photoQuery = `${trip.destination}, ${trip.country}`;
   const autoPhoto = useDestinationPhoto(photoQuery);
-  const photoUrl = trip.customImageUri || autoPhoto;
+  const photoUrl = trip.customImageUri || trip.destinationImageUri || autoPhoto;
   const imgOpacity = useSharedValue(0);
   const imgStyle = useAnimatedStyle(() => ({ opacity: imgOpacity.value }));
   const [gradStart, gradEnd] = tripGradient(trip.destination);

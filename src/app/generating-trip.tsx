@@ -51,6 +51,9 @@ export default function GeneratingTripScreen() {
   const trip = getTrip(tripId);
   const photoQuery = trip ? `${trip.destination}, ${trip.country}` : '';
   const photoUrl = useDestinationPhoto(photoQuery);
+  const photoUrlRef = useRef(photoUrl);
+  photoUrlRef.current = photoUrl;
+  const [waitingForPhoto, setWaitingForPhoto] = useState(false);
 
   const [phase, setPhase] = useState<Phase>(trip ? 'generating' : 'error');
   const [errorDetail, setErrorDetail] = useState('');
@@ -81,6 +84,18 @@ export default function GeneratingTripScreen() {
 
   // Done state animations
   const statsReveal = useSharedValue(0);
+
+  // Photo arrived while waiting — transition to done
+  useEffect(() => {
+    if (waitingForPhoto && photoUrl) {
+      updateTrip(tripId, { destinationImageUri: photoUrl });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      statsReveal.value = withDelay(400, withSpring(1, { damping: 12 }));
+      setWaitingForPhoto(false);
+      setPhase('done');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitingForPhoto, photoUrl]);
 
   // Start pulsing pin animation on mount
   useEffect(() => {
@@ -260,9 +275,15 @@ export default function GeneratingTripScreen() {
           highlights: revealHighlights,
         });
 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        statsReveal.value = withDelay(400, withSpring(1, { damping: 12 }));
-        setPhase('done');
+        if (photoUrlRef.current) {
+          updateTrip(trip!.id, { destinationImageUri: photoUrlRef.current });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          statsReveal.value = withDelay(400, withSpring(1, { damping: 12 }));
+          setPhase('done');
+        } else {
+          // Photo still loading — wait for it before showing the reveal
+          setWaitingForPhoto(true);
+        }
 
         // Fire-and-forget: fetch + cache external alerts, then schedule 7-day reminder
         const alertTrip = trip!;

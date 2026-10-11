@@ -503,11 +503,13 @@ export default function ProfileScreen() {
               style={styles.plusLogo}
               resizeMode="contain"
             />
-            <ThemedText style={[styles.plusSub, { color: theme.textSecondary }]}>
-              {isSubscribed || isPlus
-                ? (usage ? `${Math.max(0, (usage.limits.generations ?? 3) - usage.generations_used)} plans, ${Math.max(0, (usage.limits.assistance ?? 50) - usage.assistance_used)} messages left` : 'Your subscription is active.')
-                : 'Your trips taken to the next level'}
-            </ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {isPlus && <ThemedText style={{ color: theme.live, fontSize: 14 }}>✓</ThemedText>}
+              <ThemedText style={[styles.plusSub, { color: theme.textSecondary, flex: 1 }]}>
+                {isPlus ? 'Subscribed' : 'Your trips taken to the next level'}
+              </ThemedText>
+              <ThemedText style={{ color: theme.textSecondary, fontSize: 18 }}>{'\u203A'}</ThemedText>
+            </View>
           </Pressable>
         </View>
 

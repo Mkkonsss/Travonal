@@ -50,39 +50,22 @@ export async function deleteRemoteTrip(tripId: string): Promise<void> {
 
 /**
  * Find a trip by its invite code.
- * Checks the trip_members table first, falls back to legacy JSONB scan.
+ * Uses a SECURITY DEFINER RPC to bypass trips RLS — the recipient hasn't
+ * claimed the invite yet so they can't read the trips table directly.
  */
 export async function findTripByInviteCode(inviteCode: string): Promise<Trip | null> {
   const code = inviteCode.toUpperCase().trim();
 
-  // New path: look up in trip_members (works for codes registered via registerInviteCode)
-  const { data: member } = await supabase
-    .from('trip_members')
-    .select('trip_id')
-    .eq('invite_code', code)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('lookup_trip_by_invite_code', {
+    p_invite_code: code,
+  });
 
-  if (member?.trip_id) {
-    const { data: tripRow, error: tripErr } = await supabase
-      .from('trips')
-      .select('data')
-      .eq('id', member.trip_id)
-      .single();
-    if (!tripErr && tripRow) return tripRow.data as Trip;
-  }
-
-  // Legacy path: JSONB contains query (for codes not yet registered in trip_members)
-  const { data, error } = await supabase
-    .from('trips')
-    .select('data')
-    .filter('data->invitations', 'cs', JSON.stringify([{ inviteCode: code }]))
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) {
-    console.warn('[sync] findTripByInviteCode failed:', error?.message);
+  if (error) {
+    console.warn('[sync] findTripByInviteCode failed:', error.message);
     return null;
   }
-  return data.data as Trip;
+
+  return (data as Trip) ?? null;
 }
 
 /**
