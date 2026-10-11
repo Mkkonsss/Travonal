@@ -179,6 +179,7 @@ function generateInviteCode(): string {
 let _lastViewedTripId: string | undefined;
 export function setLastViewedTripId(id: string) { _lastViewedTripId = id; }
 export function getLastViewedTripId() { return _lastViewedTripId; }
+export function clearLastViewedTripId() { _lastViewedTripId = undefined; }
 
 interface TripsContextType {
   trips: Trip[];
@@ -392,6 +393,8 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   }
 
   function deleteTrip(id: string) {
+    // Clear last-viewed reference if it points to the deleted trip
+    if (_lastViewedTripId === id) clearLastViewedTripId();
     // Sync ref first so other consumers see the deletion immediately
     tripsRef.current = tripsRef.current.filter((t) => t.id !== id);
     setTrips((prev) => prev.filter((t) => t.id !== id));
@@ -842,6 +845,8 @@ export function TripsProvider({ children }: { children: ReactNode }) {
   }
 
   function resetAll() {
+    clearLastViewedTripId();
+    if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null; }
     setTrips(EMPTY_TRIPS);
     setTripsLoadError(false);
   }

@@ -139,9 +139,9 @@ function RootLayoutNav() {
   // Phase 4: handle Universal Links — tripseekapp.com/join/CODE → join-trip screen
   useEffect(() => {
     function handleUrl({ url }: { url: string }) {
-      const match = url.match(/(?:tripseekapp\.com\/join\/|tripseek:\/\/join\?code=)([A-Z0-9-]+)/i);
+      const match = url.match(/(?:https?:\/\/)?tripseekapp\.com\/join\/([A-Z0-9-]+)|tripseek:\/\/join\?code=([A-Z0-9-]+)/i);
       if (match) {
-        const code = match[1].toUpperCase();
+        const code = (match[1] ?? match[2]).toUpperCase();
         if (hasNavigated.current) {
           // Auth already resolved — navigate immediately
           router.push({ pathname: '/join-trip' as any, params: { code } });

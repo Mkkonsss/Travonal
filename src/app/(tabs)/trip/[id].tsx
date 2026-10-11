@@ -723,8 +723,7 @@ export default function TripWorkspace() {
   useEffect(() => {
     if (tripsLoaded && !trip) {
       InteractionManager.runAfterInteractions(() => {
-        if (router.canGoBack()) router.back();
-        else router.replace('/(tabs)' as any);
+        router.replace('/(tabs)' as any);
       });
     }
   }, [tripsLoaded, trip]);
@@ -5761,7 +5760,7 @@ export default function TripWorkspace() {
                         entering={SlideInDown.duration(250)}
                         style={{
                           backgroundColor: theme.background, borderRadius: 20,
-                          overflow: 'hidden', flex: 1,
+                          overflow: 'hidden', flexShrink: 1,
                           ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }, android: { elevation: 8 } }),
                         }}
                       >

@@ -20,7 +20,6 @@ import {
   openSubscriptionManagement,
   purchaseSubscription,
   restorePurchases,
-  verifyEntitlement,
 } from '@/services/subscription';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -153,7 +152,6 @@ export default function ToveliPlusScreen() {
 
   const [status, setStatus] = useState<SubscriptionStatus>('loading');
   const [products, setProducts] = useState<SubscriptionProduct[]>([]);
-  const [isSubscribed, setIsSubscribed] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -163,8 +161,6 @@ export default function ToveliPlusScreen() {
   const loadProducts = useCallback(async () => {
     setStatus('loading');
     try {
-      const subscribed = await verifyEntitlement();
-      setIsSubscribed(subscribed);
       const loaded = await loadSubscriptionProducts();
       if (loaded === null || loaded.length === 0) {
         setStatus('unavailable');
@@ -186,7 +182,6 @@ export default function ToveliPlusScreen() {
     try {
       const result = await purchaseSubscription(selectedPlan);
       if (!result.error) {
-        setIsSubscribed(true);
         await refreshSubscription();
         showToast('Welcome to Tripseek+!');
       } else {
@@ -204,7 +199,6 @@ export default function ToveliPlusScreen() {
     try {
       const result = await restorePurchases();
       if (result.isSubscribed) {
-        setIsSubscribed(true);
         await refreshSubscription();
         showToast('Subscription restored!');
       } else {
@@ -254,11 +248,11 @@ export default function ToveliPlusScreen() {
           resizeMode="contain"
         />
         <ThemedText style={[styles.subtitle, { color: theme.textSecondary }]}>
-          {isSubscribed ? 'Manage your subscription' : 'Your trips, taken to the next level'}
+          {isPlus ? 'Manage your subscription' : 'Your trips, taken to the next level'}
         </ThemedText>
       </Animated.View>
 
-      {!isSubscribed ? (
+      {!isPlus ? (
         <>
           {/* ── Slide dots ── */}
           <View style={styles.dotRow}>
@@ -329,7 +323,7 @@ export default function ToveliPlusScreen() {
         )}
 
         {/* Error state */}
-        {status === 'error' && !isSubscribed && (
+        {status === 'error' && !isPlus && (
           <View style={styles.errorSection}>
             <SymbolView name={"exclamationmark.triangle" as any} size={20} tintColor={theme.textSecondary} />
             <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center' }}>
@@ -349,7 +343,7 @@ export default function ToveliPlusScreen() {
         )}
 
         {/* Subscribed state */}
-        {status !== 'loading' && isSubscribed && (
+        {status !== 'loading' && isPlus && (
           <View style={styles.subscribedBottom}>
             <View style={[styles.subscribedBadge, { backgroundColor: theme.primaryMuted }]}>
               <SymbolView name={"checkmark.circle.fill" as any} size={16} tintColor="#22C55E" />
@@ -379,7 +373,7 @@ export default function ToveliPlusScreen() {
         )}
 
         {/* Purchase flow */}
-        {(status === 'available' || status === 'unavailable') && !isSubscribed && (
+        {(status === 'available' || status === 'unavailable') && !isPlus && (
           <>
             {/* Plan toggle */}
             <View style={styles.planToggle}>

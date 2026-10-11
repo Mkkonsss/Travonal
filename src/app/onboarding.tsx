@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import {
+  Alert,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
@@ -379,7 +380,7 @@ export default function OnboardingScreen() {
     };
   }
 
-  function handleSurveyNext() {
+  async function handleSurveyNext() {
     if (!canAdvance()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (step < STEPS.length - 1) {
@@ -394,7 +395,11 @@ export default function OnboardingScreen() {
       }
       // Request notification permission if user enabled Trip Alerts
       if (tripPulseEnabled) {
-        requestNotificationPermission();
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          // Permission denied — disable Trip Alerts so the UI reflects reality
+          setTripPulseEnabled(false);
+        }
       }
       handleFinish();
     }
@@ -953,7 +958,20 @@ export default function OnboardingScreen() {
                   </View>
                   <Switch
                     value={tripPulseEnabled}
-                    onValueChange={(val) => { Haptics.selectionAsync(); setTripPulseEnabled(val); if (val) requestNotificationPermission(); }}
+                    onValueChange={async (val) => {
+                      Haptics.selectionAsync();
+                      if (val) {
+                        const granted = await requestNotificationPermission();
+                        setTripPulseEnabled(granted);
+                        if (!granted) {
+                          Alert.alert('Enable Notifications', 'Tripseek needs notification permission to send Trip Alerts. You can enable it in Settings.', [
+                            { text: 'OK', style: 'default' },
+                          ]);
+                        }
+                      } else {
+                        setTripPulseEnabled(false);
+                      }
+                    }}
                     trackColor={{ false: theme.border, true: theme.primary }}
                     thumbColor="#fff"
                   />

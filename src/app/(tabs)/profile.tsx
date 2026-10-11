@@ -690,7 +690,7 @@ export default function ProfileScreen() {
                       onPress={() => {
                         Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
                           { text: 'Cancel', style: 'cancel' },
-                          { text: 'Sign Out', style: 'destructive', onPress: async () => { await signOut(); router.replace('/onboarding' as any); } },
+                          { text: 'Sign Out', style: 'destructive', onPress: async () => { router.replace('/onboarding' as any); await signOut(); } },
                         ]);
                       }}
                       theme={theme}
@@ -722,8 +722,8 @@ export default function ProfileScreen() {
                                   resetInbox();
                                   resetTripPulse();
                                   resetPulseHistory();
-                                  await signOut();
                                   router.replace('/onboarding' as any);
+                                  await signOut();
                                 } catch {
                                   Alert.alert('Error', 'Could not delete account. Please try again.');
                                 }
