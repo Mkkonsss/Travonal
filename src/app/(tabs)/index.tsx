@@ -1,9 +1,9 @@
 import React from 'react';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -55,11 +55,9 @@ function daysUntil(dateStr: string) {
 
 function NextTripHero({ trip, onDelete }: { trip: Trip; onDelete: (trip: Trip) => void }) {
   const router = useRouter();
-  const photoQuery = `${trip.destination}, ${trip.country}`;
+  const photoQuery = trip.destination.includes(',') ? trip.destination : `${trip.destination}, ${trip.country}`;
   const autoPhoto = useDestinationPhoto(photoQuery);
   const photoUrl = trip.customImageUri || trip.destinationImageUri || autoPhoto;
-  const imgOpacity = useSharedValue(0);
-  const imgStyle = useAnimatedStyle(() => ({ opacity: imgOpacity.value }));
   const [gradStart, gradEnd] = tripGradient(trip.destination);
   const countdown = trip.datesKnown !== false ? daysUntil(trip.startDate) : null;
   const activityCount = trip.activities.length;
@@ -80,15 +78,15 @@ function NextTripHero({ trip, onDelete }: { trip: Trip; onDelete: (trip: Trip) =
           style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
         />
         {photoUrl && (
-          <Animated.View style={[StyleSheet.absoluteFill, imgStyle, { borderRadius: Radius.lg, overflow: 'hidden' }]}>
+          <View style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg, overflow: 'hidden' }]}>
             <ExpoImage
               source={{ uri: photoUrl }}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               cachePolicy="memory-disk"
-              onLoad={() => { imgOpacity.value = withTiming(1, { duration: 500 }); }}
+              transition={500}
             />
-          </Animated.View>
+          </View>
         )}
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0.7)']}
@@ -726,6 +724,25 @@ export default function HomeScreen() {
       if (Object.keys(urls).length > 0) setResolvedPhotos(urls);
     });
   }, [boards]);
+
+  // Re-check in-memory photo cache when tab gains focus
+  // (picks up photos loaded by board-detail or other screens since the effect last ran)
+  useFocusEffect(
+    useCallback(() => {
+      const urls: Record<string, string> = {};
+      for (const board of boards) {
+        for (const item of board.items) {
+          if (item.placeId && !item.mediaUri) {
+            const url = getCachedPhotoUrl(item.placeId);
+            if (url && !resolvedPhotos[item.placeId]) urls[item.placeId] = url;
+          }
+        }
+      }
+      if (Object.keys(urls).length > 0) {
+        setResolvedPhotos((prev) => ({ ...prev, ...urls }));
+      }
+    }, [boards, resolvedPhotos])
+  );
 
   const boardCardSize = (screenWidth - Spacing.four * 2 - 12) / 2;
 

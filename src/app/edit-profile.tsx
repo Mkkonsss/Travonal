@@ -125,7 +125,8 @@ export default function EditProfileScreen() {
     ?? ([meta?.given_name, meta?.family_name].filter(Boolean).join(' ') || undefined)
     ?? user?.email?.split('@')[0]?.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim()
     ?? '';
-  const derivedUsername = authName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 20);
+  const effectiveName = profile.displayName || authName;
+  const derivedUsername = effectiveName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 20);
 
   const [displayName, setDisplayName] = useState(profile.displayName ?? authName);
   const [username, setUsername] = useState(profile.username ?? derivedUsername);

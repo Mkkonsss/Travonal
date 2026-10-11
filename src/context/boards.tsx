@@ -41,6 +41,10 @@ export interface BoardItem {
 export interface Board {
   id: string;
   name: string;
+  /** Resolved destination name (set when the board name matches a geographic place) */
+  destination?: string;
+  destinationLat?: number;
+  destinationLng?: number;
   items: BoardItem[];
   createdAt: number;
   updatedAt: number;
@@ -60,6 +64,7 @@ interface BoardsContextType {
   markItemPlanned: (boardId: string, itemId: string, tripId: string) => void;
   moveItemToBoard: (fromBoardId: string, toBoardId: string, itemId: string) => void;
   clearPlannedTrip: (tripId: string) => void;
+  updateBoardDestination: (id: string, destination: string, lat: number, lng: number) => void;
   reorderBoardItem: (boardId: string, itemId: string, direction: 'up' | 'down') => void;
   setBoardItemOrder: (boardId: string, orderedIds: string[]) => void;
   getBoard: (id: string) => Board | undefined;
@@ -150,7 +155,13 @@ export function BoardsProvider({ children }: { children: ReactNode }) {
 
   function renameBoard(id: string, name: string) {
     setBoards((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, name, updatedAt: Date.now() } : b))
+      prev.map((b) => (b.id === id ? { ...b, name, destination: undefined, destinationLat: undefined, destinationLng: undefined, updatedAt: Date.now() } : b))
+    );
+  }
+
+  function updateBoardDestination(id: string, destination: string, lat: number, lng: number) {
+    setBoards((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, destination, destinationLat: lat, destinationLng: lng } : b))
     );
   }
 
@@ -269,7 +280,7 @@ export function BoardsProvider({ children }: { children: ReactNode }) {
 
   return (
     <BoardsContext.Provider
-      value={{ boards, loaded, loadError, retryLoad, createBoard, deleteBoard, renameBoard, addItemToBoard, removeItemFromBoard, updateBoardItem, markItemPlanned, moveItemToBoard, clearPlannedTrip, reorderBoardItem, setBoardItemOrder, getBoard, resetAll }}>
+      value={{ boards, loaded, loadError, retryLoad, createBoard, deleteBoard, renameBoard, addItemToBoard, removeItemFromBoard, updateBoardItem, markItemPlanned, moveItemToBoard, clearPlannedTrip, updateBoardDestination, reorderBoardItem, setBoardItemOrder, getBoard, resetAll }}>
       {children}
     </BoardsContext.Provider>
   );

@@ -894,6 +894,7 @@ export default function PlaceDetailScreen() {
               style={{ width: '100%', height: 200, borderRadius: Radius.sm, marginBottom: 12 }}
               contentFit="cover"
               cachePolicy="memory-disk"
+              transition={200}
             />
         ) : (
           <View style={{

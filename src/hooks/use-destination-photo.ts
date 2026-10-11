@@ -13,7 +13,7 @@ import { Image as ExpoImage } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDestinationPhotoAI } from '@/services/ai';
 
-const STORAGE_KEY = '@tripseek_destination_photos_v3';
+const STORAGE_KEY = '@tripseek_destination_photos_v4';
 
 // In-memory cache — shared across all hook instances for the session
 const photoCache = new Map<string, string | null>();

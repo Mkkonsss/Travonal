@@ -668,7 +668,11 @@ export default function ProfileScreen() {
               <View style={styles.subSection}>
                 {user ? (
                   <>
-                    <InfoRow label="Email" value={user.email ?? 'Unknown'} theme={theme} />
+                    <InfoRow
+                      label={user.email?.endsWith('@privaterelay.appleid.com') ? 'Apple Private Email' : 'Email'}
+                      value={user.email ?? 'Unknown'}
+                      theme={theme}
+                    />
                     {isPlus ? (
                       <NavRow
                         label="Plan"

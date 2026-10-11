@@ -420,21 +420,31 @@ export async function searchExplorePlaces(
 }
 
 /**
- * Search for a specific place by name without a location restriction.
- * Passes lat/lng as null so the edge function skips locationBias entirely,
- * giving a pure global text search.
- * Use this when you have a place name but no reliable nearby coordinates
- * (e.g. booking confirmation cards).
+ * Search for a specific place by name.
+ *
+ * When `locationBias` coords are provided, Google Text Search uses them as a
+ * soft ranking hint — results near those coords are preferred but worldwide
+ * results are still returned.  Without coords, `locationHint` text is appended
+ * to the keyword for a pure global text search.
  */
 export async function searchPlaceByName(
   name: string,
   locationHint?: string,
+  locationBias?: { lat: number; lng: number },
 ): Promise<NormalizedPlace[]> {
-  const keyword = locationHint ? `${name} ${locationHint}` : name;
+  // When we have coords, let Google's locationBias handle ranking instead of
+  // appending the destination name to the keyword (which can hurt relevance).
+  const keyword = (!locationBias && locationHint) ? `${name} ${locationHint}` : name;
   try {
     const result = await callExploreEdge<{ places: Record<string, unknown>[] }>(
       'places_nearby',
-      { lat: null, lng: null, radius: 0, keyword },
+      {
+        lat: locationBias?.lat ?? null,
+        lng: locationBias?.lng ?? null,
+        radius: 0,
+        keyword,
+        biasOnly: locationBias ? true : undefined,
+      },
     );
     return (result.places ?? []).map(normalizeGooglePlace);
   } catch {

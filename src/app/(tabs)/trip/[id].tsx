@@ -867,7 +867,7 @@ export default function TripWorkspace() {
   }, [trip?.id, actSuggestionsLoaded]);
 
   // Destination photo — must be before early returns (hook ordering rule)
-  const heroPhotoQuery = trip ? `${trip.destination}, ${trip.country}` : '';
+  const heroPhotoQuery = trip ? (trip.destination.includes(',') ? trip.destination : `${trip.destination}, ${trip.country}`) : '';
   const heroPhoto = useDestinationPhoto(heroPhotoQuery);
 
   // Activity thumbnails — batch prefetch from shared cache

@@ -493,9 +493,10 @@ export function validateGeneratedActivities(
     // Warning: slightly off but acceptable
     for (const a of acts) {
       const title = a.title.toLowerCase();
-      const isBreakfast = /breakfast|morning meal/.test(title);
-      const isLunch = /lunch|midday/.test(title);
-      const isDinner = /dinner|supper|evening meal/.test(title);
+      const cat = (a.category ?? '').toLowerCase();
+      const isBreakfast = /breakfast|morning meal/.test(title) || cat === 'breakfast';
+      const isLunch = /lunch|midday/.test(title) || cat === 'lunch';
+      const isDinner = /dinner|supper|evening meal/.test(title) || cat === 'dinner';
       if (isBreakfast) {
         if (a.time < '06:00' || a.time > '10:30') {
           // Blocking: clearly wrong breakfast time
@@ -576,9 +577,10 @@ export function repairActivities(
   result = result.map((a) => {
     if (isProtected(a)) return a;
     const title = a.title.toLowerCase();
-    const isBreakfast = /breakfast|morning meal/.test(title);
-    const isLunch = /lunch|midday/.test(title);
-    const isDinner = /dinner|supper|evening meal/.test(title);
+    const cat = (a.category ?? '').toLowerCase();
+    const isBreakfast = /breakfast|morning meal/.test(title) || cat === 'breakfast';
+    const isLunch = /lunch|midday/.test(title) || cat === 'lunch';
+    const isDinner = /dinner|supper|evening meal/.test(title) || cat === 'dinner';
     if (isBreakfast && (a.time < '06:00' || a.time > '10:30')) {
       return { ...a, time: '08:00' };
     }
@@ -589,6 +591,13 @@ export function repairActivities(
       return { ...a, time: '19:00' };
     }
     return a;
+  });
+
+  // 0b. Strip meal prefixes from food activity titles (e.g. "Lunch at Nobu" → "Nobu")
+  result = result.map((a) => {
+    if (a.type !== 'food') return a;
+    const stripped = a.title.replace(/^(breakfast|lunch|dinner|brunch|supper)\s+(at|@)\s+/i, '');
+    return stripped !== a.title ? { ...a, title: stripped } : a;
   });
 
   // 1. Remove duplicate titles (keep first occurrence)

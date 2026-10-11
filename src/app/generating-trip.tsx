@@ -49,7 +49,7 @@ export default function GeneratingTripScreen() {
   const { getActiveEntries } = useMemory();
 
   const trip = getTrip(tripId);
-  const photoQuery = trip ? `${trip.destination}, ${trip.country}` : '';
+  const photoQuery = trip ? (trip.destination.includes(',') ? trip.destination : `${trip.destination}, ${trip.country}`) : '';
   const photoUrl = useDestinationPhoto(photoQuery);
   const photoUrlRef = useRef(photoUrl);
   photoUrlRef.current = photoUrl;

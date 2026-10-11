@@ -91,7 +91,9 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
 
     if (result.type === 'success') {
-      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(result.url);
+      const code = new URL(result.url).searchParams.get('code');
+      if (!code) return { error: new Error('No authorization code in redirect URL') };
+      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
       return { error: sessionError };
     }
 

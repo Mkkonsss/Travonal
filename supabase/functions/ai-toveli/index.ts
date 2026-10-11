@@ -392,6 +392,7 @@ async function handleGenerateTrip(payload) {
     "Every day MUST have breakfast+lunch+dinner. Relaxed must still have real activities, not just meals.",
     "",
     "MEALS: breakfast 07:00-09:30, lunch 12:00-13:30, dinner 19:00-21:30. Never repeat a restaurant.",
+    "Food title: use ONLY the restaurant/venue name (e.g. 'Nobu' not 'Dinner at Nobu'). Set category to meal type: 'breakfast', 'lunch', 'dinner'.",
     "Vary cuisines across days. Mix dining styles (fine dining, casual, street food, cafes, markets).",
     "",
     "Day 1: lighter schedule (2 activities max), start after 14:00 if arriving by flight.",
@@ -1880,7 +1881,11 @@ async function fetchHTMLContent(url) {
     // Use mobile result if it has more content
     if (mobileResult &&
         (!result ||
-         mobileResult.length > result.length)) {
+         (mobileResult.text || "").length > (result.text || "").length)) {
+      // Preserve og:image from first attempt if mobile lacks one
+      if (result && result.ogImage && !mobileResult.ogImage) {
+        mobileResult.ogImage = result.ogImage;
+      }
       result = mobileResult;
     }
   }
@@ -1907,7 +1912,16 @@ async function _fetchHTML(fullUrl, ua) {
     clearTimeout(timeout);
     if (!resp.ok) return null;
     var html = await resp.text();
-    return extractHTMLServerSide(html);
+    // Extract og:image for thumbnail-based visual analysis
+    var ogImgMatch = html.match(
+      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i
+    ) || html.match(
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i
+    );
+    return {
+      text: extractHTMLServerSide(html),
+      ogImage: ogImgMatch ? ogImgMatch[1] : null,
+    };
   } catch (_e) {
     return null;
   }
@@ -1938,6 +1952,7 @@ async function fetchAndExtractUrl(url) {
   var resolved = await resolveShortUrl(url);
   if (!isPublicUrl(resolved)) throw new Error("Resolved URL not allowed");
   var sections = [];
+  var thumbnailUrl = null;
   // 1. URL pattern context (instant, no network)
   var urlCtx = extractUrlContext(resolved);
   if (urlCtx) sections.push(urlCtx);
@@ -1945,10 +1960,15 @@ async function fetchAndExtractUrl(url) {
   var oembed = await fetchSocialOEmbed(resolved);
   if (oembed) sections.push(oembed);
   // 3. HTML fetch (meta tags, structured data, text)
-  var html = await fetchHTMLContent(resolved);
-  if (html) sections.push(html);
-  return sections.length > 0
-    ? sections.join("\n\n") : null;
+  var htmlResult = await fetchHTMLContent(resolved);
+  if (htmlResult) {
+    if (htmlResult.text) sections.push(htmlResult.text);
+    if (htmlResult.ogImage) thumbnailUrl = htmlResult.ogImage;
+  }
+  return {
+    text: sections.length > 0 ? sections.join("\n\n") : null,
+    thumbnailUrl: thumbnailUrl,
+  };
 }
 
 function detectMultiPlace(content) {
@@ -2018,7 +2038,7 @@ async function verifyWithGooglePlaces(result, gpKey) {
       try {
         var photoResp = await fetch(
           "https://places.googleapis.com/v1/" +
-          photoRef + "/media?maxWidthPx=800" +
+          photoRef + "/media?maxWidthPx=1200" +
           "&skipHttpRedirect=true" +
           "&key=" + gpKey
         );
@@ -2090,14 +2110,43 @@ async function handleImportPlace(payload) {
   var gpKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   var _savedOriginalUrl = (contentType === "url")
     ? content : null;
+  var _thumbnailData = null; // { base64, mimeType }
 
   // ── Server-side URL fetching ──
   if (contentType === "url") {
     var originalUrl = content;
     var fetched = await fetchAndExtractUrl(content);
-    if (fetched) {
+    if (fetched.text) {
       content = "Source URL: " + originalUrl +
-        "\n\nExtracted page data:\n" + fetched;
+        "\n\nExtracted page data:\n" + fetched.text;
+      // Download og:image thumbnail for visual analysis
+      if (fetched.thumbnailUrl) {
+        try {
+          var thumbCtrl = new AbortController();
+          var thumbTimer = setTimeout(function() { thumbCtrl.abort(); }, 10000);
+          var thumbResp = await fetch(fetched.thumbnailUrl, {
+            signal: thumbCtrl.signal,
+            redirect: "follow",
+          });
+          clearTimeout(thumbTimer);
+          if (thumbResp.ok) {
+            var thumbBytes = new Uint8Array(await thumbResp.arrayBuffer());
+            // Limit to 1MB to keep base64 conversion safe
+            if (thumbBytes.byteLength < 1024 * 1024) {
+              var binary = "";
+              for (var ti = 0; ti < thumbBytes.byteLength; ti++) {
+                binary += String.fromCharCode(thumbBytes[ti]);
+              }
+              _thumbnailData = {
+                base64: btoa(binary),
+                mimeType: (thumbResp.headers.get("content-type") || "image/jpeg").split(";")[0],
+              };
+            }
+          }
+        } catch (_thumbErr) {
+          // Thumbnail download failed — continue with text-only
+        }
+      }
     } else {
       // Last resort: try a basic HEAD request to at
       // least get the final redirected URL
@@ -2320,6 +2369,20 @@ async function handleImportPlace(payload) {
     "- OG tags and structured data",
     "- Body text content",
     "- URL path segments",
+  ];
+  if (_thumbnailData) {
+    singleSysLines.push(
+      "",
+      "THUMBNAIL IMAGE (attached):",
+      "- A preview image from the social media post is attached",
+      "- Look for: landmarks, building signs, restaurant names, " +
+        "recognizable architecture, street signs, menus",
+      "- Combine visual clues with text metadata for best identification",
+      "- If text is ambiguous but image shows a recognizable place, " +
+        "use the visual evidence"
+    );
+  }
+  singleSysLines.push(
     "",
     "SOCIAL MEDIA TIPS:",
     "- TikTok/Instagram/Twitter posts about places " +
@@ -2338,12 +2401,13 @@ async function handleImportPlace(payload) {
     "- Tagged Location with name: 95%",
     "- Specific place named in caption: 90%",
     "- Specific place in hashtag: 85%",
+    "- Recognizable landmark visible in thumbnail: 85%",
     "- City/country only (from hashtags): 75%",
-    "- Vague hints only: found: false",
-  ];
+    "- Vague hints only: found: false"
+  );
   var singleSystem = singleSysLines.join("\n");
 
-  var singleUser = [
+  var singleUserText = [
     "Identify the travel place from this content. " +
       "Pay special attention to hashtags, location " +
       "tags, and video descriptions — these are the " +
@@ -2355,9 +2419,36 @@ async function handleImportPlace(payload) {
     singleSchema,
   ].join("\n");
 
-  var textResult = await claude(
-    singleSystem, singleUser, 512, undefined, HAIKU
-  );
+  var textResult;
+  if (_thumbnailData) {
+    // Multimodal: analyze text metadata + thumbnail image together
+    var mmResp = await client.messages.create({
+      model: HAIKU,
+      max_tokens: 1024,
+      system: singleSystem,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: _thumbnailData.mimeType,
+              data: _thumbnailData.base64,
+            },
+          },
+          { type: "text", text: singleUserText },
+        ],
+      }],
+    });
+    var mmText = mmResp.content[0].type === "text"
+      ? mmResp.content[0].text : "";
+    textResult = extractJSON(mmText);
+  } else {
+    textResult = await claude(
+      singleSystem, singleUserText, 1024, undefined, HAIKU
+    );
+  }
   validateOutput(textResult, "import_place");
   var verified = await verifyWithGooglePlaces(
     textResult, gpKey
@@ -2442,7 +2533,7 @@ async function handleImportPlace(payload) {
               try {
                 var pResp = await fetch(
                   "https://places.googleapis.com/v1/" +
-                  pr + "/media?maxWidthPx=800" +
+                  pr + "/media?maxWidthPx=1200" +
                   "&skipHttpRedirect=true&key=" + gpKey
                 );
                 if (pResp.ok) {
@@ -2862,6 +2953,9 @@ async function handleDestinationPhoto(payload) {
   var apiKey = Deno.env.get("GOOGLE_PLACES_API_KEY");
   if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
 
+  // Extract the primary place name (before commas) for cleaner searches
+  var placeName = destination.split(",")[0].trim();
+
   // Preferred place types — landmarks, scenic areas, and tourist attractions
   var preferredTypes = [
     "landmark", "tourist_attraction", "national_park", "natural_feature",
@@ -2869,10 +2963,17 @@ async function handleDestinationPhoto(payload) {
     "monument", "museum", "palace", "castle",
   ];
 
-  // Progressively broader queries — ensures obscure destinations still get a photo
+  // Negative types — skip these even if they match preferred types
+  var skipTypes = [
+    "restaurant", "food", "bar", "cafe", "lodging", "hotel",
+    "store", "shopping_mall", "gym", "school", "hospital",
+  ];
+
+  // Progressively broader queries using clean place name
   var queries = [
-    destination + " famous landmark skyline",
-    destination + " scenic view",
+    placeName + " skyline aerial view",
+    placeName + " famous landmark",
+    placeName + " tourist attraction",
     destination,
   ];
 
@@ -2905,13 +3006,25 @@ async function handleDestinationPhoto(payload) {
       if (photos.length === 0 || !photos[0].name) continue;
 
       var types = places[i].types || [];
+
+      // Skip restaurants, hotels, stores, etc. — they produce irrelevant photos
+      var shouldSkip = false;
+      for (var s = 0; s < skipTypes.length; s++) {
+        if (types.indexOf(skipTypes[s]) !== -1) { shouldSkip = true; break; }
+      }
+      if (shouldSkip) continue;
+
       var score = 0;
       for (var t = 0; t < types.length; t++) {
         if (preferredTypes.indexOf(types[t]) !== -1) {
           score += 10;
         }
       }
+      // Prefer places with many photos (indicates popular/photogenic place)
       score += Math.min(photos.length, 10);
+      // Prefer the photo with the most options (wider selection = better quality)
+      var photoCount = photos.length;
+      if (photoCount > 5) score += 5;
       score -= i * 0.5;
 
       if (score > bestScore) {
@@ -3138,18 +3251,29 @@ async function handlePlacesNearby(payload) {
     pageSize: 20,
   };
   if (lat && lng) {
-    // locationRestriction (rectangle) is a HARD constraint — Google only returns
-    // places within the rectangle. locationBias is just a soft hint that Google
-    // can and does ignore, returning results from other countries.
-    var radiusKm = Math.max(radius, 5000) / 1000;
-    var dLat = radiusKm / 111;
-    var dLng = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
-    body.locationRestriction = {
-      rectangle: {
-        low: { latitude: lat - dLat, longitude: lng - dLng },
-        high: { latitude: lat + dLat, longitude: lng + dLng },
-      },
-    };
+    if (payload.biasOnly) {
+      // locationBias (circle) — soft hint: prefer results near this point
+      // but still allow worldwide results. Used for board destination search.
+      body.locationBias = {
+        circle: {
+          center: { latitude: lat, longitude: lng },
+          radius: 50000,
+        },
+      };
+    } else {
+      // locationRestriction (rectangle) is a HARD constraint — Google only returns
+      // places within the rectangle. locationBias is just a soft hint that Google
+      // can and does ignore, returning results from other countries.
+      var radiusKm = Math.max(radius, 5000) / 1000;
+      var dLat = radiusKm / 111;
+      var dLng = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+      body.locationRestriction = {
+        rectangle: {
+          low: { latitude: lat - dLat, longitude: lng - dLng },
+          high: { latitude: lat + dLat, longitude: lng + dLng },
+        },
+      };
+    }
   }
   console.log("[places_nearby] Request:", JSON.stringify({ url, query, lat, lng, radiusKm: Math.max(radius, 5000) / 1000 }));
   var resp = await fetch(url, {
@@ -3287,7 +3411,7 @@ async function handlePhotoCacheStore(payload) {
   // 1. Fetch the photo from Google
   var photoUrl = "https://places.googleapis.com/v1/"
     + photoRef
-    + "/media?maxWidthPx=400&skipHttpRedirect=true&key=" + gKey;
+    + "/media?maxWidthPx=1200&skipHttpRedirect=true&key=" + gKey;
 
   var photoResp = await fetch(photoUrl);
   if (!photoResp.ok) {

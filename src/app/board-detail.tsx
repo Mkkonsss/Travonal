@@ -15,7 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ThemedText } from '@/components/themed-text';
 import { BoardPicker } from '@/components/board-picker';
 import { Spacing, Radius } from '@/constants/theme';
-import { useBoards, BoardItem } from '@/context/boards';
+import { useBoards, BoardItem, Board } from '@/context/boards';
 import { useTrips } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
@@ -24,6 +24,7 @@ import { normalizeGooglePlace, type NormalizedPlace } from '@/services/place-mod
 import { prefetchPhotosFromCache, getCachedPhotoUrl, getPlacePhoto } from '@/services/free-photos';
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
 import { importPlaceAI } from '@/services/ai';
+import { searchPlace as geocodePlace } from '@/services/geocoder';
 import { useGate } from '@/hooks/use-gate';
 import { FontAwesome5 } from '@expo/vector-icons';
 
@@ -68,77 +69,52 @@ function PinCardContent({
   return (
     <View style={[
       styles.pinCard,
-      { height: imageUrl ? cardHeight : undefined, backgroundColor: theme.backgroundElement },
+      { height: cardHeight, backgroundColor: theme.backgroundElement },
       isDragging && styles.pinCardDragging,
     ]}>
-      {imageUrl ? (
-        <>
-          <ExpoImage
-            source={{ uri: imageUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)']}
-            locations={[0, 0.45, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          {onMenuPress && (
-            <View style={styles.pinMenuOverlay}>
-              <Pressable
-                onPress={onMenuPress}
-                hitSlop={8}
-                style={styles.pinMenuBtnOverlay}
-                accessibilityRole="button"
-                accessibilityLabel="Options"
-              >
-                <SymbolView name="ellipsis" size={14} tintColor="#fff" />
-              </Pressable>
-            </View>
-          )}
-          <View style={styles.pinInfoOverlay}>
-            <ThemedText style={styles.pinTitleOverlay} numberOfLines={2}>{item.title}</ThemedText>
-            {item.destination && (
-              <ThemedText style={styles.pinDestOverlay} numberOfLines={1}>
-                {item.destination}
-              </ThemedText>
-            )}
-          </View>
-        </>
-      ) : (
-        <>
-          <View style={[styles.pinPlaceholder, { height: pinWidth * 0.55, backgroundColor: theme.border }]}>
-            <SymbolView name={icon as any} size={24} tintColor={theme.textSecondary} />
-          </View>
-          <View style={styles.pinInfo}>
-            <View style={styles.pinInfoRow}>
-              <ThemedText style={[styles.pinTitle, { flex: 1 }]} numberOfLines={2}>{item.title}</ThemedText>
-              {onMenuPress && (
-                <Pressable
-                  onPress={onMenuPress}
-                  hitSlop={8}
-                  style={styles.pinMenuBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="Options"
-                >
-                  <SymbolView name="ellipsis" size={14} tintColor={theme.textSecondary} />
-                </Pressable>
-              )}
-            </View>
-            {item.destination && (
-              <ThemedText style={[styles.pinDest, { color: theme.textSecondary }]} numberOfLines={1}>
-                {item.destination}
-              </ThemedText>
-            )}
-            {item.notes && (
-              <ThemedText style={[styles.pinNotes, { color: theme.textSecondary }]} numberOfLines={2}>
-                {item.notes}
-              </ThemedText>
-            )}
-          </View>
-        </>
+      {/* Placeholder icon shown behind image — visible while image loads or if no image */}
+      {!imageUrl && (
+        <View style={[StyleSheet.absoluteFill, styles.pinPlaceholderCentered, { backgroundColor: theme.border }]}>
+          <SymbolView name={icon as any} size={28} tintColor={theme.textSecondary} />
+        </View>
       )}
+      {imageUrl && (
+        <ExpoImage
+          source={{ uri: imageUrl }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={200}
+        />
+      )}
+      <LinearGradient
+        colors={imageUrl
+          ? ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)']
+          : ['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.0)', 'rgba(0,0,0,0.45)']}
+        locations={[0, 0.45, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {onMenuPress && (
+        <View style={styles.pinMenuOverlay}>
+          <Pressable
+            onPress={onMenuPress}
+            hitSlop={8}
+            style={styles.pinMenuBtnOverlay}
+            accessibilityRole="button"
+            accessibilityLabel="Options"
+          >
+            <SymbolView name="ellipsis" size={14} tintColor="#fff" />
+          </Pressable>
+        </View>
+      )}
+      <View style={styles.pinInfoOverlay}>
+        <ThemedText style={styles.pinTitleOverlay} numberOfLines={2}>{item.title}</ThemedText>
+        {item.destination && (
+          <ThemedText style={styles.pinDestOverlay} numberOfLines={1}>
+            {item.destination}
+          </ThemedText>
+        )}
+      </View>
       {item.plannedTripId && (
         <View style={[styles.plannedDot, { backgroundColor: theme.live }]} />
       )}
@@ -441,7 +417,7 @@ export default function BoardDetailScreen() {
   const theme = useTheme();
   const { width: screenWidth } = useWindowDimensions();
   const pinWidth = (screenWidth - Spacing.four * 2 - COLUMN_GAP) / 2;
-  const { getBoard, removeItemFromBoard, renameBoard, deleteBoard, markItemPlanned, updateBoardItem, moveItemToBoard, setBoardItemOrder, boards, addItemToBoard } = useBoards();
+  const { getBoard, removeItemFromBoard, renameBoard, deleteBoard, markItemPlanned, updateBoardItem, moveItemToBoard, setBoardItemOrder, boards, addItemToBoard, updateBoardDestination } = useBoards();
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const { trips, addActivity } = useTrips();
@@ -699,7 +675,23 @@ export default function BoardDetailScreen() {
   const boardId_ = board.id;
   const boardName = board.name;
 
-  // Determine dominant destination
+  // Resolve board name to geographic coordinates (for destination-aware search)
+  // Also re-resolve if destination has stale format with country (e.g. "Miami, Florida, United States")
+  const needsResolve = !board?.destinationLat || (board?.destination && board.destination.split(',').length > 2);
+  useEffect(() => {
+    if (!board || !needsResolve) return;
+    geocodePlace(board.name, { limit: 1 }).then((results) => {
+      if (results.length > 0) {
+        // Use name + state (skip country — trip.country handles that separately)
+        const r = results[0];
+        const dest = r.state && r.state !== r.name ? `${r.name}, ${r.state}` : r.name;
+        updateBoardDestination(board.id, dest, r.lat, r.lng);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board?.id, board?.name, needsResolve]);
+
+  // Determine dominant destination (fallback for boards without resolved coords)
   const destCounts: Record<string, number> = {};
   for (const item of board.items) {
     if (item.destination) {
@@ -835,7 +827,7 @@ export default function BoardDetailScreen() {
     }
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
+      quality: 0.5,
       base64: true,
     });
     if (pickerResult.canceled || !pickerResult.assets || pickerResult.assets.length === 0) return;
@@ -845,13 +837,18 @@ export default function BoardDetailScreen() {
       return;
     }
     await runImport('screenshot', async () => {
-      const base64 = asset.base64!;
-      const mimeType = asset.mimeType ?? (asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg');
-      const imported = await importPlaceAI({ content: base64, contentType: 'image_base64', mimeType });
-      if (isValidResult(imported)) {
-        setRevealData(buildRevealItem(imported, { sourceType: 'screenshot', mediaUri: asset.uri, mediaType: 'image' }));
-      } else {
-        showToast('Could not identify a place from that image', 'error');
+      try {
+        const base64 = asset.base64!;
+        const mimeType = asset.mimeType ?? (asset.uri.endsWith('.png') ? 'image/png' : 'image/jpeg');
+        const imported = await importPlaceAI({ content: base64, contentType: 'image_base64', mimeType });
+        if (isValidResult(imported)) {
+          setRevealData(buildRevealItem(imported, { sourceType: 'screenshot', mediaUri: asset.uri, mediaType: 'image' }));
+        } else {
+          showToast('Could not identify a place from that image', 'error');
+        }
+      } catch (err: any) {
+        console.error('[screenshot import] error:', err);
+        Alert.alert('Import failed', err?.message || 'Something went wrong analyzing the screenshot. Try again.');
       }
     });
   }
@@ -904,7 +901,10 @@ export default function BoardDetailScreen() {
     searchTimeoutRef.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const results = await searchPlaceByName(text, dominantDest);
+        const bias = (board?.destinationLat != null && board?.destinationLng != null)
+          ? { lat: board.destinationLat, lng: board.destinationLng }
+          : undefined;
+        const results = await searchPlaceByName(text, bias ? undefined : dominantDest, bias);
         setSearchResults(results.slice(0, 5));
       } catch { setSearchResults([]); }
       finally { setSearchLoading(false); }
@@ -1001,13 +1001,13 @@ export default function BoardDetailScreen() {
 
   function handleGenerateAI() {
     setShowTripActions(false);
-    const dest = dominantDest ?? '';
+    const dest = boardName || dominantDest || '';
     router.push(`/add-trip?initialDest=${encodeURIComponent(dest)}&fromBoardId=${encodeURIComponent(boardId_)}` as any);
   }
 
   function handleStartFromScratch() {
     setShowTripActions(false);
-    const dest = dominantDest ?? '';
+    const dest = boardName || dominantDest || '';
     router.push(`/add-trip?initialDest=${encodeURIComponent(dest)}&fromBoardId=${encodeURIComponent(boardId_)}&mode=detailed` as any);
   }
 
@@ -1909,6 +1909,10 @@ const styles = StyleSheet.create({
   },
   pinPlaceholder: {
     width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinPlaceholderCentered: {
     alignItems: 'center',
     justifyContent: 'center',
   },

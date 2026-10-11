@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const parsed = Linking.parse(url);
     const code = parsed.queryParams?.code as string | undefined;
     if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(url);
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) setIsRecovery(true);
       return;
     }

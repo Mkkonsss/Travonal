@@ -321,9 +321,9 @@ export default function AddTripScreen() {
     // Track placed activities for smart time suggestions
     const placedSoFar: Activity[] = [];
 
-    const inboxActivities = inboxItemsForDest.map((item) => {
+    const inboxActivities = inboxItemsForDest.map((item, index) => {
       const actType = (item.activityType ?? (item.category === 'food' ? 'food' : 'activity')) as Activity['type'];
-      const day = hasDayAssignments ? (dayAssignments.get(item.title) ?? 1) : 1;
+      const day = hasDayAssignments ? (dayAssignments.get(item.title) ?? 1) : (index % tripDays) + 1;
       const time = hasDayAssignments
         ? suggestTimeForActivity(placedSoFar, day, actType)
         : `${9 + placedSoFar.filter(a => a.day === day).length}:00`;
@@ -338,8 +338,8 @@ export default function AddTripScreen() {
     const boardItems = board
       ? board.items.filter(i => (fromBoardId ? true : !i.plannedTripId) && !excludedBoardItems.has(i.id))
       : [];
-    const boardActivities = boardItems.map((item) => {
-      const day = hasDayAssignments ? (dayAssignments.get(item.title) ?? 1) : 1;
+    const boardActivities = boardItems.map((item, index) => {
+      const day = hasDayAssignments ? (dayAssignments.get(item.title) ?? 1) : (index % tripDays) + 1;
       const actType = item.type as Activity['type'];
       const time = hasDayAssignments
         ? suggestTimeForActivity(placedSoFar, day, actType)

@@ -332,7 +332,7 @@ function TripCard({ trip, index, state }: { trip: Trip; index: number; state: st
   const pill = STATUS_PILL[state] ?? STATUS_PILL.draft;
   const [gradStart, gradEnd] = tripGradient(trip.destination);
   const activityCount = trip.activities.length;
-  const autoPhoto = useDestinationPhoto(`${trip.destination}, ${trip.country}`);
+  const autoPhoto = useDestinationPhoto(trip.destination.includes(',') ? trip.destination : `${trip.destination}, ${trip.country}`);
   const photoUrl = trip.customImageUri || trip.destinationImageUri || autoPhoto;
   const imgOpacity = useSharedValue(0);
   const imgStyle = useAnimatedStyle(() => ({ opacity: imgOpacity.value }));
