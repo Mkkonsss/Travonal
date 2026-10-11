@@ -241,9 +241,13 @@ export default function ProfileScreen() {
   const { resetAll: resetTrips } = useTrips();
   const { user, signOut, resetPassword } = useAuth();
 
+  const providerName =
+    (user?.user_metadata?.full_name as string | undefined) ||
+    (user?.user_metadata?.name as string | undefined) ||
+    ([user?.user_metadata?.given_name, user?.user_metadata?.family_name].filter(Boolean).join(' ') || undefined);
   const displayName =
     profile.displayName?.trim() ||
-    (user?.user_metadata?.full_name as string | undefined) ||
+    providerName ||
     formatDisplayName(user?.email);
 
   const derivedUsername = displayName

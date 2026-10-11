@@ -119,7 +119,10 @@ export default function EditProfileScreen() {
   const { user } = useAuth();
 
   // Social profile fields — auto-fill from auth if not yet set
-  const authName = (user?.user_metadata?.full_name as string | undefined)
+  const meta = user?.user_metadata;
+  const authName = (meta?.full_name as string | undefined)
+    ?? (meta?.name as string | undefined)
+    ?? ([meta?.given_name, meta?.family_name].filter(Boolean).join(' ') || undefined)
     ?? user?.email?.split('@')[0]?.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim()
     ?? '';
   const derivedUsername = authName.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 20);

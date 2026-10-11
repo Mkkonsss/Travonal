@@ -78,37 +78,35 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // On sign-in, pull remote profile — only apply fields the remote actually has set
+  // On sign-in, seed profile from auth provider then pull remote profile
   useEffect(() => {
     if (!loaded || !user?.id) return;
 
-    // Seed displayName from auth provider metadata if profile doesn't have one yet
+    // Build provider name from auth metadata (Google provides `name`,
+    // Apple provides `full_name`, both may have given/family name parts)
     const meta = user.user_metadata;
-    if (meta) {
-      const providerName =
-        (meta.full_name as string | undefined) ??
+    const providerName = meta
+      ? (meta.full_name as string | undefined) ??
         (meta.name as string | undefined) ??
-        ([meta.given_name, meta.family_name].filter(Boolean).join(' ') || undefined);
-      if (providerName) {
-        setProfile((prev) =>
-          prev.displayName ? prev : { ...prev, displayName: providerName },
-        );
-      }
-    }
+        ([meta.given_name, meta.family_name].filter(Boolean).join(' ') || undefined)
+      : undefined;
 
     pullProfile(user.id).then((result) => {
-      if (!result) return;
-      const remote = result.profile;
-      // Only merge non-default fields from remote to avoid overwriting local customizations
-      // with stale default values from an old remote save
+      const remote = result?.profile;
       setProfile((prev) => {
         const merged = { ...prev };
-        for (const key of Object.keys(remote) as (keyof TravelProfile)[]) {
-          const val = remote[key];
-          // Skip undefined/null and empty arrays — these are likely unset defaults
-          if (val === undefined || val === null) continue;
-          if (Array.isArray(val) && val.length === 0) continue;
-          (merged as any)[key] = val;
+        // Always seed displayName from auth provider so the profile reflects
+        // the current Google/Apple account
+        if (providerName) merged.displayName = providerName;
+        // Then overlay with non-default fields from the remote profile
+        // (user-customised name, preferences, etc.)
+        if (remote) {
+          for (const key of Object.keys(remote) as (keyof TravelProfile)[]) {
+            const val = remote[key];
+            if (val === undefined || val === null) continue;
+            if (Array.isArray(val) && val.length === 0) continue;
+            (merged as any)[key] = val;
+          }
         }
         return merged;
       });
