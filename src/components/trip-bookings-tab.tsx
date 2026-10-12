@@ -93,7 +93,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
 
   const nameOnlyHints = useMemo(
     (): ActivityNameHint[] =>
-      reservations.map((r) => ({ key: r.id, name: r.title, destination: trip.destination })),
+      reservations.map((r) => ({ key: `${r.title}::${trip.destination}`, name: r.title, destination: trip.destination })),
     [reservations, trip.destination],
   );
 
@@ -153,7 +153,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
   }
 
   function renderCard(res: Reservation) {
-    const photoUrl = photoMap.get(res.id);
+    const photoUrl = photoMap.get(`${res.title}::${trip.destination}`);
     const metaText =
       res.date && res.checkOutDate
         ? `${formatBookingDate(res.date)} – ${formatBookingDate(res.checkOutDate)}`

@@ -319,76 +319,77 @@ export const FlightsStrip = memo(function FlightsStrip({
           const logoUrl = getAirlineLogoUrl(res.flightNumber, res.title);
 
           return (
-            <Pressable
-              key={res.id}
-              onPress={() => onViewFlight(res, photoUrl ?? logoUrl ?? undefined)}
-              style={({ pressed }) => [s.gridCard, pressed && { opacity: 0.85 }]}
-              accessibilityRole="button"
-              accessibilityLabel={route}
-            >
-              {/* Dark gradient background */}
-              <LinearGradient colors={['#2a2f3d', '#1a1e28']} style={StyleSheet.absoluteFill} />
-              {/* Photo (from activity photos) or airline logo or airplane icon */}
-              {photoUrl ? (
-                <ExpoImage
-                  source={{ uri: photoUrl }}
+            <View key={res.id} style={s.gridItem}>
+              <Pressable
+                onPress={() => onViewFlight(res, photoUrl ?? logoUrl ?? undefined)}
+                style={({ pressed }) => [s.gridCard, pressed && { opacity: 0.85 }]}
+                accessibilityRole="button"
+                accessibilityLabel={route}
+              >
+                {/* Dark gradient background */}
+                <LinearGradient colors={['#2a2f3d', '#1a1e28']} style={StyleSheet.absoluteFill} />
+                {/* Photo (from activity photos) or airline logo or airplane icon */}
+                {photoUrl ? (
+                  <ExpoImage
+                    source={{ uri: photoUrl }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <View style={s.airlineLogoCenter}>
+                    {logoUrl ? (
+                      <ExpoImage
+                        source={{ uri: logoUrl }}
+                        style={s.airlineLogoImg}
+                        contentFit="contain"
+                        cachePolicy="memory-disk"
+                      />
+                    ) : (
+                      <SymbolView name="airplane" size={36} tintColor="rgba(255,255,255,0.25)" />
+                    )}
+                  </View>
+                )}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.75)']}
+                  locations={[0.3, 1]}
                   style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
                 />
-              ) : (
-                <View style={s.airlineLogoCenter}>
-                  {logoUrl ? (
-                    <ExpoImage
-                      source={{ uri: logoUrl }}
-                      style={s.airlineLogoImg}
-                      contentFit="contain"
-                      cachePolicy="memory-disk"
-                    />
-                  ) : (
-                    <SymbolView name="airplane" size={36} tintColor="rgba(255,255,255,0.25)" />
-                  )}
+
+                {/* Remove button — top right */}
+                {onRemoveFlight && (
+                  <Pressable
+                    onPress={(e) => { e.stopPropagation(); onRemoveFlight(res); }}
+                    hitSlop={8}
+                    style={s.cardTypeIcon}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove flight"
+                  >
+                    <SymbolView name="xmark.circle.fill" size={22} tintColor="rgba(255,255,255,0.9)" />
+                  </Pressable>
+                )}
+
+                {/* Status badge — top left */}
+                <View style={s.cardStatusPos}>
+                  <View style={s.cardStatusBadge}>
+                    {booked && <View style={[s.statusDot, { backgroundColor: '#10B981' }]} />}
+                    <ThemedText style={s.cardStatusText}>
+                      {booked ? 'Booked' : 'Not booked'}
+                    </ThemedText>
+                  </View>
                 </View>
-              )}
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.75)']}
-                locations={[0.3, 1]}
-                style={StyleSheet.absoluteFill}
-              />
 
-              {/* Remove button — top right */}
-              {onRemoveFlight && (
-                <Pressable
-                  onPress={(e) => { e.stopPropagation(); onRemoveFlight(res); }}
-                  hitSlop={8}
-                  style={s.cardTypeIcon}
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove flight"
-                >
-                  <SymbolView name="xmark.circle.fill" size={22} tintColor="rgba(255,255,255,0.9)" />
-                </Pressable>
-              )}
-
-              {/* Status badge — top left */}
-              <View style={s.cardStatusPos}>
-                <View style={s.cardStatusBadge}>
-                  {booked && <View style={[s.statusDot, { backgroundColor: '#10B981' }]} />}
-                  <ThemedText style={s.cardStatusText}>
-                    {booked ? 'Booked' : 'Not booked'}
-                  </ThemedText>
+                {/* Text overlay — bottom */}
+                <View style={s.cardOverlay}>
+                  <ThemedText style={s.cardName} numberOfLines={1}>{route}</ThemedText>
+                  {(res.flightNumber || dateStr) ? (
+                    <ThemedText style={s.cardMeta} numberOfLines={1}>
+                      {[res.flightNumber, dateStr].filter(Boolean).join(' · ')}
+                    </ThemedText>
+                  ) : null}
                 </View>
-              </View>
-
-              {/* Text overlay — bottom */}
-              <View style={s.cardOverlay}>
-                <ThemedText style={s.cardName} numberOfLines={1}>{route}</ThemedText>
-                {(res.flightNumber || dateStr) ? (
-                  <ThemedText style={s.cardMeta} numberOfLines={1}>
-                    {[res.flightNumber, dateStr].filter(Boolean).join(' · ')}
-                  </ThemedText>
-                ) : null}
-              </View>
-            </Pressable>
+              </Pressable>
+            </View>
           );
         })}
       </View>
@@ -500,11 +501,14 @@ const s = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
-  // Booked flight grid cards (My Bookings style)
-  gridCard: {
+  gridItem: {
     width: '48%',
+    flexShrink: 0,
+  },
+  gridCard: {
+    width: '100%',
     aspectRatio: 5 / 6,
     borderRadius: Radius.md,
     overflow: 'hidden',

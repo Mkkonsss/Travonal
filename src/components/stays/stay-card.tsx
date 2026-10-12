@@ -54,10 +54,14 @@ export const StayCard = memo(function StayCard({
   const statusText = isCancelled ? 'Cancelled' : booked ? 'Booked' : pending ? 'Pending' : 'Not Booked';
   const statusColor = isCancelled ? theme.danger : booked ? '#10B981' : pending ? '#F59E0B' : '#fff';
 
-  // Date range (only shown when booked)
-  const dateRangeText = !datesKnown
-    ? `Day ${b.checkInDay} → Day ${b.checkOutDay}`
-    : `${formatShortDate(computeDateForDay(tripStartDate, b.checkInDay))} → ${formatShortDate(computeDateForDay(tripStartDate, b.checkOutDay))}`;
+  // Date range — prefer actual reservation dates over trip-relative days
+  const resCheckIn = b.reservation?.date;
+  const resCheckOut = b.reservation?.checkOutDate;
+  const dateRangeText = resCheckIn && resCheckOut
+    ? `${formatShortDate(resCheckIn)} – ${formatShortDate(resCheckOut)}`
+    : !datesKnown
+      ? `Day ${b.checkInDay} → Day ${b.checkOutDay}`
+      : `${formatShortDate(computeDateForDay(tripStartDate, b.checkInDay))} → ${formatShortDate(computeDateForDay(tripStartDate, b.checkOutDay))}`;
 
   return (
     <Pressable
@@ -124,7 +128,7 @@ export const StayCard = memo(function StayCard({
         </ThemedText>
         {booked && (
           <ThemedText style={s.meta}>
-            {dateRangeText} · {b.nights.length} night{b.nights.length !== 1 ? 's' : ''}
+            {dateRangeText}
           </ThemedText>
         )}
       </View>
