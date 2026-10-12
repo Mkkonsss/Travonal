@@ -165,6 +165,7 @@ export const StaysStrip = memo(function StaysStrip({
       <View style={s.grid}>
         {blocks.map((b) => {
           const photoUrl = activityPhotos.get(b.hotel.placeId ?? b.hotel.id)
+            ?? activityPhotos.get(`${b.hotel.title}::${trip.destination}`)
             ?? hotelPhotoUrls.get(b.hotel.title);
           return (
             <View key={b.hotel.id} style={s.gridItem}>

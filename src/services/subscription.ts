@@ -40,20 +40,33 @@ export const PRODUCT_IDS = {
 } as const;
 
 /**
- * Tracks the product ID of the user-initiated purchase in progress.
- * When set, only purchases matching this product ID are validated on the server.
- * This prevents two classes of bugs:
+ * Tracks the product ID and timestamp of the user-initiated purchase in progress.
+ * When set, only purchases matching the product ID AND created after the request
+ * are validated on the server. This prevents:
  *   1. StoreKit replay transactions (from the Apple ID) being validated against the wrong user.
- *   2. "Already subscribed" responses returning a different product (e.g. monthly)
- *      than the one the user tried to buy (e.g. annual), which would store the wrong plan.
+ *   2. "Already subscribed" responses replaying old transactions onto new accounts.
+ *   3. Wrong product (e.g. monthly) being stored when user tried to buy annual.
  */
 let _expectedPurchaseProductId: string | null = null;
+let _purchaseRequestedAt: number = 0;
 export function isPurchaseInProgress(purchase?: Purchase): boolean {
   if (!_expectedPurchaseProductId) return false;
-  if (purchase) return purchase.productId === _expectedPurchaseProductId;
+  if (purchase) {
+    if (purchase.productId !== _expectedPurchaseProductId) return false;
+    // Reject replayed transactions from before we initiated the purchase.
+    // "Already subscribed" replays have transactionDate from the original purchase,
+    // not from now. Genuine new purchases have transactionDate ≈ now.
+    if (purchase.transactionDate && purchase.transactionDate < _purchaseRequestedAt - 5000) {
+      return false;
+    }
+    return true;
+  }
   return true;
 }
-export function clearPurchaseInProgress(): void { _expectedPurchaseProductId = null; }
+export function clearPurchaseInProgress(): void {
+  _expectedPurchaseProductId = null;
+  _purchaseRequestedAt = 0;
+}
 
 export type PlanId = keyof typeof PRODUCT_IDS;
 export type ProductId = (typeof PRODUCT_IDS)[PlanId];
@@ -119,6 +132,7 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
   try {
     await openIAPConnection();
     _expectedPurchaseProductId = PRODUCT_IDS[planId];
+    _purchaseRequestedAt = Date.now();
     const sku = PRODUCT_IDS[planId];
     // requestPurchase is event-driven — listen via purchaseUpdatedListener for result.
     await requestPurchase({

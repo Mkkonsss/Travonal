@@ -236,10 +236,24 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     loadTripsSafe<Trip[]>(EMPTY_TRIPS).then((tripsResult) => {
       if (!tripsResult.ok) setTripsLoadError(true);
       const loadedTrips = tripsResult.data;
-      setTrips(loadedTrips);
+      // One-time cleanup: remove flight activities that were auto-created from
+      // reservations. FlightsStrip reads directly from trip.reservations, so these
+      // activities are unnecessary duplicates that clutter the itinerary.
+      let cleaned = false;
+      const cleanedTrips = loadedTrips.map((t) => {
+        const before = t.activities.length;
+        const activities = t.activities.filter(
+          (a) => !(a.type === 'flight' && a.reservationId),
+        );
+        if (activities.length < before) cleaned = true;
+        return activities.length < before ? { ...t, activities } : t;
+      });
+
+      setTrips(cleanedTrips);
       setLoaded(true);
+      if (cleaned) saveTrips(cleanedTrips);
       // Cancel any notifications from trips that no longer exist
-      const activeTripIds = new Set(loadedTrips.map((t) => t.id));
+      const activeTripIds = new Set(cleanedTrips.map((t) => t.id));
       cancelOrphanedTripNotifications(activeTripIds).catch(() => {});
     });
   }, []);
@@ -649,6 +663,10 @@ export function TripsProvider({ children }: { children: ReactNode }) {
           ? { ...a, reservationId: newRes.id, bookingStatus: 'booked' as const }
           : a
       );
+    } else if (activityType === 'flight') {
+      // Flights don't need an activity — FlightsStrip reads directly from
+      // trip.reservations. Creating one would duplicate the flight on day 1.
+      newActivities = trip.activities;
     } else {
       // No match — create a new activity linked to the reservation
       const newActivity: Activity = {

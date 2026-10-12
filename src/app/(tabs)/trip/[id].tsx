@@ -887,7 +887,13 @@ export default function TripWorkspace() {
   const activityNameHints = useMemo(
     () => (trip?.activities ?? [])
       .filter((a) => !a.placeId && !!a.title)
-      .map((a) => ({ key: a.id, name: a.title, destination: trip?.destination })),
+      .map((a) => ({
+        // Reservation-linked activities use "title::destination" key to match
+        // the same key format as My Bookings, ensuring consistent images.
+        key: a.reservationId ? `${a.title}::${trip?.destination}` : a.id,
+        name: a.title,
+        destination: trip?.destination,
+      })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [trip?.id, trip?.activities.length],
   );
@@ -1369,10 +1375,10 @@ export default function TripWorkspace() {
     showToast('Copied to clipboard', 'success');
   }
 
-  // Group activities by day (exclude hotels — shown in Stays section)
+  // Group activities by day (exclude hotels and flights — shown in dedicated sections)
   const dayMap = new Map<number, Activity[]>();
   for (const act of currentTrip.activities) {
-    if (act.type === 'hotel') continue;
+    if (act.type === 'hotel' || act.type === 'flight') continue;
     const existing = dayMap.get(act.day) ?? [];
     existing.push(act);
     dayMap.set(act.day, existing);
@@ -3711,17 +3717,19 @@ export default function TripWorkspace() {
                     activityPhotos={activityPhotos}
                     onAddStay={() => setShowStaySearchModal(true)}
                     onViewStay={(activity, reservation) => {
+                      const stayPhoto = activityPhotos.get(activity.placeId ?? activity.id)
+                        ?? activityPhotos.get(`${activity.title}::${currentTrip.destination}`);
                       if (reservation) {
                         setBookingSheetData({
                           res: reservation,
                           trip: currentTrip,
-                          photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
+                          photoUrl: stayPhoto,
                         });
                       } else {
                         setUnbookedStayData({
                           activity,
                           trip: currentTrip,
-                          photoUrl: activityPhotos.get(activity.placeId ?? activity.id),
+                          photoUrl: stayPhoto,
                         });
                       }
                     }}
