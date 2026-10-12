@@ -23,6 +23,8 @@ import {
   openIAPConnection,
   isPurchaseInProgress,
   clearPurchaseInProgress,
+  verifyEntitlement,
+  restorePurchases,
 } from '@/services/subscription';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -52,6 +54,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const lastUserId = useRef<string | null>(null);
+  const autoRestoreAttempted = useRef(false);
 
   const loadState = useCallback(async () => {
     try {
@@ -62,9 +65,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         setPlan(summary.plan);
         setUsage(summary);
       }
-      // Do NOT override with StoreKit's verifyEntitlement() here.
-      // getAvailablePurchases() returns purchases for the Apple ID, not the app account.
-      // Users who need to associate a purchase with their account should use "Restore Purchases".
+      // Don't check StoreKit here — auto-restore handles linking Apple ID
+      // purchases to the account via a separate effect below.
     } catch {
       // Failed to load — keep cached state
     } finally {
@@ -75,6 +77,9 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // Initial load when session changes
   useEffect(() => {
     if (session) {
+      if (lastUserId.current !== session.user.id) {
+        autoRestoreAttempted.current = false;
+      }
       lastUserId.current = session.user.id;
       setLoading(true);
       loadState();
@@ -86,8 +91,31 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       clearUsageCache(lastUserId.current ?? undefined);
       lastUserId.current = null;
+      autoRestoreAttempted.current = false;
     }
   }, [session, loadState]);
+
+  // Auto-restore: if server says free but StoreKit has active purchases for
+  // this Apple ID, link the subscription to the current account automatically.
+  // Runs once per user session to avoid repeated restore attempts.
+  useEffect(() => {
+    if (!session || loading || isPlus || autoRestoreAttempted.current) return;
+    autoRestoreAttempted.current = true;
+
+    (async () => {
+      try {
+        const hasEntitlement = await verifyEntitlement();
+        if (hasEntitlement) {
+          const result = await restorePurchases();
+          if (result.isSubscribed) {
+            await loadState();
+          }
+        }
+      } catch {
+        // Auto-restore failed silently — user can manually restore later
+      }
+    })();
+  }, [session, loading, isPlus, loadState]);
 
   // Refresh on app foreground (catches external subscription changes)
   useEffect(() => {
@@ -110,10 +138,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         cleanup = listenForPurchaseUpdates(
           async (purchase) => {
             await acknowledgePurchase(purchase);
-            // Only validate on the server if this was a user-initiated purchase.
-            // StoreKit replays unfinished transactions for the Apple ID on connection,
-            // which would incorrectly register another user's subscription.
-            if (isPurchaseInProgress()) {
+            // Only validate if this purchase matches the user-initiated request.
+            // Checks both that a purchase was requested AND that the product ID matches,
+            // preventing StoreKit replays and "already subscribed" mismatches from
+            // storing the wrong plan.
+            if (isPurchaseInProgress(purchase)) {
               await validatePurchaseOnServer(purchase);
               clearPurchaseInProgress();
             }

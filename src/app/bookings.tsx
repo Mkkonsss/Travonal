@@ -70,19 +70,48 @@ function BookingImage({ uri, typeKey, iconSize = 28, photosLoading = false }: { 
   );
 }
 
+/**
+ * Normalize a location string to just the city name for comparison.
+ * Strips IATA/station code prefixes ("FLL - ") and state/country
+ * suffixes (", Florida"), so both "FLL - Fort Lauderdale" and
+ * "Fort Lauderdale, Florida" normalize to "fort lauderdale".
+ */
+function normalizeCity(raw: string): string {
+  let s = raw.toLowerCase().trim();
+  // Strip IATA/station code prefix: "FLL - ", "CDG - ", etc.
+  s = s.replace(/^[a-z]{2,4}\s*[-–—]\s*/, '');
+  // Take only the city part before the first comma (removes state/country)
+  s = s.split(',')[0].trim();
+  return s;
+}
+
 function findMatchingTrip(bookingData: Record<string, unknown>, trips: Trip[]): Trip | null {
-  // Check location and destination independently — for flights, destination is the
-  // arrival city while location may be empty or set to the origin, so we need both.
-  const candidates = [bookingData.location, bookingData.destination]
+  const resType = bookingData.reservationType as string | undefined;
+  const isTransport = resType === 'flight' || resType === 'train';
+
+  // For flights/trains, match only on arrival destination — not the departure
+  // origin (location), which would falsely match a trip to the departure city.
+  // For other types (hotels, restaurants), use both location and destination.
+  const rawCandidates = isTransport
+    ? [bookingData.destination]
+    : [bookingData.location, bookingData.destination];
+
+  const candidates = rawCandidates
     .filter((v): v is string => typeof v === 'string' && v.length > 0)
-    .map((s) => s.toLowerCase());
+    .map(normalizeCity)
+    .filter((s) => s.length > 0);
+
   if (candidates.length === 0) return null;
+
   const matches = trips.filter((t) => {
-    const tripDest = t.destination.toLowerCase();
-    return candidates.some((c) => c.includes(tripDest) || tripDest.includes(c));
+    const tripCity = normalizeCity(t.destination);
+    if (!tripCity) return false;
+    return candidates.some((c) => c.includes(tripCity) || tripCity.includes(c));
   });
+
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0];
+
   // Multiple matches — pick the trip whose start date is closest to the booking date
   const bookingDate = bookingData.bookingDate
     ? new Date(bookingData.bookingDate as string).getTime()
@@ -995,11 +1024,6 @@ export default function BookingsScreen() {
                     accessibilityLabel={`${res.title}, tap to view details`}
                   >
                     {renderCardInner(photoUrl, res.type, res.title, metaText)}
-                    {item.kind === 'confirmed' && sortBy !== 'trip' && (
-                      <View style={styles.cardTripLabel}>
-                        <ThemedText style={styles.cardTripLabelText} numberOfLines={1}>{item.trip.emoji} {item.trip.destination}</ThemedText>
-                      </View>
-                    )}
                   </Pressable>
                 );
               }
@@ -1235,16 +1259,6 @@ const styles = StyleSheet.create({
   cardName: { fontSize: 14, fontWeight: '700', color: '#fff' },
   cardMeta: { fontSize: 11, fontWeight: '500', color: 'rgba(255,255,255,0.75)', marginTop: 2 },
   cardTypeIcon: { position: 'absolute', top: 10, right: 10 },
-  cardTripLabel: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  cardTripLabelText: { fontSize: 10, fontWeight: '600', color: '#fff' },
 
   // Empty state
   emptyState: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingHorizontal: 32, paddingBottom: 60, gap: 12 },

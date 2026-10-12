@@ -40,13 +40,20 @@ export const PRODUCT_IDS = {
 } as const;
 
 /**
- * Flag set to true while a user-initiated purchase is in progress.
- * Prevents auto-validating replayed StoreKit transactions (which belong
- * to the Apple ID, not the app account) against the wrong user.
+ * Tracks the product ID of the user-initiated purchase in progress.
+ * When set, only purchases matching this product ID are validated on the server.
+ * This prevents two classes of bugs:
+ *   1. StoreKit replay transactions (from the Apple ID) being validated against the wrong user.
+ *   2. "Already subscribed" responses returning a different product (e.g. monthly)
+ *      than the one the user tried to buy (e.g. annual), which would store the wrong plan.
  */
-let _purchaseInProgress = false;
-export function isPurchaseInProgress(): boolean { return _purchaseInProgress; }
-export function clearPurchaseInProgress(): void { _purchaseInProgress = false; }
+let _expectedPurchaseProductId: string | null = null;
+export function isPurchaseInProgress(purchase?: Purchase): boolean {
+  if (!_expectedPurchaseProductId) return false;
+  if (purchase) return purchase.productId === _expectedPurchaseProductId;
+  return true;
+}
+export function clearPurchaseInProgress(): void { _expectedPurchaseProductId = null; }
 
 export type PlanId = keyof typeof PRODUCT_IDS;
 export type ProductId = (typeof PRODUCT_IDS)[PlanId];
@@ -111,7 +118,7 @@ export async function loadSubscriptionProducts(): Promise<SubscriptionProduct[]>
 export async function purchaseSubscription(planId: PlanId): Promise<{ error?: string }> {
   try {
     await openIAPConnection();
-    _purchaseInProgress = true;
+    _expectedPurchaseProductId = PRODUCT_IDS[planId];
     const sku = PRODUCT_IDS[planId];
     // requestPurchase is event-driven — listen via purchaseUpdatedListener for result.
     await requestPurchase({
@@ -123,7 +130,7 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
     });
     return {};
   } catch (e: unknown) {
-    _purchaseInProgress = false;
+    _expectedPurchaseProductId = null;
     const msg = e instanceof Error ? e.message : 'Purchase failed.';
     return { error: msg };
   }

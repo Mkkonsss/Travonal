@@ -63,8 +63,8 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
 
 /**
  * Google Sign In — iOS + Android.
- * Opens a browser-based OAuth flow via Supabase, then exchanges
- * the returned code for a session.
+ * Opens a browser-based OAuth implicit flow via Supabase, which
+ * returns session tokens directly in the redirect URL fragment.
  *
  * Setup required:
  *   1. Google Cloud Console → create OAuth 2.0 Web Client ID
@@ -77,18 +77,17 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
   try {
     const redirectUri = makeRedirectUri({ scheme: 'tripseek', path: 'auth/callback' });
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUri,
-        skipBrowserRedirect: true,
-      },
-    });
+    // Use Supabase's authorize endpoint directly with implicit flow (no PKCE).
+    // The PKCE flow's deferred code exchange fails on mobile with
+    // "unable to exchange external code"; the implicit flow makes Supabase
+    // exchange Google's code immediately during the callback and return
+    // session tokens in the URL fragment instead.
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+    const oauthUrl =
+      `${supabaseUrl}/auth/v1/authorize?provider=google` +
+      `&redirect_to=${encodeURIComponent(redirectUri)}`;
 
-    if (error) return { error };
-    if (!data.url) return { error: new Error('No OAuth URL returned from Supabase') };
-
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
+    const result = await WebBrowser.openAuthSessionAsync(oauthUrl, redirectUri);
 
     if (result.type === 'success') {
       // Split URL into query and fragment — avoid new URL() which can fail with custom schemes in Hermes
@@ -100,14 +99,7 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
       const oauthError = params.get('error_description') || params.get('error');
       if (oauthError) return { error: new Error(oauthError) };
 
-      // PKCE flow: authorization code in query params
-      const code = params.get('code');
-      if (code) {
-        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-        return { error: sessionError };
-      }
-
-      // Implicit flow fallback: tokens in URL fragment (#access_token=...&refresh_token=...)
+      // Implicit flow: tokens in URL fragment (#access_token=...&refresh_token=...)
       if (hashString) {
         const hashParams = new URLSearchParams(hashString);
         const accessToken = hashParams.get('access_token');
@@ -121,7 +113,7 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
         }
       }
 
-      return { error: new Error('No authorization code in redirect URL') };
+      return { error: new Error('No session tokens in redirect URL') };
     }
 
     // User dismissed the browser — not an error, but not a success either
