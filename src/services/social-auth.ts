@@ -85,6 +85,7 @@ export async function signInWithGoogle(): Promise<SocialAuthResult> {
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
     const oauthUrl =
       `${supabaseUrl}/auth/v1/authorize?provider=google` +
+      `&response_type=token` +
       `&redirect_to=${encodeURIComponent(redirectUri)}`;
 
     const result = await WebBrowser.openAuthSessionAsync(oauthUrl, redirectUri);

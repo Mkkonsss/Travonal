@@ -23,8 +23,6 @@ import {
   openIAPConnection,
   isPurchaseInProgress,
   clearPurchaseInProgress,
-  verifyEntitlement,
-  restorePurchases,
 } from '@/services/subscription';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -54,7 +52,6 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const lastUserId = useRef<string | null>(null);
-  const autoRestoreAttempted = useRef(false);
 
   const loadState = useCallback(async () => {
     try {
@@ -65,8 +62,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
         setPlan(summary.plan);
         setUsage(summary);
       }
-      // Don't check StoreKit here — auto-restore handles linking Apple ID
-      // purchases to the account via a separate effect below.
+      // Server is the sole source of truth — don't check StoreKit here.
+      // Users can manually restore purchases from the Tripseek+ screen.
     } catch {
       // Failed to load — keep cached state
     } finally {
@@ -77,9 +74,6 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   // Initial load when session changes
   useEffect(() => {
     if (session) {
-      if (lastUserId.current !== session.user.id) {
-        autoRestoreAttempted.current = false;
-      }
       lastUserId.current = session.user.id;
       setLoading(true);
       loadState();
@@ -91,31 +85,8 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       clearUsageCache(lastUserId.current ?? undefined);
       lastUserId.current = null;
-      autoRestoreAttempted.current = false;
     }
   }, [session, loadState]);
-
-  // Auto-restore: if server says free but StoreKit has active purchases for
-  // this Apple ID, link the subscription to the current account automatically.
-  // Runs once per user session to avoid repeated restore attempts.
-  useEffect(() => {
-    if (!session || loading || isPlus || autoRestoreAttempted.current) return;
-    autoRestoreAttempted.current = true;
-
-    (async () => {
-      try {
-        const hasEntitlement = await verifyEntitlement();
-        if (hasEntitlement) {
-          const result = await restorePurchases();
-          if (result.isSubscribed) {
-            await loadState();
-          }
-        }
-      } catch {
-        // Auto-restore failed silently — user can manually restore later
-      }
-    })();
-  }, [session, loading, isPlus, loadState]);
 
   // Refresh on app foreground (catches external subscription changes)
   useEffect(() => {

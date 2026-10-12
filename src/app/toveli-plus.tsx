@@ -366,9 +366,17 @@ export default function ToveliPlusScreen() {
                 <UsageRow label="Places from links" used={usage.imports_used} total={usage.limits.imports ?? 10} theme={theme} />
               </View>
             )}
-            <Pressable onPress={openSubscriptionManagement} style={styles.manageBtn} accessibilityRole="button">
-              <ThemedText style={[styles.manageBtnText, { color: theme.primary }]}>Manage subscription</ThemedText>
-            </Pressable>
+            <View style={styles.bottomLinks}>
+              <Pressable onPress={openSubscriptionManagement} accessibilityRole="button">
+                <ThemedText style={[styles.bottomLinkText, { color: theme.primary, fontWeight: '600' }]}>Manage subscription</ThemedText>
+              </Pressable>
+              <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'\u00B7'}</ThemedText>
+              <Pressable onPress={handleRestore} disabled={restoring} accessibilityRole="button">
+                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>
+                  {restoring ? 'Restoring...' : 'Restore Purchases'}
+                </ThemedText>
+              </Pressable>
+            </View>
           </View>
         )}
 
