@@ -181,12 +181,13 @@ export default function ToveliPlusScreen() {
     setPurchasing(true);
     try {
       const result = await purchaseSubscription(selectedPlan);
-      if (!result.error) {
-        await refreshSubscription();
-        showToast('Welcome to Tripseek+!');
-      } else {
-        showToast(result.error ?? 'Purchase failed. Please try again.');
+      if (result.error) {
+        // requestPurchase rejected — show the error (e.g. "already subscribed")
+        showToast(result.error);
       }
+      // Don't show success toast here — requestPurchase is event-driven.
+      // The purchase listener validates, refreshes state, and isPlus will
+      // update automatically, switching to the subscribed view.
     } catch {
       showToast('Purchase failed. Please try again.');
     } finally {

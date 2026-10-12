@@ -23,7 +23,6 @@ import {
   openIAPConnection,
   isPurchaseInProgress,
   clearPurchaseInProgress,
-  restorePurchases,
 } from '@/services/subscription';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -121,16 +120,13 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
             // Refresh state from server regardless
             await loadState();
           },
-          async (_error) => {
-            // If the user explicitly tried to subscribe and got an error
-            // (e.g. "already subscribed" on this Apple ID), restore the
-            // existing subscription to the current account.
+          (_error) => {
+            // Clear purchase state so the app isn't stuck waiting.
+            // "Already subscribed" errors mean the Apple ID owns a subscription
+            // from another account — don't auto-restore to prevent one purchase
+            // from granting Plus to unlimited accounts.
             if (isPurchaseInProgress()) {
               clearPurchaseInProgress();
-              try {
-                await restorePurchases();
-              } catch { /* restore failed — user can retry manually */ }
-              await loadState();
             }
           },
         );
