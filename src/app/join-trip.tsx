@@ -11,6 +11,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Trip } from '@/context/trips';
 import { findTripByInviteCode, claimInviteCode, getRoleForInviteCode, fetchOwnerIdentityForCode, type UserIdentity } from '@/services/sync';
+import { supabase } from '@/services/supabase';
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '';
@@ -52,6 +53,9 @@ export default function JoinTripScreen() {
     setOwnerIdentity(null);
     setSearching(true);
     try {
+      // Refresh the session so the Supabase client has a valid token for the lookup.
+      // A stale/expired token causes the RPC and shared_trips queries to fail with 401.
+      await supabase.auth.getSession();
       const trip = await findTripByInviteCode(q);
       if (!trip) {
         setError('No trip found with that code. Check the code and try again.');

@@ -27,8 +27,8 @@ export async function pushTrips(userId: string, trips: Trip[]): Promise<void> {
   }));
   console.log(`[sync] pushing ${trips.length} trip(s) for user ${userId}`);
   const { error } = await supabase.from('trips').upsert(rows, { onConflict: 'id' });
-  if (error) console.warn('[sync] pushTrips failed:', error.message);
-  else console.log('[sync] pushTrips ok');
+  if (error) throw new Error(`[sync] pushTrips failed: ${error.message}`);
+  console.log('[sync] pushTrips ok');
 }
 
 export async function pullTrips(userId: string): Promise<Trip[]> {

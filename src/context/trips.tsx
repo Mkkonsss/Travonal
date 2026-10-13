@@ -320,7 +320,7 @@ export function TripsProvider({ children }: { children: ReactNode }) {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       const ownedTrips = trips.filter((t) => !t.joinedAs);
-      pushTrips(userId, ownedTrips);
+      pushTrips(userId, ownedTrips).catch(() => {});
       // Push member edits back to the shared trip's canonical row
       const memberTrips = trips.filter((t) => t.joinedAs === 'member');
       for (const t of memberTrips) pushSharedTripData(t.id, t);

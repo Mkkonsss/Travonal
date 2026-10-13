@@ -2750,9 +2750,9 @@ export default function TripWorkspace() {
   }
 
   async function createShareLink(permission: 'view' | 'edit') {
-    // Always fetch a fresh session — React state may hold a stale/expired token,
-    // which causes pushTrips and registerInviteCode to fail silently on the first attempt.
-    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    // Force a server-side token refresh — getSession() returns a cached token
+    // that may be expired, causing pushTrips/registerInviteCode to fail on first attempt.
+    const { data: { session: freshSession } } = await supabase.auth.refreshSession();
     const token = freshSession?.access_token;
     if (!token) {
       // Fallback to text share for signed-out users
