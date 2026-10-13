@@ -2750,7 +2750,10 @@ export default function TripWorkspace() {
   }
 
   async function createShareLink(permission: 'view' | 'edit') {
-    const token = session?.access_token;
+    // Always fetch a fresh session — React state may hold a stale/expired token,
+    // which causes pushTrips and registerInviteCode to fail silently on the first attempt.
+    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    const token = freshSession?.access_token;
     if (!token) {
       // Fallback to text share for signed-out users
       let text = `${currentTrip.title ?? currentTrip.destination} — ${currentTrip.destination}\n`;
@@ -2776,6 +2779,7 @@ export default function TripWorkspace() {
     try {
       const edgeFnUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/share-trip`;
       const tripData = {
+        id: currentTrip.id,
         title: currentTrip.title ?? currentTrip.destination,
         destination: currentTrip.destination,
         country: currentTrip.country,
@@ -2802,21 +2806,16 @@ export default function TripWorkspace() {
       inviteCode = `TRV-${inviteCode}`;
 
       // Ensure trip data is on the server and invite code is registered
-      const userId = session?.user?.id;
+      const userId = freshSession?.user?.id;
       if (userId) {
         await pushTrips(userId, [currentTrip]);
       }
       await registerInviteCode(currentTrip.id, inviteCode, permission === 'edit' ? 'member' : 'viewer');
 
-      // Get fresh token — pushTrips/registerInviteCode may have triggered an auto-refresh
-      // that hasn't propagated to React state yet
-      const { data: { session: freshSession } } = await supabase.auth.getSession();
-      const freshToken = freshSession?.access_token ?? token;
-
       const res = await fetch(edgeFnUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${freshToken}`,
+          'Authorization': `Bearer ${token}`,
           'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
           'Content-Type': 'application/json',
         },

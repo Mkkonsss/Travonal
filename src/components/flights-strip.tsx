@@ -356,19 +356,6 @@ export const FlightsStrip = memo(function FlightsStrip({
                   style={StyleSheet.absoluteFill}
                 />
 
-                {/* Remove button — top right */}
-                {onRemoveFlight && (
-                  <Pressable
-                    onPress={(e) => { e.stopPropagation(); onRemoveFlight(res); }}
-                    hitSlop={8}
-                    style={s.cardTypeIcon}
-                    accessibilityRole="button"
-                    accessibilityLabel="Remove flight"
-                  >
-                    <SymbolView name="xmark.circle.fill" size={22} tintColor="rgba(255,255,255,0.9)" />
-                  </Pressable>
-                )}
-
                 {/* Status badge — top left */}
                 <View style={s.cardStatusPos}>
                   <View style={s.cardStatusBadge}>
