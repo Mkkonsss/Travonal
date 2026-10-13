@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { ThemedText } from '@/components/themed-text';
@@ -92,6 +93,7 @@ export default function JoinTripScreen() {
 
   async function handleJoin() {
     if (!foundTrip) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const role = await getRoleForInviteCode(normalized).catch(() => 'member' as const);
     // Claim the invite code server-side so the member appears in trip_members.
     // Retry once after refreshSession if the first attempt fails (stale auth).
