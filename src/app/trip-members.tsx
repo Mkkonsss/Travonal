@@ -109,16 +109,17 @@ export default function TripMembersScreen() {
       const { error: refreshErr } = await supabase.auth.refreshSession();
       if (refreshErr) await supabase.auth.getSession();
 
-      // Push trip data to server so receivers can find it via invite code lookup
-      if (user?.id) await pushTrips(user.id, [trip]);
-
       let code = inviteCode;
       if (!code) {
         code = addInvitation(tripId, { status: 'pending', role: 'member' });
         await registerInviteCode(tripId, code, 'member', user?.id);
       }
-      // Store trip snapshot in shared_trips as fallback (non-blocking — not critical path)
-      if (user?.id) storeSharedTrip(user.id, tripId, code, trip).catch(() => {});
+
+      // Push trip data to server for receiver lookup (non-blocking — shared_trips is the backup)
+      if (user?.id) {
+        pushTrips(user.id, [trip]).catch(() => {});
+        storeSharedTrip(user.id, tripId, code, trip).catch(() => {});
+      }
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const tripName = trip.title ?? trip.destination;
