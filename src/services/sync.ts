@@ -95,6 +95,26 @@ export async function registerInviteCode(
 }
 
 /**
+ * Store a trip snapshot in shared_trips with the invite code.
+ * shared_trips has a public SELECT policy (using true), so any user can read it
+ * without needing auth — this is the most reliable way for receivers to find trips.
+ */
+export async function storeSharedTrip(
+  userId: string,
+  tripId: string,
+  inviteCode: string,
+  tripData: Trip,
+): Promise<void> {
+  const code = inviteCode.toUpperCase().trim();
+  const id = `${tripId}-${code}`;
+  const { error } = await supabase.from('shared_trips').upsert(
+    { id, user_id: userId, trip_id: tripId, permission: 'edit', trip_data: tripData, invite_code: code },
+    { onConflict: 'id' },
+  );
+  if (error) console.warn('[sync] storeSharedTrip failed:', error.message);
+}
+
+/**
  * Claim an invite code — associates the current user with the trip membership row.
  * Call this when the user taps "Join" after previewing a trip.
  */

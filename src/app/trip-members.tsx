@@ -11,7 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Invitation, type TripMember } from '@/context/trips';
-import { registerInviteCode, pushTrips, fetchTripAllParticipants, fetchUserIdentities, type UserIdentity } from '@/services/sync';
+import { registerInviteCode, pushTrips, storeSharedTrip, fetchTripAllParticipants, fetchUserIdentities, type UserIdentity } from '@/services/sync';
 import { supabase } from '@/services/supabase';
 import { useProfile } from '@/context/profile';
 import { useAuth } from '@/context/auth';
@@ -110,6 +110,8 @@ export default function TripMembersScreen() {
         code = addInvitation(tripId, { status: 'pending', role: 'member' });
         await registerInviteCode(tripId, code, 'member');
       }
+      // Store trip snapshot in shared_trips (public SELECT policy — no auth needed to read)
+      if (user?.id) await storeSharedTrip(user.id, tripId, code, trip);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const tripName = trip.title ?? trip.destination;
       Share.share({
