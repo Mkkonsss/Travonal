@@ -93,7 +93,7 @@ export default function JoinTripScreen() {
     const role = await getRoleForInviteCode(normalized).catch(() => 'member' as const);
     claimInviteCode(normalized).catch(() => {});
     joinTrip(foundTrip, role);
-    setJoined(true);
+    router.replace('/(tabs)');
   }
 
   const totalDays = foundTrip ? (() => {
