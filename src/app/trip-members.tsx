@@ -111,18 +111,8 @@ export default function TripMembersScreen() {
     let code = inviteCode;
     if (!code) {
       code = addInvitation(tripId, { status: 'pending', role: 'member' });
-      // Register invite code — retry once after a fresh token refresh if it fails
-      try {
-        await registerInviteCode(tripId, code, 'member', user?.id);
-      } catch {
-        try {
-          await supabase.auth.refreshSession();
-          await registerInviteCode(tripId, code, 'member', user?.id);
-        } catch {
-          Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
-          return;
-        }
-      }
+      // Register on server — non-blocking; the useEffect will also retry on inviteCode change
+      registerInviteCode(tripId, code, 'member', user?.id).catch(() => {});
     }
 
     // Push trip data to server for receiver lookup (non-blocking)
