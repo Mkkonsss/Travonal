@@ -65,7 +65,7 @@ export async function findTripByInviteCode(inviteCode: string): Promise<Trip | n
   if (error) console.warn('[sync] findTripByInviteCode RPC failed:', error.message);
 
   // Fallback: check shared_trips (trip data stored at share time, readable by anyone)
-  const { data: shared } = await supabase
+  const { data: shared, error: sharedErr } = await supabase
     .from('shared_trips')
     .select('trip_data')
     .eq('invite_code', code)
@@ -73,6 +73,7 @@ export async function findTripByInviteCode(inviteCode: string): Promise<Trip | n
     .limit(1)
     .maybeSingle();
 
+  if (sharedErr) console.warn('[sync] findTripByInviteCode shared_trips failed:', sharedErr.message);
   return (shared?.trip_data as Trip) ?? null;
 }
 
@@ -107,11 +108,13 @@ export async function storeSharedTrip(
 ): Promise<void> {
   const code = inviteCode.toUpperCase().trim();
   const id = `${tripId}-${code}`;
+  // Use ignoreDuplicates (INSERT ON CONFLICT DO NOTHING) because shared_trips
+  // has no UPDATE RLS policy — a regular upsert would fail on conflict.
   const { error } = await supabase.from('shared_trips').upsert(
     { id, user_id: userId, trip_id: tripId, permission: 'edit', trip_data: tripData, invite_code: code },
-    { onConflict: 'id' },
+    { onConflict: 'id', ignoreDuplicates: true },
   );
-  if (error) console.warn('[sync] storeSharedTrip failed:', error.message);
+  if (error) throw new Error(`[sync] storeSharedTrip failed: ${error.message}`);
 }
 
 /**
