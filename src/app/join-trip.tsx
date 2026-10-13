@@ -153,6 +153,10 @@ export default function JoinTripScreen() {
             </Animated.View>
           ) : foundTrip ? (
             <Animated.View entering={FadeInUp.springify()} style={styles.tripCard}>
+              <ThemedText style={styles.inviteTitle}>
+                You've been invited to{'\n'}join this trip
+              </ThemedText>
+
               {/* Hero-style trip card with image + text overlay */}
               <View style={styles.heroCard}>
                 <LinearGradient
@@ -215,10 +219,6 @@ export default function JoinTripScreen() {
                   </ThemedText>
                 </View>
               )}
-
-              <ThemedText style={[styles.joinPrompt, { color: theme.textSecondary }]}>
-                You've been invited to join this trip
-              </ThemedText>
 
               {alreadyJoined ? (
                 <ThemedText style={[styles.alreadyJoined, { color: theme.textSecondary }]}>
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.55)',
   },
-  joinPrompt: { fontSize: 14, textAlign: 'center', marginBottom: 4 },
+  inviteTitle: { fontSize: 24, fontWeight: '800', textAlign: 'center', lineHeight: 30, marginBottom: 4 },
 
   primaryBtn: {
     width: '100%',
