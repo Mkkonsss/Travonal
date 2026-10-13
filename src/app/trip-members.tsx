@@ -11,7 +11,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Invitation, type TripMember } from '@/context/trips';
-import { registerInviteCode, fetchTripAllParticipants, fetchUserIdentities, type UserIdentity } from '@/services/sync';
+import { registerInviteCode, pushTrips, fetchTripAllParticipants, fetchUserIdentities, type UserIdentity } from '@/services/sync';
+import { supabase } from '@/services/supabase';
 import { useProfile } from '@/context/profile';
 import { useAuth } from '@/context/auth';
 import { useGate } from '@/hooks/use-gate';
@@ -98,21 +99,25 @@ export default function TripMembersScreen() {
   async function handleShareInvite() {
     if (!trip) return;
     if (!inviteGate.allowed) { inviteGate.showUpgrade(); return; }
-    let code = inviteCode;
-    if (!code) {
-      code = addInvitation(tripId, { status: 'pending', role: 'member' });
-      try {
+    try {
+      // Refresh auth so registerInviteCode's getUser() has a valid token
+      await supabase.auth.refreshSession();
+      // Push trip data to server so receivers can find it via invite code lookup
+      if (user?.id) await pushTrips(user.id, [trip]);
+
+      let code = inviteCode;
+      if (!code) {
+        code = addInvitation(tripId, { status: 'pending', role: 'member' });
         await registerInviteCode(tripId, code, 'member');
-      } catch {
-        Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
-        return;
       }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const tripName = trip.title ?? trip.destination;
+      Share.share({
+        message: `Join my trip "${tripName}" on Tripseek!\n\nhttps://tripseekapp.com/join/${code}`,
+      });
+    } catch {
+      Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const tripName = trip.title ?? trip.destination;
-    Share.share({
-      message: `Join my trip "${tripName}" on Tripseek!\n\nhttps://tripseekapp.com/join/${code}`,
-    });
   }
 
   function handleRevokeInvite(inv: Invitation) {
