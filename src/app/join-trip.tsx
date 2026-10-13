@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Trip } from '@/context/trips';
+import { useAuth } from '@/context/auth';
 import { findTripByInviteCode, claimInviteCode, getRoleForInviteCode, fetchOwnerIdentityForCode, type UserIdentity } from '@/services/sync';
 import { supabase } from '@/services/supabase';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
@@ -33,6 +34,7 @@ export default function JoinTripScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { joinTrip, trips } = useTrips();
+  const { user } = useAuth();
   const { code: initialCode } = useLocalSearchParams<{ code?: string }>();
 
   const [code, setCode] = useState(initialCode ?? '');
@@ -91,7 +93,16 @@ export default function JoinTripScreen() {
   async function handleJoin() {
     if (!foundTrip) return;
     const role = await getRoleForInviteCode(normalized).catch(() => 'member' as const);
-    claimInviteCode(normalized).catch(() => {});
+    // Claim the invite code server-side so the member appears in trip_members.
+    // Retry once after refreshSession if the first attempt fails (stale auth).
+    try {
+      await claimInviteCode(normalized, user?.id);
+    } catch {
+      try {
+        await supabase.auth.refreshSession();
+        await claimInviteCode(normalized, user?.id);
+      } catch {}
+    }
     joinTrip(foundTrip, role);
     router.replace('/(tabs)');
   }

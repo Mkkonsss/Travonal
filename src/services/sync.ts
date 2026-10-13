@@ -126,15 +126,19 @@ export async function storeSharedTrip(
  * Claim an invite code — associates the current user with the trip membership row.
  * Call this when the user taps "Join" after previewing a trip.
  */
-export async function claimInviteCode(code: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+export async function claimInviteCode(code: string, userId?: string): Promise<void> {
+  let uid = userId;
+  if (!uid) {
+    const { data: { user } } = await supabase.auth.getUser();
+    uid = user?.id;
+  }
+  if (!uid) return;
   const { error } = await supabase
     .from('trip_members')
-    .update({ user_id: user.id, joined_at: new Date().toISOString() })
+    .update({ user_id: uid, joined_at: new Date().toISOString() })
     .eq('invite_code', code.toUpperCase().trim())
     .is('user_id', null);
-  if (error) console.warn('[sync] claimInviteCode failed:', error.message);
+  if (error) throw new Error(`[sync] claimInviteCode failed: ${error.message}`);
 }
 
 /**
@@ -341,6 +345,8 @@ export async function fetchTripAllParticipants(
     supabase.from('trips').select('user_id').eq('id', tripId).maybeSingle(),
     supabase.from('trip_members').select('user_id, role').eq('trip_id', tripId).not('user_id', 'is', null),
   ]);
+  if (ownerResult.error) console.warn('[sync] fetchTripAllParticipants owner query failed:', ownerResult.error.message);
+  if (membersResult.error) console.warn('[sync] fetchTripAllParticipants members query failed:', membersResult.error.message);
   const results: Array<{ userId: string; role: string }> = [];
   if (ownerResult.data?.user_id) {
     results.push({ userId: ownerResult.data.user_id as string, role: 'owner' });
