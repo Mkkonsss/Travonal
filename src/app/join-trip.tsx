@@ -5,17 +5,27 @@ import { Image } from 'expo-image';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useTrips, type Trip } from '@/context/trips';
 import { findTripByInviteCode, claimInviteCode, getRoleForInviteCode, fetchOwnerIdentityForCode, type UserIdentity } from '@/services/sync';
 import { supabase } from '@/services/supabase';
+import { useDestinationPhoto } from '@/hooks/use-destination-photo';
+import { formatDateRange } from '@/services/trip-helpers';
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function tripGradient(dest: string): [string, string] {
+  let h = 0;
+  for (const ch of dest.toLowerCase()) h = (Math.imul(31, h) + ch.charCodeAt(0)) | 0;
+  const hue = Math.abs(h) % 360;
+  return [`hsl(${hue}, 25%, 18%)`, `hsl(${(hue + 40) % 360}, 30%, 12%)`];
 }
 
 export default function JoinTripScreen() {
@@ -36,6 +46,13 @@ export default function JoinTripScreen() {
   const normalized = code.toUpperCase().replace(/[^A-Z0-9-]/g, '');
   const alreadyJoined = foundTrip ? trips.some((t) => t.id === foundTrip.id) : false;
   const fromLink = !!initialCode;
+
+  // Destination photo for the trip card
+  const photoQuery = foundTrip
+    ? (foundTrip.destination.includes(',') ? foundTrip.destination : `${foundTrip.destination}, ${foundTrip.country ?? ''}`)
+    : '';
+  const autoPhoto = useDestinationPhoto(photoQuery);
+  const photoUrl = foundTrip?.customImageUri || foundTrip?.destinationImageUri || autoPhoto;
 
   // Auto-search if a code was passed via deep link / Universal Link
   useEffect(() => {
@@ -125,21 +142,47 @@ export default function JoinTripScreen() {
             </Animated.View>
           ) : foundTrip ? (
             <Animated.View entering={FadeInUp.springify()} style={styles.tripCard}>
-              <ThemedText style={styles.tripEmoji}>{foundTrip.emoji || '✈️'}</ThemedText>
-              <ThemedText style={[styles.tripCardTitle, { color: theme.text }]}>
-                {foundTrip.title ?? foundTrip.destination}
-              </ThemedText>
-              <ThemedText style={[styles.tripCardDest, { color: theme.textSecondary }]}>
-                {foundTrip.destination}
-              </ThemedText>
-              <ThemedText style={[styles.tripCardMeta, { color: theme.textSecondary }]}>
-                {foundTrip.datesKnown
-                  ? `${formatDate(foundTrip.startDate)} – ${formatDate(foundTrip.endDate)}`
-                  : `${totalDays} day${totalDays !== 1 ? 's' : ''}`}
-                {' · '}{foundTrip.activities.length} activities
-              </ThemedText>
-
-              <View style={[styles.cardDivider, { backgroundColor: theme.border }]} />
+              {/* Hero-style trip card with image + text overlay */}
+              <View style={styles.heroCard}>
+                <LinearGradient
+                  colors={tripGradient(foundTrip.destination)}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                />
+                {photoUrl && (
+                  <View style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg, overflow: 'hidden' }]}>
+                    <Image
+                      source={{ uri: photoUrl }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      transition={500}
+                    />
+                  </View>
+                )}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.12)', 'rgba(0,0,0,0.7)']}
+                  locations={[0, 0.35, 1]}
+                  style={[StyleSheet.absoluteFill, { borderRadius: Radius.lg }]}
+                />
+                <View style={styles.heroCardContent}>
+                  <View />
+                  <View style={styles.heroCardBottom}>
+                    <ThemedText style={styles.heroDestination}>
+                      {foundTrip.title ?? foundTrip.destination}
+                    </ThemedText>
+                    <ThemedText style={styles.heroDate}>
+                      {formatDateRange(foundTrip.startDate, foundTrip.endDate, foundTrip.datesKnown)}
+                    </ThemedText>
+                    {foundTrip.activities.length > 0 && (
+                      <ThemedText style={styles.heroActivities}>
+                        {foundTrip.activities.length} {foundTrip.activities.length === 1 ? 'activity' : 'activities'} planned
+                      </ThemedText>
+                    )}
+                  </View>
+                </View>
+              </View>
 
               {ownerIdentity && (
                 <View style={styles.ownerRow}>
@@ -154,9 +197,9 @@ export default function JoinTripScreen() {
                   )}
                   <ThemedText style={[styles.ownerByline, { color: theme.textSecondary }]}>
                     {ownerIdentity.username
-                      ? `Trip by @${ownerIdentity.username}`
+                      ? `Shared by @${ownerIdentity.username}`
                       : ownerIdentity.displayName
-                        ? `Trip by ${ownerIdentity.displayName}`
+                        ? `Shared by ${ownerIdentity.displayName}`
                         : 'Shared trip'}
                   </ThemedText>
                 </View>
@@ -340,13 +383,37 @@ const styles = StyleSheet.create({
   tripCard: {
     width: '100%',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
   },
-  tripEmoji: { fontSize: 64, lineHeight: 80 },
-  tripCardTitle: { fontSize: 26, fontWeight: '700', textAlign: 'center', lineHeight: 32 },
-  tripCardDest: { fontSize: 16, textAlign: 'center' },
-  tripCardMeta: { fontSize: 14, textAlign: 'center' },
-  cardDivider: { width: 40, height: 1, marginVertical: 12 },
+  heroCard: {
+    width: '100%',
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    height: 240,
+    ...Shadow.medium,
+    shadowColor: '#000000',
+  },
+  heroCardContent: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'space-between',
+  },
+  heroCardBottom: { gap: 3 },
+  heroDestination: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+    fontFamily: Fonts!.sans,
+    lineHeight: 28,
+  },
+  heroDate: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+  },
+  heroActivities: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.55)',
+  },
   joinPrompt: { fontSize: 14, textAlign: 'center', marginBottom: 4 },
 
   primaryBtn: {

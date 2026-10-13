@@ -70,17 +70,22 @@ export default function TripMembersScreen() {
   useEffect(() => {
     if (!tripId) return;
     let cancelled = false;
-    fetchTripAllParticipants(tripId).then(async (rows) => {
-      if (cancelled) return;
-      setParticipants(rows);
-      const otherIds = rows.map((r) => r.userId).filter((id) => id !== user?.id);
-      const map = await fetchUserIdentities(otherIds);
-      // Always override current user's identity with local profile (includes local avatarUri)
-      if (user?.id && selfIdentity) map.set(user.id, selfIdentity);
-      if (!cancelled) setIdentities(map);
-    }).catch(() => {
-      // Even if fetch fails, show at least the current user
-    });
+    (async () => {
+      // Ensure fresh auth before fetching participants — stale tokens cause empty results
+      const { error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr) await supabase.auth.getSession();
+      try {
+        const rows = await fetchTripAllParticipants(tripId);
+        if (cancelled) return;
+        setParticipants(rows);
+        const otherIds = rows.map((r) => r.userId).filter((id) => id !== user?.id);
+        const map = await fetchUserIdentities(otherIds);
+        if (user?.id && selfIdentity) map.set(user.id, selfIdentity);
+        if (!cancelled) setIdentities(map);
+      } catch (err) {
+        console.warn('[trip-members] Failed to fetch participants:', err);
+      }
+    })();
     return () => { cancelled = true; };
   }, [tripId, user?.id]);
 
@@ -100,18 +105,21 @@ export default function TripMembersScreen() {
     if (!trip) return;
     if (!inviteGate.allowed) { inviteGate.showUpgrade(); return; }
     try {
-      // Refresh auth so registerInviteCode's getUser() has a valid token
-      await supabase.auth.refreshSession();
+      // Ensure valid auth token — try refresh, fall back to cached session
+      const { error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr) await supabase.auth.getSession();
+
       // Push trip data to server so receivers can find it via invite code lookup
       if (user?.id) await pushTrips(user.id, [trip]);
 
       let code = inviteCode;
       if (!code) {
         code = addInvitation(tripId, { status: 'pending', role: 'member' });
-        await registerInviteCode(tripId, code, 'member');
+        await registerInviteCode(tripId, code, 'member', user?.id);
       }
-      // Store trip snapshot in shared_trips (public SELECT policy — no auth needed to read)
-      if (user?.id) await storeSharedTrip(user.id, tripId, code, trip);
+      // Store trip snapshot in shared_trips as fallback (non-blocking — not critical path)
+      if (user?.id) storeSharedTrip(user.id, tripId, code, trip).catch(() => {});
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const tripName = trip.title ?? trip.destination;
       Share.share({
@@ -145,7 +153,7 @@ export default function TripMembersScreen() {
   function handleLeaveTrip() {
     Alert.alert(
       'Leave trip?',
-      `You'll be removed from "${trip.title ?? trip.destination}". You can rejoin with a new invite link.`,
+      `You'll be removed from "${trip?.title ?? trip?.destination}". You can rejoin with a new invite link.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Leave', style: 'destructive', onPress: () => { leaveSharedTrip(tripId).catch(() => {}); router.back(); } },
