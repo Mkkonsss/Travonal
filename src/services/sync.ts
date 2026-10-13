@@ -125,20 +125,62 @@ export async function storeSharedTrip(
 /**
  * Claim an invite code — associates the current user with the trip membership row.
  * Call this when the user taps "Join" after previewing a trip.
+ *
+ * If no unclaimed trip_members row exists for this code (e.g. the sender's
+ * registerInviteCode was fire-and-forget and failed), we INSERT a new row
+ * so the member always appears in fetchTripAllParticipants.
  */
-export async function claimInviteCode(code: string, userId?: string): Promise<void> {
+export async function claimInviteCode(code: string, userId?: string, tripId?: string): Promise<void> {
   let uid = userId;
   if (!uid) {
     const { data: { user } } = await supabase.auth.getUser();
     uid = user?.id;
   }
   if (!uid) return;
-  const { error } = await supabase
+  const normalizedCode = code.toUpperCase().trim();
+  const { data, error } = await supabase
     .from('trip_members')
     .update({ user_id: uid, joined_at: new Date().toISOString() })
-    .eq('invite_code', code.toUpperCase().trim())
-    .is('user_id', null);
+    .eq('invite_code', normalizedCode)
+    .is('user_id', null)
+    .select('id');
   if (error) throw new Error(`[sync] claimInviteCode failed: ${error.message}`);
+
+  // If the UPDATE matched 0 rows, no trip_members row existed to claim.
+  // Look up the trip_id from the code (or use the one passed in) and INSERT directly.
+  if (!data || data.length === 0) {
+    let tid = tripId;
+    if (!tid) {
+      const { data: row } = await supabase
+        .from('trip_members')
+        .select('trip_id')
+        .eq('invite_code', normalizedCode)
+        .maybeSingle();
+      tid = (row?.trip_id as string) ?? undefined;
+    }
+    if (!tid) {
+      // Try shared_trips as last resort
+      const { data: shared } = await supabase
+        .from('shared_trips')
+        .select('trip_id')
+        .eq('invite_code', normalizedCode)
+        .maybeSingle();
+      tid = (shared?.trip_id as string) ?? undefined;
+    }
+    if (tid) {
+      const { error: insertErr } = await supabase.from('trip_members').upsert(
+        {
+          trip_id: tid,
+          role: 'member',
+          invite_code: normalizedCode,
+          user_id: uid,
+          joined_at: new Date().toISOString(),
+        },
+        { onConflict: 'invite_code', ignoreDuplicates: false },
+      );
+      if (insertErr) console.warn('[sync] claimInviteCode fallback insert failed:', insertErr.message);
+    }
+  }
 }
 
 /**

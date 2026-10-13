@@ -96,13 +96,14 @@ export default function JoinTripScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const role = await getRoleForInviteCode(normalized).catch(() => 'member' as const);
     // Claim the invite code server-side so the member appears in trip_members.
+    // Pass tripId so the fallback INSERT works even if no row exists yet.
     // Retry once after refreshSession if the first attempt fails (stale auth).
     try {
-      await claimInviteCode(normalized, user?.id);
+      await claimInviteCode(normalized, user?.id, foundTrip.id);
     } catch {
       try {
         await supabase.auth.refreshSession();
-        await claimInviteCode(normalized, user?.id);
+        await claimInviteCode(normalized, user?.id, foundTrip.id);
       } catch {}
     }
     joinTrip(foundTrip, role);
