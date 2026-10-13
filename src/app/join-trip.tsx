@@ -55,7 +55,7 @@ export default function JoinTripScreen() {
     try {
       // Refresh the session so the Supabase client has a valid token for the lookup.
       // A stale/expired token causes the RPC and shared_trips queries to fail with 401.
-      await supabase.auth.getSession();
+      await supabase.auth.refreshSession();
       const trip = await findTripByInviteCode(q);
       if (!trip) {
         setError('No trip found with that code. Check the code and try again.');
