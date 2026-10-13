@@ -385,16 +385,29 @@ export async function fetchTripAllParticipants(
 ): Promise<Array<{ userId: string; role: string }>> {
   const [ownerResult, membersResult] = await Promise.all([
     supabase.from('trips').select('user_id').eq('id', tripId).maybeSingle(),
-    supabase.from('trip_members').select('user_id, role').eq('trip_id', tripId).not('user_id', 'is', null),
+    supabase.from('trip_members').select('user_id, role, invited_by').eq('trip_id', tripId),
   ]);
   if (ownerResult.error) console.warn('[sync] fetchTripAllParticipants owner query failed:', ownerResult.error.message);
   if (membersResult.error) console.warn('[sync] fetchTripAllParticipants members query failed:', membersResult.error.message);
+  const seen = new Set<string>();
   const results: Array<{ userId: string; role: string }> = [];
+  // Owner from trips table
   if (ownerResult.data?.user_id) {
-    results.push({ userId: ownerResult.data.user_id as string, role: 'owner' });
+    const ownerId = ownerResult.data.user_id as string;
+    results.push({ userId: ownerId, role: 'owner' });
+    seen.add(ownerId);
   }
+  // Members from trip_members
   for (const row of membersResult.data ?? []) {
-    results.push({ userId: row.user_id as string, role: row.role as string });
+    if (row.user_id && !seen.has(row.user_id as string)) {
+      results.push({ userId: row.user_id as string, role: row.role as string });
+      seen.add(row.user_id as string);
+    }
+    // If owner wasn't found in trips table, use invited_by as the owner
+    if (!ownerResult.data?.user_id && row.invited_by && !seen.has(row.invited_by as string)) {
+      results.push({ userId: row.invited_by as string, role: 'owner' });
+      seen.add(row.invited_by as string);
+    }
   }
   return results;
 }
