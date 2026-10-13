@@ -60,7 +60,7 @@ export default function TripMembersScreen() {
 
   useEffect(() => {
     if (inviteCode) {
-      registerInviteCode(tripId, inviteCode, 'member').catch((err) => {
+      registerInviteCode(tripId, inviteCode, 'member', user?.id).catch((err) => {
         console.warn('[trip-members] Failed to re-register invite code:', err);
       });
     }
@@ -104,31 +104,38 @@ export default function TripMembersScreen() {
   async function handleShareInvite() {
     if (!trip) return;
     if (!inviteGate.allowed) { inviteGate.showUpgrade(); return; }
-    try {
-      // Ensure valid auth token — try refresh, fall back to cached session
-      const { error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr) await supabase.auth.getSession();
 
-      let code = inviteCode;
-      if (!code) {
-        code = addInvitation(tripId, { status: 'pending', role: 'member' });
+    // Ensure valid auth token
+    try { await supabase.auth.refreshSession(); } catch {}
+
+    let code = inviteCode;
+    if (!code) {
+      code = addInvitation(tripId, { status: 'pending', role: 'member' });
+      // Register invite code — retry once after a fresh token refresh if it fails
+      try {
         await registerInviteCode(tripId, code, 'member', user?.id);
+      } catch {
+        try {
+          await supabase.auth.refreshSession();
+          await registerInviteCode(tripId, code, 'member', user?.id);
+        } catch {
+          Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
+          return;
+        }
       }
-
-      // Push trip data to server for receiver lookup (non-blocking — shared_trips is the backup)
-      if (user?.id) {
-        pushTrips(user.id, [trip]).catch(() => {});
-        storeSharedTrip(user.id, tripId, code, trip).catch(() => {});
-      }
-
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const tripName = trip.title ?? trip.destination;
-      Share.share({
-        message: `Join my trip "${tripName}" on Tripseek!\n\nhttps://tripseekapp.com/join/${code}`,
-      });
-    } catch {
-      Alert.alert('Sharing failed', 'Could not generate a share link. Please try again.');
     }
+
+    // Push trip data to server for receiver lookup (non-blocking)
+    if (user?.id) {
+      pushTrips(user.id, [trip]).catch(() => {});
+      storeSharedTrip(user.id, tripId, code, trip).catch(() => {});
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const tripName = trip.title ?? trip.destination;
+    Share.share({
+      message: `Join my trip "${tripName}" on Tripseek!\n\nhttps://tripseekapp.com/join/${code}`,
+    });
   }
 
   function handleRevokeInvite(inv: Invitation) {
