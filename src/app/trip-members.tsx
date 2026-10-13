@@ -129,6 +129,7 @@ export default function TripMembersScreen() {
   }
 
   function handleRevokeInvite(inv: Invitation) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert('Revoke invite?', 'This invite link will no longer work.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Revoke', style: 'destructive', onPress: () => removeInvitation(tripId, inv.id) },
@@ -137,6 +138,7 @@ export default function TripMembersScreen() {
 
   function handleRemoveMember(member: TripMember) {
     if (member.role === 'owner') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert('Remove member?', `Remove ${member.name} from this trip?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => removeMember(tripId, member.id) },
@@ -149,6 +151,7 @@ export default function TripMembersScreen() {
   }
 
   function handleLeaveTrip() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert(
       'Leave trip?',
       `You'll be removed from "${trip?.title ?? trip?.destination}". You can rejoin with a new invite link.`,

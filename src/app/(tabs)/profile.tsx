@@ -340,6 +340,7 @@ export default function ProfileScreen() {
   }
 
   function handleDeleteMemoryEntry(id: string) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       'Remove Memory',
       'Remove this learned preference?',

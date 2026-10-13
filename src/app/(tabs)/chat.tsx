@@ -1706,7 +1706,7 @@ export default function ChatScreen() {
               {item.suggestions.slice(0, 4).map((s) => (
                 <Pressable
                   key={s}
-                  onPress={() => sendMessage(s)}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); sendMessage(s); }}
                   style={({ pressed }) => [
                     styles.followUpChip,
                     { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
@@ -1797,7 +1797,7 @@ export default function ChatScreen() {
                     {suggestions.slice(0, 2).map((s) => (
                       <Pressable
                         key={s.text}
-                        onPress={() => sendMessage(s.text)}
+                        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); sendMessage(s.text); }}
                         style={({ pressed }) => [
                           styles.emptySuggestionPill,
                           { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
@@ -1812,7 +1812,7 @@ export default function ChatScreen() {
                   {suggestions[2] && (
                   <View style={styles.emptySuggestionsRow}>
                     <Pressable
-                      onPress={() => sendMessage(suggestions[2].text)}
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); sendMessage(suggestions[2].text); }}
                       style={({ pressed }) => [
                         styles.emptySuggestionPill,
                         { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.85 : 1 },
@@ -1965,6 +1965,7 @@ export default function ChatScreen() {
             {threads.length > 0 && (
               <Pressable
                 onPress={() => {
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                   Alert.alert('Clear all chats', 'This will permanently delete all your chat history.', [
                     { text: 'Cancel', style: 'cancel' },
                     {
@@ -2045,6 +2046,7 @@ export default function ChatScreen() {
                         <View style={[styles.optionsDivider, { backgroundColor: theme.border }]} />
                         <Pressable
                           onPress={() => {
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                             Alert.alert('Delete chat?', `"${optThread.title}"`, [
                               { text: 'Cancel', style: 'cancel' },
                               { text: 'Delete', style: 'destructive', onPress: () => deleteThread(optThread.id) },

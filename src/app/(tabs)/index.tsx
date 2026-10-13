@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -102,7 +103,7 @@ function NextTripHero({ trip, onDelete }: { trip: Trip; onDelete: (trip: Trip) =
               </View>
             ) : <View />}
             <Pressable
-              onPress={(e) => { e.stopPropagation(); setMenuVisible(true); }}
+              onPress={(e) => { e.stopPropagation(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setMenuVisible(true); }}
               style={{ padding: 4 }}
               accessibilityRole="button"
               accessibilityLabel={`Trip menu for ${trip.destination}`}

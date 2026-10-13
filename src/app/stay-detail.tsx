@@ -76,6 +76,7 @@ export default function StayDetailScreen() {
 
   function handleRemoveStay() {
     if (!trip || !activity) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
       'Remove Stay',
       reservation
@@ -98,6 +99,7 @@ export default function StayDetailScreen() {
   }
 
   function handleDeleteBooking(res: Reservation, tripId: string) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert('Remove booking?', `Remove booking for "${res.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {

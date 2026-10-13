@@ -6,6 +6,7 @@ import Animated, { FadeIn, FadeInDown, useSharedValue, useAnimatedStyle, withTim
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -160,7 +161,7 @@ function MonthModal({
     cells.push(
       <Pressable
         key={d}
-        onPress={() => setSelectedDay(d === selectedDay ? null : d)}
+        onPress={() => { Haptics.selectionAsync(); setSelectedDay(d === selectedDay ? null : d); }}
         style={calStyles.modalDayCell}
       >
         <View

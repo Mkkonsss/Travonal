@@ -5,6 +5,7 @@ import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { BoardsIcon } from '@/components/icons';
@@ -92,6 +93,7 @@ function BoardCard({
   const theme = useTheme();
 
   function handleLongPress() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Alert.alert('Delete board?', `Delete "${board.name}" and all its items?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: onDelete },

@@ -328,6 +328,7 @@ export default function BookingsScreen() {
   }
 
   function handleDelete(res: Reservation, tripId?: string) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert('Remove booking?', `Remove "${res.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
