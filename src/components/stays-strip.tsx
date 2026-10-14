@@ -13,8 +13,7 @@ import type { NormalizedPlace } from '@/services/place-model';
 
 import { StayCard } from '@/components/stays/stay-card';
 
-// TODO: Replace with your real Booking.com affiliate ID once approved
-const BOOKING_AFFILIATE_ID = 'YOUR_AID_HERE';
+const BOOKING_AFFILIATE_ID = process.env.EXPO_PUBLIC_BOOKING_COM_AID ?? '';
 
 function buildBookingHotelUrl(hotelName: string, destination: string): string {
   const query = [hotelName, destination].filter(Boolean).join(' ');

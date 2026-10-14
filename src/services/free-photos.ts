@@ -125,7 +125,7 @@ export async function getPlacePhoto(options: {
       return { url: result.url, source: result.stored ? 'cache' : 'google' };
     }
   } catch (e: any) {
-    console.warn('[Photos] Failed to fetch photo for', options.name ?? key, e?.message);
+    if (__DEV__) console.warn('[Photos] Failed to fetch photo for', options.name ?? key, e?.message);
   } finally {
     releaseStoreSlot();
   }
@@ -160,7 +160,7 @@ export async function prefetchPhotosFromCache(
       // Don't set null for misses — let getPlacePhoto try Google for those
     }
   } catch (e: any) {
-    console.warn('[Photos] Cache prefetch failed:', e?.message);
+    if (__DEV__) console.warn('[Photos] Cache prefetch failed:', e?.message);
   }
 }
 

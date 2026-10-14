@@ -20,7 +20,10 @@
         ]
       },
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Tripseek uses your location to show nearby places and personalise your trip recommendations.",
+        "NSPhotoLibraryUsageDescription": "Tripseek needs access to your photo library to import screenshots of places you want to visit.",
+        "NSCameraUsageDescription": "Tripseek uses the camera to capture screenshots of places you want to add to your trips."
       }
     },
     "android": {

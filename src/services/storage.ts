@@ -78,7 +78,7 @@ export async function saveTrips<T>(trips: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.TRIPS, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save trips:', e);
+    if (__DEV__) console.warn('Failed to save trips:', e);
     reportStorageError('trips', () => rawSetItem(KEYS.TRIPS, data));
     return false;
   }
@@ -103,7 +103,7 @@ export async function saveProfile<T>(profile: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.PROFILE, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save profile:', e);
+    if (__DEV__) console.warn('Failed to save profile:', e);
     reportStorageError('profile', () => rawSetItem(KEYS.PROFILE, data));
     return false;
   }
@@ -128,7 +128,7 @@ export async function saveMemory<T>(memory: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.MEMORY, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save memory:', e);
+    if (__DEV__) console.warn('Failed to save memory:', e);
     reportStorageError('travel memory', () => rawSetItem(KEYS.MEMORY, data));
     return false;
   }
@@ -153,7 +153,7 @@ export async function saveSavedPlaces<T>(places: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.SAVED_PLACES, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save places:', e);
+    if (__DEV__) console.warn('Failed to save places:', e);
     reportStorageError('saved places', () => rawSetItem(KEYS.SAVED_PLACES, data));
     return false;
   }
@@ -172,7 +172,7 @@ export async function setOnboardingComplete(): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.ONBOARDING_COMPLETE, 'true');
   } catch (e) {
-    console.warn('Failed to save onboarding state:', e);
+    if (__DEV__) console.warn('Failed to save onboarding state:', e);
   }
 }
 
@@ -180,7 +180,7 @@ export async function clearOnboardingComplete(): Promise<void> {
   try {
     await AsyncStorage.removeItem(KEYS.ONBOARDING_COMPLETE);
   } catch (e) {
-    console.warn('Failed to clear onboarding state:', e);
+    if (__DEV__) console.warn('Failed to clear onboarding state:', e);
   }
 }
 
@@ -203,7 +203,7 @@ export async function saveInbox<T>(inbox: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.INBOX, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save inbox:', e);
+    if (__DEV__) console.warn('Failed to save inbox:', e);
     reportStorageError('inbox', () => rawSetItem(KEYS.INBOX, data));
     return false;
   }
@@ -219,7 +219,7 @@ export async function saveBoards<T>(boards: T): Promise<boolean> {
     await withRetry(() => rawSetItem(KEYS.BOARDS, data));
     return true;
   } catch (e) {
-    console.warn('Failed to save boards:', e);
+    if (__DEV__) console.warn('Failed to save boards:', e);
     reportStorageError('boards', () => rawSetItem(KEYS.BOARDS, data));
     return false;
   }
@@ -238,7 +238,7 @@ export async function saveDismissedPulse(ids: string[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.DISMISSED_PULSE, JSON.stringify(ids));
   } catch (e) {
-    console.warn('Failed to save dismissed pulse:', e);
+    if (__DEV__) console.warn('Failed to save dismissed pulse:', e);
   }
 }
 
@@ -255,7 +255,7 @@ export async function saveChatMessages<T>(messages: T): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.CHAT_MESSAGES, JSON.stringify(messages));
   } catch (e) {
-    console.warn('Failed to save chat messages:', e);
+    if (__DEV__) console.warn('Failed to save chat messages:', e);
   }
 }
 
@@ -272,7 +272,7 @@ export async function saveChatThreads<T>(threads: T): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.CHAT_THREADS, JSON.stringify(threads));
   } catch (e) {
-    console.warn('Failed to save chat threads:', e);
+    if (__DEV__) console.warn('Failed to save chat threads:', e);
   }
 }
 
@@ -289,7 +289,7 @@ export async function saveTripEditChat<T>(tripId: string, messages: T): Promise<
   try {
     await AsyncStorage.setItem(KEYS.TRIP_EDIT_CHAT + tripId, JSON.stringify(messages));
   } catch (e) {
-    console.warn('Failed to save trip edit chat:', e);
+    if (__DEV__) console.warn('Failed to save trip edit chat:', e);
   }
 }
 
@@ -306,7 +306,7 @@ export async function saveTripEditThreads<T>(tripId: string, threads: T): Promis
   try {
     await AsyncStorage.setItem(KEYS.TRIP_EDIT_THREADS + tripId, JSON.stringify(threads));
   } catch (e) {
-    console.warn('Failed to save trip edit threads:', e);
+    if (__DEV__) console.warn('Failed to save trip edit threads:', e);
   }
 }
 
@@ -323,7 +323,7 @@ export async function saveRecentSearches(searches: string[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.RECENT_SEARCHES, JSON.stringify(searches));
   } catch (e) {
-    console.warn('Failed to save recent searches:', e);
+    if (__DEV__) console.warn('Failed to save recent searches:', e);
   }
 }
 
@@ -340,7 +340,7 @@ export async function saveNotifDismissed(dismissed: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.NOTIF_DISMISSED, dismissed ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save notification dismissed state:', e);
+    if (__DEV__) console.warn('Failed to save notification dismissed state:', e);
   }
 }
 
@@ -357,7 +357,7 @@ export async function saveTripPulseEnabled(enabled: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.TRIP_PULSE_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save trip pulse setting:', e);
+    if (__DEV__) console.warn('Failed to save trip pulse setting:', e);
   }
 }
 
@@ -374,7 +374,7 @@ export async function saveLearningEnabled(enabled: boolean): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.LEARNING_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save learning enabled setting:', e);
+    if (__DEV__) console.warn('Failed to save learning enabled setting:', e);
   }
 }
 
@@ -410,7 +410,7 @@ export async function saveBookingRemindersEnabled(enabled: boolean): Promise<voi
   try {
     await AsyncStorage.setItem(KEYS.BOOKING_REMINDERS_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save booking reminders setting:', e);
+    if (__DEV__) console.warn('Failed to save booking reminders setting:', e);
   }
 }
 
@@ -427,7 +427,7 @@ export async function saveDepartureReminderEnabled(enabled: boolean): Promise<vo
   try {
     await AsyncStorage.setItem(KEYS.DEPARTURE_REMINDER_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save departure reminder setting:', e);
+    if (__DEV__) console.warn('Failed to save departure reminder setting:', e);
   }
 }
 
@@ -444,7 +444,7 @@ export async function saveDailyBriefingEnabled(enabled: boolean): Promise<void> 
   try {
     await AsyncStorage.setItem(KEYS.DAILY_BRIEFING_ENABLED, enabled ? 'true' : 'false');
   } catch (e) {
-    console.warn('Failed to save daily briefing setting:', e);
+    if (__DEV__) console.warn('Failed to save daily briefing setting:', e);
   }
 }
 
@@ -461,7 +461,7 @@ export async function savePushPromptShown(): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.PUSH_PROMPT_SHOWN, 'true');
   } catch (e) {
-    console.warn('Failed to save push prompt shown:', e);
+    if (__DEV__) console.warn('Failed to save push prompt shown:', e);
   }
 }
 
@@ -478,7 +478,7 @@ export async function saveSeenPulse(ids: string[]): Promise<void> {
   try {
     await AsyncStorage.setItem(KEYS.SEEN_PULSE, JSON.stringify(ids));
   } catch (e) {
-    console.warn('Failed to save seen pulse:', e);
+    if (__DEV__) console.warn('Failed to save seen pulse:', e);
   }
 }
 
@@ -514,7 +514,7 @@ export async function savePulseHistory(entries: PulseHistoryEntry[]): Promise<vo
   try {
     await AsyncStorage.setItem(KEYS.PULSE_HISTORY, JSON.stringify(entries));
   } catch (e) {
-    console.warn('Failed to save pulse history:', e);
+    if (__DEV__) console.warn('Failed to save pulse history:', e);
   }
 }
 
@@ -606,7 +606,7 @@ export async function resetAllData(): Promise<void> {
   try {
     await AsyncStorage.multiRemove([...ALL_STORAGE_KEYS, STANDALONE_BOOKINGS_KEY]);
   } catch (e) {
-    console.warn('Failed to reset all data:', e);
+    if (__DEV__) console.warn('Failed to reset all data:', e);
   }
 }
 

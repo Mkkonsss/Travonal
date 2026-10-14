@@ -131,7 +131,7 @@ export async function checkAndUseAction(
   });
 
   if (error) {
-    console.warn('[usage] check_and_use error:', error.message);
+    if (__DEV__) console.warn('[usage] check_and_use error:', error.message);
     // Fail closed — deny the action on error to prevent abuse
     return { allowed: false, remaining: 0, total: 0, is_plus: false, reason: 'Usage service temporarily unavailable. Please try again.' };
   }
@@ -159,7 +159,7 @@ export async function rollbackUsage(
   });
 
   if (error) {
-    console.warn('[usage] rollback_usage error:', error.message);
+    if (__DEV__) console.warn('[usage] rollback_usage error:', error.message);
   }
 }
 
@@ -178,7 +178,7 @@ export async function fetchUsageSummary(): Promise<UsageSummary | null> {
   });
 
   if (error) {
-    console.warn('[usage] get_usage_summary error:', error.message);
+    if (__DEV__) console.warn('[usage] get_usage_summary error:', error.message);
     return getCachedSummary(session.user.id);
   }
 

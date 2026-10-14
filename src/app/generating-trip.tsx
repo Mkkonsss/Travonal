@@ -209,7 +209,7 @@ export default function GeneratingTripScreen() {
 
         const validationIssues = validateGeneratedActivities(activities, totalDays, effectivePace);
         if (validationIssues.length > 0) {
-          console.warn('[AI Generation] Validation issues:', validationIssues.map((i) => i.message));
+          if (__DEV__) console.warn('[AI Generation] Validation issues:', validationIssues.map((i) => i.message));
 
           const hasCritical = validationIssues.some(
             (i) => i.severity === 'error',
@@ -228,11 +228,11 @@ export default function GeneratingTripScreen() {
               );
               if (stillCritical.length > 0) {
                 // Accept the itinerary anyway — imperfect is better than no trip
-                console.warn('[AI Generation] Accepting itinerary with', stillCritical.length, 'remaining issues');
+                if (__DEV__) console.warn('[AI Generation] Accepting itinerary with', stillCritical.length, 'remaining issues');
               }
             }
             if (postRepairIssues.length > 0) {
-              console.warn('[AI Generation] Post-repair issues:', postRepairIssues.map((i) => i.message));
+              if (__DEV__) console.warn('[AI Generation] Post-repair issues:', postRepairIssues.map((i) => i.message));
             }
           }
         }
@@ -321,7 +321,7 @@ export default function GeneratingTripScreen() {
         })();
 
       } catch (e) {
-        console.error('[AI Generation] processResult error:', e);
+        if (__DEV__) console.error('[AI Generation] processResult error:', e);
         if (!cancelled) {
           setErrorDetail(e instanceof Error ? e.message : String(e));
           setPhase('error');
@@ -335,7 +335,7 @@ export default function GeneratingTripScreen() {
       aiResolved = true;
       aiResultRef = result;
     }).catch((err) => {
-      console.error('[AI Generation] API error:', err);
+      if (__DEV__) console.error('[AI Generation] API error:', err);
       clearInterval(pctTimer);
       if (cancelled) return;
       if ((err as any)?.code === 'USAGE_LIMIT') {

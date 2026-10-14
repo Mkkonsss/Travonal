@@ -25,10 +25,10 @@ export async function pushTrips(userId: string, trips: Trip[]): Promise<void> {
     data: t,
     updated_at: new Date().toISOString(),
   }));
-  console.log(`[sync] pushing ${trips.length} trip(s) for user ${userId}`);
+  if (__DEV__) console.log(`[sync] pushing ${trips.length} trip(s) for user ${userId}`);
   const { error } = await supabase.from('trips').upsert(rows, { onConflict: 'id' });
   if (error) throw new Error(`[sync] pushTrips failed: ${error.message}`);
-  console.log('[sync] pushTrips ok');
+  if (__DEV__) console.log('[sync] pushTrips ok');
 }
 
 export async function pullTrips(userId: string): Promise<Trip[]> {
@@ -37,7 +37,7 @@ export async function pullTrips(userId: string): Promise<Trip[]> {
     .select('data')
     .eq('user_id', userId);
   if (error) {
-    console.warn('[sync] pullTrips failed:', error.message);
+    if (__DEV__) console.warn('[sync] pullTrips failed:', error.message);
     return [];
   }
   return (data ?? []).map((row) => row.data as Trip);
@@ -45,7 +45,7 @@ export async function pullTrips(userId: string): Promise<Trip[]> {
 
 export async function deleteRemoteTrip(tripId: string): Promise<void> {
   const { error } = await supabase.from('trips').delete().eq('id', tripId);
-  if (error) console.warn('[sync] deleteRemoteTrip failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] deleteRemoteTrip failed:', error.message); }
 }
 
 /**
@@ -62,7 +62,7 @@ export async function findTripByInviteCode(inviteCode: string): Promise<Trip | n
   });
 
   if (!error && data) return data as Trip;
-  if (error) console.warn('[sync] findTripByInviteCode RPC failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] findTripByInviteCode RPC failed:', error.message); }
 
   // Fallback: check shared_trips (trip data stored at share time, readable by anyone)
   const { data: shared, error: sharedErr } = await supabase
@@ -73,7 +73,7 @@ export async function findTripByInviteCode(inviteCode: string): Promise<Trip | n
     .limit(1)
     .maybeSingle();
 
-  if (sharedErr) console.warn('[sync] findTripByInviteCode shared_trips failed:', sharedErr.message);
+  if (sharedErr) { if (__DEV__) console.warn('[sync] findTripByInviteCode shared_trips failed:', sharedErr.message); }
   return (shared?.trip_data as Trip) ?? null;
 }
 
@@ -178,7 +178,7 @@ export async function claimInviteCode(code: string, userId?: string, tripId?: st
         },
         { onConflict: 'invite_code', ignoreDuplicates: false },
       );
-      if (insertErr) console.warn('[sync] claimInviteCode fallback insert failed:', insertErr.message);
+      if (insertErr) { if (__DEV__) console.warn('[sync] claimInviteCode fallback insert failed:', insertErr.message); }
     }
   }
 }
@@ -200,7 +200,7 @@ export async function pullSharedTrips(userId: string): Promise<Array<{ trip: Tri
     .select('data')
     .in('id', tripIds);
   if (error) {
-    console.warn('[sync] pullSharedTrips failed:', error.message);
+    if (__DEV__) console.warn('[sync] pullSharedTrips failed:', error.message);
     return [];
   }
   return (data ?? []).map((row) => {
@@ -234,7 +234,7 @@ export async function leaveSharedTrip(tripId: string): Promise<void> {
     .delete()
     .eq('trip_id', tripId)
     .eq('user_id', user.id);
-  if (error) console.warn('[sync] leaveSharedTrip failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] leaveSharedTrip failed:', error.message); }
 }
 
 /**
@@ -277,23 +277,23 @@ export async function pushSharedTripData(tripId: string, trip: Trip): Promise<vo
     .from('trips')
     .update({ data: tripData, updated_at: new Date().toISOString() })
     .eq('id', tripId);
-  if (error) console.warn('[sync] pushSharedTripData failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushSharedTripData failed:', error.message); }
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 export async function pushProfile(userId: string, profile: TravelProfile): Promise<boolean> {
-  console.log(`[sync] pushing profile for user ${userId}`);
+  if (__DEV__) console.log(`[sync] pushing profile for user ${userId}`);
   const { error } = await supabase.from('profiles').upsert({
     id: userId,
     travel_profile: profile,
     updated_at: new Date().toISOString(),
   });
   if (error) {
-    console.warn('[sync] pushProfile failed:', error.message);
+    if (__DEV__) console.warn('[sync] pushProfile failed:', error.message);
     return false;
   }
-  console.log('[sync] pushProfile ok');
+  if (__DEV__) console.log('[sync] pushProfile ok');
   return true;
 }
 
@@ -334,7 +334,7 @@ export async function pushPublicIdentity(
     },
     { onConflict: 'user_id' },
   );
-  if (error) console.warn('[sync] pushPublicIdentity failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushPublicIdentity failed:', error.message); }
 }
 
 /** Fetch a single user's public identity by their user_id. */
@@ -361,7 +361,7 @@ export async function fetchUserIdentities(userIds: string[]): Promise<Map<string
     .select('user_id, display_name, username, avatar_url')
     .in('user_id', userIds);
   if (error) {
-    console.warn('[sync] fetchUserIdentities failed:', error.message);
+    if (__DEV__) console.warn('[sync] fetchUserIdentities failed:', error.message);
     return new Map();
   }
   const map = new Map<string, UserIdentity>();
@@ -387,8 +387,8 @@ export async function fetchTripAllParticipants(
     supabase.from('trips').select('user_id').eq('id', tripId).maybeSingle(),
     supabase.from('trip_members').select('user_id, role, invited_by').eq('trip_id', tripId),
   ]);
-  if (ownerResult.error) console.warn('[sync] fetchTripAllParticipants owner query failed:', ownerResult.error.message);
-  if (membersResult.error) console.warn('[sync] fetchTripAllParticipants members query failed:', membersResult.error.message);
+  if (ownerResult.error) { if (__DEV__) console.warn('[sync] fetchTripAllParticipants owner query failed:', ownerResult.error.message); }
+  if (membersResult.error) { if (__DEV__) console.warn('[sync] fetchTripAllParticipants members query failed:', membersResult.error.message); }
   const seen = new Set<string>();
   const results: Array<{ userId: string; role: string }> = [];
   // Owner from trips table
@@ -397,16 +397,17 @@ export async function fetchTripAllParticipants(
     results.push({ userId: ownerId, role: 'owner' });
     seen.add(ownerId);
   }
-  // Members from trip_members
+  // Members from trip_members — always include invited_by as owner fallback
   for (const row of membersResult.data ?? []) {
+    // Add the inviter as owner if not already seen
+    if (row.invited_by && !seen.has(row.invited_by as string)) {
+      results.push({ userId: row.invited_by as string, role: 'owner' });
+      seen.add(row.invited_by as string);
+    }
+    // Add claimed members (user_id is set when they join)
     if (row.user_id && !seen.has(row.user_id as string)) {
       results.push({ userId: row.user_id as string, role: row.role as string });
       seen.add(row.user_id as string);
-    }
-    // If owner wasn't found in trips table, use invited_by as the owner
-    if (!ownerResult.data?.user_id && row.invited_by && !seen.has(row.invited_by as string)) {
-      results.push({ userId: row.invited_by as string, role: 'owner' });
-      seen.add(row.invited_by as string);
     }
   }
   return results;
@@ -429,17 +430,17 @@ export async function fetchOwnerIdentityForCode(code: string): Promise<UserIdent
 // ─── Memory ─────────────────────────────────────────────────────────────────
 
 export async function pushMemory(userId: string, entries: TravelMemoryEntry[]): Promise<boolean> {
-  console.log(`[sync] pushing ${entries.length} memory entries for user ${userId}`);
+  if (__DEV__) console.log(`[sync] pushing ${entries.length} memory entries for user ${userId}`);
   const { error } = await supabase.from('memory').upsert({
     id: userId,
     entries,
     updated_at: new Date().toISOString(),
   });
   if (error) {
-    console.warn('[sync] pushMemory failed:', error.message);
+    if (__DEV__) console.warn('[sync] pushMemory failed:', error.message);
     return false;
   }
-  console.log('[sync] pushMemory ok');
+  if (__DEV__) console.log('[sync] pushMemory ok');
   return true;
 }
 
@@ -461,7 +462,7 @@ export async function pushBoards(userId: string, boards: Board[]): Promise<void>
     data: boards,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
-  if (error) console.warn('[sync] pushBoards failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushBoards failed:', error.message); }
 }
 
 export async function pullBoards(userId: string): Promise<Board[] | null> {
@@ -482,7 +483,7 @@ export async function pushSavedPlaces(userId: string, items: InboxItem[]): Promi
     data: items,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
-  if (error) console.warn('[sync] pushSavedPlaces failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushSavedPlaces failed:', error.message); }
 }
 
 export async function pullSavedPlaces(userId: string): Promise<InboxItem[] | null> {
@@ -503,7 +504,7 @@ export async function pushStandaloneBookings(userId: string, bookings: Reservati
     data: bookings,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
-  if (error) console.warn('[sync] pushStandaloneBookings failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushStandaloneBookings failed:', error.message); }
 }
 
 export async function pullStandaloneBookings(userId: string): Promise<Reservation[] | null> {
@@ -524,7 +525,7 @@ export async function pushChatThreads(userId: string, threads: ChatThread[]): Pr
     threads,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
-  if (error) console.warn('[sync] pushChatThreads failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushChatThreads failed:', error.message); }
 }
 
 export async function pullChatThreads(userId: string): Promise<ChatThread[] | null> {
@@ -544,7 +545,7 @@ export async function mergeUserSettings(userId: string, patch: Record<string, un
     p_user_id: userId,
     p_patch: patch,
   });
-  if (error) console.warn('[sync] mergeUserSettings failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] mergeUserSettings failed:', error.message); }
 }
 
 export async function pullUserSettings(userId: string): Promise<Record<string, unknown> | null> {
@@ -565,7 +566,7 @@ export async function pushPulseHistory(userId: string, entries: PulseHistoryEntr
     data: entries,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id' });
-  if (error) console.warn('[sync] pushPulseHistory failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] pushPulseHistory failed:', error.message); }
 }
 
 export async function pullPulseHistory(userId: string): Promise<PulseHistoryEntry[] | null> {
@@ -586,7 +587,7 @@ export async function mergeTripChat(userId: string, tripId: string, threads: unk
     p_trip_id: tripId,
     p_threads: threads,
   });
-  if (error) console.warn('[sync] mergeTripChat failed:', error.message);
+  if (error) { if (__DEV__) console.warn('[sync] mergeTripChat failed:', error.message); }
 }
 
 export async function pullTripChats(userId: string): Promise<Record<string, unknown[]> | null> {

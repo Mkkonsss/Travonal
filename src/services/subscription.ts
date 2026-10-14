@@ -233,12 +233,12 @@ export async function validatePurchaseOnServer(purchase: Purchase): Promise<bool
     });
 
     if (error) {
-      console.warn('[subscription] validate-purchase error:', error.message);
+      if (__DEV__) console.warn('[subscription] validate-purchase error:', error.message);
       return false;
     }
     return true;
   } catch (e) {
-    console.warn('[subscription] validate-purchase failed:', e instanceof Error ? e.message : e);
+    if (__DEV__) console.warn('[subscription] validate-purchase failed:', e instanceof Error ? e.message : e);
     return false;
   }
 }

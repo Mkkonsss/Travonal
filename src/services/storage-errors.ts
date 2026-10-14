@@ -84,7 +84,7 @@ export function reportStorageError(operation: string, retryFn: () => Promise<voi
   if (pendingErrors.has(operation)) return;
 
   pendingErrors.add(operation);
-  console.warn(`Storage error reported for: ${operation}`);
+  if (__DEV__) console.warn(`Storage error reported for: ${operation}`);
 
   errorQueue.push({ operation, retryFn });
   showNextError();

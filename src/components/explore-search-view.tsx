@@ -906,7 +906,7 @@ export function ExploreSearchView() {
         }
       })
       .catch((e) => {
-        console.error('[Explore] fetch failed:', e?.message ?? e);
+        if (__DEV__) console.error('[Explore] fetch failed:', e?.message ?? e);
         if (!cancelled) {
           setPlaces([]);
           if (e?.message === 'GEOCODE_FAILED') {

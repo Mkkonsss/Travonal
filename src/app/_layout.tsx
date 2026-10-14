@@ -1,10 +1,13 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
-import { InteractionManager, useColorScheme } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { InteractionManager, Pressable, StyleSheet, useColorScheme, View } from 'react-native';
+import { Component, useEffect, useRef, useState } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { ObserveRoot, useObserve } from 'expo-observe';
 
+import { ThemedText } from '@/components/themed-text';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { OfflineBanner } from '@/components/offline-banner';
 import { Toast } from '@/components/toast';
@@ -29,6 +32,46 @@ import { loadNotificationPermissionState, onNotificationTap } from '@/services/n
 import { isOnboardingComplete, resetAllData, loadLastUserId, saveLastUserId, clearLastUserId } from '@/services/storage';
 
 SplashScreen.preventAutoHideAsync();
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    if (__DEV__) console.error('[ErrorBoundary]', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <ThemedText style={errorStyles.title}>Something went wrong</ThemedText>
+          <ThemedText style={errorStyles.message}>
+            The app ran into an unexpected error. Please restart the app.
+          </ThemedText>
+          <Pressable
+            style={errorStyles.button}
+            onPress={() => this.setState({ hasError: false })}
+          >
+            <ThemedText style={errorStyles.buttonText}>Try Again</ThemedText>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, backgroundColor: '#000' },
+  title: { fontSize: 22, fontWeight: '700', color: '#fff', marginBottom: 12 },
+  message: { fontSize: 16, color: '#aaa', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  button: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  buttonText: { fontSize: 16, fontWeight: '600', color: '#000' },
+});
 
 // Clears all data when a different user signs in.
 // Same user signing back in keeps their data intact.
@@ -89,12 +132,14 @@ function RootLayoutNav() {
   const [initialUrlChecked, setInitialUrlChecked] = useState(false);
   const hasNavigated = useRef(false);
   const pendingJoinCode = useRef<string | null>(null);
+  const { markInteractive } = useObserve();
 
   // Phase 1: check onboarding state and show the Stack
   useEffect(() => {
     async function checkOnboarding() {
       setLoaded(true);
       await SplashScreen.hideAsync();
+      markInteractive();
       // Load actual OS permission state (no prompt) so UI reflects reality immediately
       loadNotificationPermissionState();
     }
@@ -190,10 +235,11 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <ToastProvider>
           <FabProvider>
@@ -227,6 +273,9 @@ export default function RootLayout() {
           </FabProvider>
         </ToastProvider>
       </ThemeProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
+
+export default ObserveRoot.wrap(RootLayout);

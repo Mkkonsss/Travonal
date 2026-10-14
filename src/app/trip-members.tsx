@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +38,7 @@ export default function TripMembersScreen() {
   const inviteCode = trip?.invitations?.find((i) => i.status === 'pending')?.inviteCode;
 
   const [participants, setParticipants] = useState<Array<{ userId: string; role: string }>>([]);
+  const [loading, setLoading] = useState(true);
   const [identities, setIdentities] = useState<Map<string, UserIdentity>>(() => {
     // Seed with the current user's own identity immediately — no network needed
     const map = new Map<string, UserIdentity>();
@@ -71,11 +72,16 @@ export default function TripMembersScreen() {
     if (!tripId) return;
     let cancelled = false;
     (async () => {
+      setLoading(true);
       // Ensure fresh auth before fetching participants — stale tokens cause empty results
-      const { error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr) await supabase.auth.getSession();
+      try { await supabase.auth.refreshSession(); } catch {}
       try {
-        const rows = await fetchTripAllParticipants(tripId);
+        let rows = await fetchTripAllParticipants(tripId);
+        // If we only got self or empty, retry once with a fresh session
+        if (rows.length <= 1) {
+          await supabase.auth.getSession();
+          rows = await fetchTripAllParticipants(tripId);
+        }
         if (cancelled) return;
         setParticipants(rows);
         const otherIds = rows.map((r) => r.userId).filter((id) => id !== user?.id);
@@ -83,7 +89,9 @@ export default function TripMembersScreen() {
         if (user?.id && selfIdentity) map.set(user.id, selfIdentity);
         if (!cancelled) setIdentities(map);
       } catch (err) {
-        console.warn('[trip-members] Failed to fetch participants:', err);
+        if (__DEV__) console.warn('[trip-members] Failed to fetch participants:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -217,6 +225,11 @@ export default function TripMembersScreen() {
             <View style={styles.section}>
               <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>Members</ThemedText>
               <View style={[styles.membersCard, { borderColor: theme.border }]}>
+                {loading && allParticipants.length <= 1 && (
+                  <View style={[styles.memberRow, { justifyContent: 'center' }]}>
+                    <ActivityIndicator size="small" color={theme.textSecondary} />
+                  </View>
+                )}
                 {allParticipants.map((p, i) => {
                   const identity = displayIdentities.get(p.userId);
                   const displayName = identity?.displayName ?? (p.role === 'owner' ? 'Owner' : 'Member');

@@ -794,7 +794,7 @@ export default function BoardDetailScreen() {
           runImport('link', async () => {
             try {
               const result = await importPlaceAI({ content: val, contentType: 'url' });
-              console.log('[link import] result:', JSON.stringify(result).slice(0, 500));
+              if (__DEV__) console.log('[link import] result:', JSON.stringify(result).slice(0, 500));
               if (isValidResult(result)) {
                 setRevealData(buildRevealItem(result, { source: val, sourceType: 'link' }));
                 Clipboard.setStringAsync('');
@@ -802,7 +802,7 @@ export default function BoardDetailScreen() {
                 Alert.alert('Could not identify place', result.notes || 'Couldn\'t find a place in that post. Try pasting the place name using "Paste text" instead.');
               }
             } catch (err: any) {
-              console.error('[link import] error:', err);
+              if (__DEV__) console.error('[link import] error:', err);
               Alert.alert('Import failed', err?.message || 'Something went wrong. Try again.');
             }
           });
@@ -847,7 +847,7 @@ export default function BoardDetailScreen() {
           showToast('Could not identify a place from that image', 'error');
         }
       } catch (err: any) {
-        console.error('[screenshot import] error:', err);
+        if (__DEV__) console.error('[screenshot import] error:', err);
         Alert.alert('Import failed', err?.message || 'Something went wrong analyzing the screenshot. Try again.');
       }
     });

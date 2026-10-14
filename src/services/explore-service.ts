@@ -152,7 +152,7 @@ async function resolveCoordinates(
       return coords;
     }
   } catch (e) {
-    console.error('[Explore] Geocoding failed for:', query, e);
+    if (__DEV__) console.error('[Explore] Geocoding failed for:', query, e);
   }
 
   return null;
@@ -182,7 +182,7 @@ async function callExploreEdge<T>(action: string, payload: unknown): Promise<T> 
 
   if (!response.ok || !json?.success) {
     const msg = json?.error ?? `Edge function error: ${response.status}`;
-    console.error('[Explore] Edge function failed:', msg);
+    if (__DEV__) console.error('[Explore] Edge function failed:', msg);
     throw new Error(msg);
   }
   return json.data as T;
@@ -476,7 +476,7 @@ export async function fetchPlaceDetails(
     detailsCache.set(placeId, result);
     return result;
   } catch (e) {
-    console.error('[Explore] Place details fetch failed:', e);
+    if (__DEV__) console.error('[Explore] Place details fetch failed:', e);
     return null;
   }
 }

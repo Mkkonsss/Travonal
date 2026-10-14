@@ -407,6 +407,7 @@ async function handleGenerateTrip(payload) {
     "TYPE RULES: food=restaurants/cafes/bars/bakeries. activity=attractions/museums/parks/tours/shopping/entertainment. hotel=accommodation. flight=flights.",
     "Use Category label from place data if available. Waterparks/museums are activity, NOT food.",
     "",
+    "TITLE RULE: every activity title must be ONLY the venue/place name — never prefix with a descriptor like 'Budget Shopping at X', 'Sunset Cruise at X', 'Breakfast at X'. Just use the name (e.g. 'Grand Bazaar' not 'Budget Shopping at Grand Bazaar').",
     "Each description: 1 short sentence. Use real places only, never invent names.",
     "personalNote: 1 short phrase connecting this place to a specific traveler preference (e.g. 'great for your love of street food', 'quiet spot for crowd-avoiders'). Omit for flights and hotels.",
     "cost: free/budget/moderate/premium. time: HH:MM 24h. duration: minutes.",

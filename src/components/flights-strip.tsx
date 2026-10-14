@@ -12,8 +12,7 @@ import type { Reservation, Trip } from '@/context/trips';
 import { searchFlightsAI, type FlightResult } from '@/services/ai';
 import { useActivityPhotos, type ActivityNameHint } from '@/hooks/use-activity-photos';
 
-// TODO: Replace with your real Booking.com affiliate ID once approved
-const BOOKING_AFFILIATE_ID = 'YOUR_AID_HERE';
+const BOOKING_AFFILIATE_ID = process.env.EXPO_PUBLIC_BOOKING_COM_AID ?? '';
 
 const CITY_TO_IATA: Record<string, string> = {
   'new york': 'NYC', 'new york city': 'NYC', 'nyc': 'NYC',

@@ -593,11 +593,22 @@ export function repairActivities(
     return a;
   });
 
-  // 0b. Strip meal prefixes from food activity titles (e.g. "Lunch at Nobu" → "Nobu")
+  // 0b. Strip descriptor prefixes from activity titles (e.g. "Lunch at Nobu" → "Nobu", "Budget Shopping at Grand Bazaar" → "Grand Bazaar")
   result = result.map((a) => {
-    if (a.type !== 'food') return a;
-    const stripped = a.title.replace(/^(breakfast|lunch|dinner|brunch|supper)\s+(at|@)\s+/i, '');
-    return stripped !== a.title ? { ...a, title: stripped } : a;
+    const match = a.title.match(/^(.+?)\s+(?:at|@)\s+(.+)$/i);
+    if (match) {
+      const prefix = match[1].toLowerCase();
+      const placeName = match[2].trim();
+      // Only strip if the prefix looks like a descriptor (not a proper place name component)
+      const descriptorWords = ['breakfast','lunch','dinner','brunch','supper','budget','luxury','sunset','morning','evening','afternoon','night','guided','free','scenic','cultural','traditional','local','street','fine','casual','quick','early','late','private','group','walking','food','shopping','sightseeing','nightlife'];
+      const prefixWords = prefix.split(/\s+/);
+      const isDescriptor = prefixWords.every(w => descriptorWords.includes(w));
+      if (isDescriptor && placeName) {
+        const isMeal = ['breakfast','lunch','dinner','brunch','supper'].includes(prefixWords[0]);
+        return { ...a, title: placeName, ...(isMeal ? { type: 'food' as const } : {}) };
+      }
+    }
+    return a;
   });
 
   // 1. Remove duplicate titles (keep first occurrence)
