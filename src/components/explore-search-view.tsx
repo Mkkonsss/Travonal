@@ -445,6 +445,7 @@ function MapPreview({
   onToggleSave: (place: NormalizedPlace) => void;
 }) {
   const theme = useTheme();
+  const colorScheme = useColorScheme() ?? 'light';
   const isWeb = Platform.OS === 'web';
   const [fullScreen, setFullScreen] = useState(false);
   const [activeMarkerIndex, setActiveMarkerIndex] = useState<number | undefined>();
