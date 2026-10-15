@@ -4850,7 +4850,7 @@ export default function TripWorkspace() {
               return (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChatSugRow} keyboardShouldPersistTaps="handled">
                   {chips.map((sug, sugIdx) => (
-                    <Pressable key={sugIdx} onPress={() => sendEditChatMessage(sug)} style={({ pressed }) => [styles.editChatSugChip, { borderColor: theme.border, backgroundColor: '#fff', opacity: pressed ? 0.7 : 1 }]}>
+                    <Pressable key={sugIdx} onPress={() => sendEditChatMessage(sug)} style={({ pressed }) => [styles.editChatSugChip, { borderColor: theme.border, backgroundColor: theme.background, opacity: pressed ? 0.7 : 1 }]}>
                       <ThemedText style={[styles.editChatSugText, { color: theme.primary }]}>{sug}</ThemedText>
                     </Pressable>
                   ))}
@@ -4858,7 +4858,7 @@ export default function TripWorkspace() {
               );
             })()}
             {/* Input bar */}
-            <View style={[styles.editChatInputBar, { borderTopColor: theme.border, backgroundColor: '#fff', paddingBottom: 12, ...Shadow.sm }]}>
+            <View style={[styles.editChatInputBar, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: 12, ...Shadow.sm }]}>
               <Pressable
                 onPress={() => setShowEditThreadList(true)}
                 hitSlop={8}

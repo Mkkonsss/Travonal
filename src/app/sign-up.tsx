@@ -17,6 +17,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Radius } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 import { useToast } from '@/context/toast';
+import { useTheme } from '@/hooks/use-theme';
 
 const HERO_IMAGE = require('@/assets/images/sign-up-hero.png');
 
@@ -27,6 +28,7 @@ export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
   const { signUp, signInWithApple } = useAuth();
   const { showToast } = useToast();
+  const theme = useTheme();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -78,7 +80,7 @@ export default function SignUpScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
         <ScrollView
           contentContainerStyle={[
             styles.content,
@@ -98,8 +100,8 @@ export default function SignUpScreen() {
               hitSlop={12}
             >
               <View style={styles.backRow}>
-                <SymbolView name="chevron.left" size={14} tintColor="#9CA3AF" />
-                <Text style={styles.backText}>Back</Text>
+                <SymbolView name="chevron.left" size={14} tintColor={theme.textSecondary} />
+                <Text style={[styles.backText, { color: theme.textSecondary }]}>Back</Text>
               </View>
             </Pressable>
           )}
@@ -107,8 +109,8 @@ export default function SignUpScreen() {
           {/* Title + image row */}
           <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.titleRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>One last step.</Text>
-              <Text style={styles.subtitle}>
+              <Text style={[styles.title, { color: theme.text }]}>One last step.</Text>
+              <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
                 Free to join. Your trips, anywhere.
               </Text>
             </View>
@@ -116,7 +118,7 @@ export default function SignUpScreen() {
               {HERO_IMAGE ? (
                 <ExpoImage source={HERO_IMAGE} style={StyleSheet.absoluteFill} contentFit="cover" />
               ) : (
-                <View style={[StyleSheet.absoluteFill, styles.imagePlaceholder]} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElement }]} />
               )}
             </View>
           </Animated.View>
@@ -125,18 +127,18 @@ export default function SignUpScreen() {
           <Animated.View entering={FadeInDown.delay(120).duration(400)} style={styles.socialRow}>
             {Platform.OS === 'ios' && (
               <Pressable
-                style={({ pressed }) => [styles.appleButton, { opacity: pressed ? 0.85 : 1 }]}
+                style={({ pressed }) => [styles.appleButton, { backgroundColor: theme.text, opacity: pressed ? 0.85 : 1 }]}
                 onPress={handleAppleSignIn}
                 disabled={socialLoading !== null || loading}
                 accessibilityRole="button"
                 accessibilityLabel="Continue with Apple"
               >
                 {socialLoading === 'apple' ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={theme.background} size="small" />
                 ) : (
                   <>
-                    <SymbolView name="apple.logo" size={18} tintColor="#FFFFFF" />
-                    <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                    <SymbolView name="apple.logo" size={18} tintColor={theme.background} />
+                    <Text style={[styles.appleButtonText, { color: theme.background }]}>Continue with Apple</Text>
                   </>
                 )}
               </Pressable>
@@ -146,17 +148,17 @@ export default function SignUpScreen() {
 
           {/* Divider */}
           <Animated.View entering={FadeInDown.delay(180).duration(400)} style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <Text style={[styles.dividerText, { color: theme.textSecondary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
           </Animated.View>
 
           {/* Email / password fields */}
           <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.fields}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
               placeholder="Your name"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.textSecondary}
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -164,9 +166,9 @@ export default function SignUpScreen() {
               textContentType="name"
             />
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
               placeholder="Email address"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.textSecondary}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -174,11 +176,11 @@ export default function SignUpScreen() {
               returnKeyType="next"
               textContentType="emailAddress"
             />
-            <View style={styles.passwordBox}>
+            <View style={[styles.passwordBox, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <TextInput
-                style={styles.passwordInput}
+                style={[styles.passwordInput, { color: theme.text }]}
                 placeholder="Password"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.textSecondary}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -192,7 +194,7 @@ export default function SignUpScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
-                <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
+                <Text style={[styles.showHideText, { color: theme.textSecondary }]}>{showPassword ? 'Hide' : 'Show'}</Text>
               </Pressable>
             </View>
           </Animated.View>
@@ -204,39 +206,39 @@ export default function SignUpScreen() {
               accessibilityRole="checkbox"
               accessibilityState={{ checked: agreedToTerms }}
             >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxActive]}>
-                {agreedToTerms && <SymbolView name="checkmark" size={10} tintColor="#FFFFFF" />}
+              <View style={[styles.checkbox, { borderColor: theme.border, backgroundColor: theme.background }, agreedToTerms && { backgroundColor: theme.text, borderColor: theme.text }]}>
+                {agreedToTerms && <SymbolView name="checkmark" size={10} tintColor={theme.background} />}
               </View>
-              <Text style={styles.termsText}>
+              <Text style={[styles.termsText, { color: theme.textSecondary }]}>
                 {'I agree to the '}
-                <Text style={styles.termsLink}>Terms and Conditions</Text>
+                <Text style={[styles.termsLink, { color: theme.text }]}>Terms and Conditions</Text>
               </Text>
             </Pressable>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <Pressable
-              style={({ pressed }) => [styles.primaryButton, { opacity: pressed ? 0.88 : 1, marginTop: 16 }]}
+              style={({ pressed }) => [styles.primaryButton, { backgroundColor: theme.text, opacity: pressed ? 0.88 : 1, marginTop: 16 }]}
               onPress={handleSignUp}
               disabled={loading || socialLoading !== null}
               accessibilityRole="button"
               accessibilityLabel="Create account"
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.background} />
               ) : (
-                <Text style={styles.primaryButtonText}>Create account</Text>
+                <Text style={[styles.primaryButtonText, { color: theme.background }]}>Create account</Text>
               )}
             </Pressable>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Already have an account? </Text>
+              <Text style={[styles.footerText, { color: theme.textSecondary }]}>Already have an account? </Text>
               <Pressable
                 onPress={() => router.replace('/sign-in')}
                 accessibilityRole="button"
                 accessibilityLabel="Sign in"
               >
-                <Text style={styles.footerLink}>Sign in</Text>
+                <Text style={[styles.footerLink, { color: theme.text }]}>Sign in</Text>
               </Pressable>
             </View>
           </Animated.View>

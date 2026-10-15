@@ -1268,8 +1268,8 @@ export default function BoardDetailScreen() {
                   style={({ pressed }) => [styles.planTripBtn, { backgroundColor: theme.primary, opacity: pressed ? 0.9 : 1 }]}
                   accessibilityRole="button"
                 >
-                  <SymbolView name="sparkles" size={16} tintColor="#fff" />
-                  <ThemedText style={styles.planTripText}>Plan a trip</ThemedText>
+                  <SymbolView name="sparkles" size={16} tintColor={theme.primaryText} />
+                  <ThemedText style={[styles.planTripText, { color: theme.primaryText }]}>Plan a trip</ThemedText>
                 </Pressable>
 
                 {/* Item count */}
@@ -1747,8 +1747,8 @@ export default function BoardDetailScreen() {
                 style={[styles.revealConfirmBtn, { backgroundColor: theme.primary }]}
                 accessibilityRole="button"
               >
-                <SymbolView name="plus" size={16} tintColor="#fff" />
-                <ThemedText style={styles.revealConfirmBtnText}>Add to board</ThemedText>
+                <SymbolView name="plus" size={16} tintColor={theme.primaryText} />
+                <ThemedText style={[styles.revealConfirmBtnText, { color: theme.primaryText }]}>Add to board</ThemedText>
               </Pressable>
             </View>
           </View>

@@ -32,9 +32,10 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 }
 
 function NewTripIcon() {
+  const theme = useTheme();
   return (
-    <View style={styles.newTripButton}>
-      <SymbolView name="plus" size={20} tintColor="#ffffff" />
+    <View style={[styles.newTripButton, { backgroundColor: theme.primary }]}>
+      <SymbolView name="plus" size={20} tintColor={theme.primaryText} />
     </View>
   );
 }

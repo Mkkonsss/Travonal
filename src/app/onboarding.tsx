@@ -39,6 +39,7 @@ import { useProfile, TravelProfile } from '@/context/profile';
 import { useMemory } from '@/context/memory';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useTheme } from '@/hooks/use-theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { setOnboardingComplete, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
 import { requestNotificationPermission } from '@/services/notifications';
 import { useAuth } from '@/context/auth';
@@ -263,6 +264,8 @@ export default function OnboardingScreen() {
   const { edit, survey } = useLocalSearchParams<{ edit?: string; survey?: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const colorScheme = useColorScheme() ?? 'light';
+  const isDark = colorScheme === 'dark';
   const { profile, updateProfile } = useProfile();
   const { user } = useAuth();
   const { learningEnabled: travelMemoryEnabled, setLearningEnabled: setTravelMemoryEnabled } = useMemory();
@@ -419,8 +422,8 @@ export default function OnboardingScreen() {
     const headline = slideHeadlines[activeSlide];
 
     return (
-      <View style={styles.welcomeRoot}>
-        <StatusBar barStyle="dark-content" />
+      <View style={[styles.welcomeRoot, { backgroundColor: theme.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
         <Animated.View
           entering={FadeIn.delay(200).duration(600)}
@@ -428,7 +431,7 @@ export default function OnboardingScreen() {
         >
           <ExpoImage
             // eslint-disable-next-line @typescript-eslint/no-require-imports
-            source={require('@/assets/images/logo-dark.png')}
+            source={isDark ? require('@/assets/images/logo-light.png') : require('@/assets/images/logo-dark.png')}
             style={{ width: 160, height: 44 }}
             contentFit="contain"
           />
@@ -503,22 +506,22 @@ export default function OnboardingScreen() {
         >
           <View style={styles.slideDotRow}>
             {[0, 1, 2, 3, 4].map((i) => (
-              <View key={i} style={[styles.slideDot, i === activeSlide && styles.slideDotActive]} />
+              <View key={i} style={[styles.slideDot, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' }, i === activeSlide && { width: 20, backgroundColor: theme.text, borderRadius: 3 }]} />
             ))}
           </View>
 
           <Animated.View key={activeSlide} entering={FadeInDown.duration(300)} style={styles.welcomeHeadlineBlock}>
-            <Text style={styles.welcomeHeadlineBig}>{headline}</Text>
+            <Text style={[styles.welcomeHeadlineBig, { color: theme.text }]}>{headline}</Text>
           </Animated.View>
 
           <View style={styles.welcomeButtons}>
             <Animated.View style={ctaFloatStyle}>
               <Pressable
                 onPress={() => setPhase('survey')}
-                style={({ pressed }) => [styles.welcomeSignUpBtn, { opacity: pressed ? 0.88 : 1 }]}
+                style={({ pressed }) => [styles.welcomeSignUpBtn, { backgroundColor: theme.text, opacity: pressed ? 0.88 : 1 }]}
                 accessibilityRole="button" accessibilityLabel="Get started"
               >
-                <Text style={styles.welcomeSignUpText}>Get Started</Text>
+                <Text style={[styles.welcomeSignUpText, { color: theme.background }]}>Get Started</Text>
               </Pressable>
             </Animated.View>
 
@@ -527,7 +530,7 @@ export default function OnboardingScreen() {
               style={({ pressed }) => [styles.welcomeLogInBtn, { opacity: pressed ? 0.88 : 1 }]}
               accessibilityRole="button" accessibilityLabel="Log in"
             >
-              <Text style={styles.welcomeLogInText}>Already have an account? Log in</Text>
+              <Text style={[styles.welcomeLogInText, { color: theme.textSecondary }]}>Already have an account? Log in</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -970,7 +973,7 @@ export default function OnboardingScreen() {
                         }
                       }
                     }}
-                    trackColor={{ false: theme.border, true: theme.primary }}
+                    trackColor={{ false: theme.border, true: isDark ? '#34D399' : theme.primary }}
                     thumbColor="#fff"
                   />
                 </View>
@@ -986,7 +989,7 @@ export default function OnboardingScreen() {
                   <Switch
                     value={travelMemoryEnabled}
                     onValueChange={(val) => { Haptics.selectionAsync(); setTravelMemoryEnabled(val); }}
-                    trackColor={{ false: theme.border, true: theme.primary }}
+                    trackColor={{ false: theme.border, true: isDark ? '#34D399' : theme.primary }}
                     thumbColor="#fff"
                   />
                 </View>

@@ -34,6 +34,7 @@ import { useBoards } from '@/context/boards';
 import { useInbox } from '@/context/inbox';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loadRecentSearches, saveRecentSearches } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 import { useAuth } from '@/context/auth';
@@ -630,7 +631,7 @@ function MapPreview({
               key={`${centerLat.toFixed(3)},${centerLng.toFixed(3)}`}
               markers={nativeMarkers}
               interactive={false}
-              userInterfaceStyle="light"
+              userInterfaceStyle={colorScheme}
             />
           )}
           {/* Expand button overlay */}
@@ -668,7 +669,7 @@ function MapPreview({
               onMarkerPress={handleNativeMarkerPress}
               activeMarkerIndex={activeMarkerIndex}
               initialPadding={{ top: 60, right: 50, bottom: 250, left: 50 }}
-              userInterfaceStyle="light"
+              userInterfaceStyle={colorScheme}
             />
           )}
 
@@ -707,6 +708,7 @@ export function ExploreSearchView() {
   const { tripId: paramTripId, day: paramDay } = useLocalSearchParams<{ tripId?: string; day?: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const colorScheme = useColorScheme() ?? 'light';
   const { width: screenWidth } = useWindowDimensions();
   const gridGap = 10;
   const gridPadding = Spacing.four;

@@ -21,6 +21,7 @@ import { useBoards } from '@/context/boards';
 import { useInbox } from '@/context/inbox';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { searchAllPlaces } from '@/services/places-data';
 import { sortTripsForPicker, formatDayLabel } from '@/services/trip-helpers';
 import { categoryToActivityType, priceLevelLabel, mapGoogleTypeToCategory } from '@/services/place-model';
@@ -163,6 +164,7 @@ export default function PlaceDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
+  const colorScheme = useColorScheme() ?? 'light';
   const { showToast } = useToast();
   const { trips, addActivity } = useTrips();
   const { profile } = useProfile();
@@ -1107,7 +1109,7 @@ export default function PlaceDetailScreen() {
                     svgPathData: DEFAULT_PATH_DATA,
                   }]}
                   interactive={false}
-                  userInterfaceStyle="dark"
+                  userInterfaceStyle={colorScheme}
                 />
               )}
               {/* Expand icon */}
@@ -1143,7 +1145,7 @@ export default function PlaceDetailScreen() {
                       color: '#4F46E5',
                       svgPathData: DEFAULT_PATH_DATA,
                     }]}
-                    userInterfaceStyle="dark"
+                    userInterfaceStyle={colorScheme}
                   />
                 )}
 

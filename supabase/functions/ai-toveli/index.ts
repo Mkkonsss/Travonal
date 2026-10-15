@@ -2970,10 +2970,11 @@ async function handleDestinationPhoto(payload) {
     "store", "shopping_mall", "gym", "school", "hospital",
   ];
 
-  // Progressively broader queries using clean place name
+  // Progressively broader queries — use full destination (with country) to disambiguate
+  // e.g. "Miami Platja, Spain" instead of just "Miami Platja" which might match Miami, FL
   var queries = [
-    placeName + " skyline aerial view",
-    placeName + " famous landmark",
+    destination + " skyline aerial view",
+    destination + " famous landmark",
     placeName + " tourist attraction",
     destination,
   ];

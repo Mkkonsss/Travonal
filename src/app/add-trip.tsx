@@ -1363,7 +1363,7 @@ export default function AddTripScreen() {
               style={({ pressed }) => [
                 styles.buildButton,
                 {
-                  backgroundColor: !canGoNext ? theme.backgroundElement : '#111827',
+                  backgroundColor: !canGoNext ? theme.backgroundElement : theme.primary,
                   opacity: pressed && canGoNext ? 0.85 : 1,
                 },
               ]}
@@ -1371,7 +1371,7 @@ export default function AddTripScreen() {
               accessibilityRole="button"
               accessibilityLabel={displayStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
             >
-              <ThemedText style={[styles.buildButtonText, { color: !canGoNext ? theme.textSecondary : '#ffffff' }]}>
+              <ThemedText style={[styles.buildButtonText, { color: !canGoNext ? theme.textSecondary : theme.primaryText }]}>
                 {displayStep === TOTAL_STEPS ? (mode === 'detailed' ? 'Create trip' : 'Plan my trip') : 'Next'}
               </ThemedText>
             </Pressable>

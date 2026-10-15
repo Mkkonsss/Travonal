@@ -263,8 +263,8 @@ export default function BoardsScreen() {
               style={[styles.emptyCreateBtn, { backgroundColor: theme.primary }]}
               accessibilityRole="button"
             >
-              <SymbolView name="plus" size={16} tintColor="#fff" />
-              <ThemedText style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Create your first board</ThemedText>
+              <SymbolView name="plus" size={16} tintColor={theme.primaryText} />
+              <ThemedText style={{ color: theme.primaryText, fontSize: 16, fontWeight: '600' }}>Create your first board</ThemedText>
             </Pressable>
           </Animated.View>
         ) : (
