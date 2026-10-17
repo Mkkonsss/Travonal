@@ -855,29 +855,32 @@ export default function HomeScreen() {
                 </View>
               </Animated.View>
 
-            {/* Board cards */}
+            {/* Board cards carousel */}
             {boards.filter(b => b.items.length > 0).length > 0 && (
-              <View style={styles.boardGrid}>
-                {boards.filter(b => b.items.length > 0).map((board, i) => (
-                  <Animated.View key={board.id} entering={FadeInDown.delay(160 + i * 60).springify()}>
-                    <Pressable
-                      onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
-                      style={({ pressed }) => [
-                        { width: boardCardSize, opacity: pressed ? 0.88 : 1 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${board.name} board`}
-                    >
-                      <View style={[styles.boardCover, { height: boardCardSize * 0.85, backgroundColor: theme.border }]}>
-                        <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={boardCardSize} />
-                      </View>
-                      <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
-                      <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
-                        {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
-                      </ThemedText>
-                    </Pressable>
-                  </Animated.View>
-                ))}
+              <View style={{ gap: 12 }}>
+                <ThemedText style={[styles.sectionLabel, { color: theme.text }]}>Your boards</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardCarousel}>
+                  {boards.filter(b => b.items.length > 0).map((board, i) => (
+                    <Animated.View key={board.id} entering={FadeInDown.delay(160 + i * 60).springify()}>
+                      <Pressable
+                        onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
+                        style={({ pressed }) => [
+                          { width: 160, opacity: pressed ? 0.88 : 1 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${board.name} board`}
+                      >
+                        <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
+                          <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
+                        </View>
+                        <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
+                        <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
+                          {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
+                        </ThemedText>
+                      </Pressable>
+                    </Animated.View>
+                  ))}
+                </ScrollView>
               </View>
             )}
 
@@ -973,29 +976,32 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Board cards */}
+            {/* Board cards carousel */}
             {boards.filter(b => b.items.length > 0).length > 0 && (
-              <View style={styles.boardGrid}>
-                {boards.filter(b => b.items.length > 0).map((board, i) => (
-                  <Animated.View key={board.id} entering={FadeInDown.delay(100 + i * 60).springify()}>
-                    <Pressable
-                      onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
-                      style={({ pressed }) => [
-                        { width: boardCardSize, opacity: pressed ? 0.88 : 1 },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${board.name} board`}
-                    >
-                      <View style={[styles.boardCover, { height: boardCardSize * 0.85, backgroundColor: theme.border }]}>
-                        <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={boardCardSize} />
-                      </View>
-                      <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
-                      <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
-                        {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
-                      </ThemedText>
-                    </Pressable>
-                  </Animated.View>
-                ))}
+              <View style={{ gap: 12 }}>
+                <ThemedText style={[styles.sectionLabel, { color: theme.text }]}>Your boards</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardCarousel}>
+                  {boards.filter(b => b.items.length > 0).map((board, i) => (
+                    <Animated.View key={board.id} entering={FadeInDown.delay(100 + i * 60).springify()}>
+                      <Pressable
+                        onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
+                        style={({ pressed }) => [
+                          { width: 160, opacity: pressed ? 0.88 : 1 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open ${board.name} board`}
+                      >
+                        <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
+                          <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
+                        </View>
+                        <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
+                        <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
+                          {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
+                        </ThemedText>
+                      </Pressable>
+                    </Animated.View>
+                  ))}
+                </ScrollView>
               </View>
             )}
 
@@ -1040,11 +1046,10 @@ const styles = StyleSheet.create({
   ctaSquareLabel: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   ctaDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
 
-  // Board cards
-  boardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  // Board cards carousel
+  boardCarousel: {
     gap: 12,
+    paddingVertical: 4,
   },
   boardCover: {
     width: '100%',

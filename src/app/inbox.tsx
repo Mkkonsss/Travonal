@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
 import { Alert, Dimensions, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import * as Haptics from 'expo-haptics';
@@ -79,13 +79,11 @@ function BoardCover({ board, resolvedPhotos }: { board: Board; resolvedPhotos: R
 
 function BoardCard({
   board,
-  index,
   onPress,
   onDelete,
   resolvedPhotos,
 }: {
   board: Board;
-  index: number;
   onPress: () => void;
   onDelete: () => void;
   resolvedPhotos: Record<string, string>;
@@ -101,26 +99,24 @@ function BoardCard({
   }
 
   return (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
-      <Pressable
-        onPress={onPress}
-        onLongPress={handleLongPress}
-        style={({ pressed }) => [
-          styles.boardCard,
-          { opacity: pressed ? 0.88 : 1 },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`${board.name}, ${board.items.length} items`}
-      >
-        <View style={[styles.boardCover, { backgroundColor: theme.border }]}>
-          <BoardCover board={board} resolvedPhotos={resolvedPhotos} />
-        </View>
-        <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
-        <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
-          {board.items.length} {board.items.length === 1 ? 'pin' : 'pins'}
-        </ThemedText>
-      </Pressable>
-    </Animated.View>
+    <Pressable
+      onPress={onPress}
+      onLongPress={handleLongPress}
+      style={({ pressed }) => [
+        styles.boardCard,
+        { opacity: pressed ? 0.88 : 1 },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${board.name}, ${board.items.length} items`}
+    >
+      <View style={[styles.boardCover, { backgroundColor: theme.border }]}>
+        <BoardCover board={board} resolvedPhotos={resolvedPhotos} />
+      </View>
+      <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
+      <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
+        {board.items.length} {board.items.length === 1 ? 'pin' : 'pins'}
+      </ThemedText>
+    </Pressable>
   );
 }
 
@@ -276,7 +272,6 @@ export default function BoardsScreen() {
                 <BoardCard
                   key={board.id}
                   board={board}
-                  index={i + 1}
                   onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
                   onDelete={() => deleteBoard(board.id)}
                   resolvedPhotos={resolvedPhotos}

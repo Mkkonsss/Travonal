@@ -19,7 +19,7 @@ import { useBoards, BoardItem, Board } from '@/context/boards';
 import { useTrips } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
-import { searchPlaceByName, fetchPlaceDetails } from '@/services/explore-service';
+import { searchPlaceByName, fetchPlaceDetails, searchExplorePlaces } from '@/services/explore-service';
 import { normalizeGooglePlace, type NormalizedPlace } from '@/services/place-model';
 import { prefetchPhotosFromCache, getCachedPhotoUrl, getPlacePhoto } from '@/services/free-photos';
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
@@ -72,10 +72,10 @@ function PinCardContent({
       { height: cardHeight, backgroundColor: theme.backgroundElement },
       isDragging && styles.pinCardDragging,
     ]}>
-      {/* Placeholder icon shown behind image — visible while image loads or if no image */}
+      {/* Loading spinner shown while image loads or resolves */}
       {!imageUrl && (
-        <View style={[StyleSheet.absoluteFill, styles.pinPlaceholderCentered, { backgroundColor: theme.border }]}>
-          <SymbolView name={icon as any} size={28} tintColor={theme.textSecondary} />
+        <View style={[StyleSheet.absoluteFill, styles.pinPlaceholderCentered, { backgroundColor: theme.backgroundElement }]}>
+          <ActivityIndicator size="small" color={theme.textSecondary} />
         </View>
       )}
       {imageUrl && (
@@ -613,9 +613,21 @@ export default function BoardDetailScreen() {
               if (details) {
                 const norm = normalizeGooglePlace(details);
                 const photos = details.photos as Record<string, unknown>[] | undefined;
-                const resolved = { ...norm, photoRef: photos?.[0]?.name as string | undefined };
+                const photoRef = photos?.[0]?.name as string | undefined;
+                const resolved = { ...norm, photoRef };
                 detailsCache.current[match.placeId] = resolved;
                 resolvedByItemRef.current[item.id] = resolved;
+
+                // Save photoRef and fetch photo immediately
+                if (photoRef) {
+                  updateBoardItem(board.id, item.id, { photoRef });
+                  try {
+                    const result = await getPlacePhoto({ cacheKey: match.placeId, photoRef });
+                    if (result?.url) {
+                      setResolvedPhotos((prev) => ({ ...prev, [match.placeId!]: result.url }));
+                    }
+                  } catch { /* skip */ }
+                }
               }
             }
           }
@@ -647,10 +659,19 @@ export default function BoardDetailScreen() {
         if (details) {
           const norm = normalizeGooglePlace(details);
           const photos = details.photos as Record<string, unknown>[] | undefined;
-          detailsCache.current[item.placeId!] = {
-            ...norm,
-            photoRef: photos?.[0]?.name as string | undefined,
-          };
+          const photoRef = photos?.[0]?.name as string | undefined;
+          detailsCache.current[item.placeId!] = { ...norm, photoRef };
+
+          // Save photoRef to board item and fetch the actual photo
+          if (photoRef) {
+            updateBoardItem(board.id, item.id, { photoRef });
+            try {
+              const result = await getPlacePhoto({ cacheKey: item.placeId!, photoRef });
+              if (result?.url) {
+                setResolvedPhotos((prev) => ({ ...prev, [item.placeId!]: result.url }));
+              }
+            } catch { /* skip photo fetch */ }
+          }
         }
       } catch {
         // Skip — will resolve on place-detail screen instead
