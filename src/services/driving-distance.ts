@@ -12,7 +12,8 @@ function cacheKey(lat1: number, lng1: number, lat2: number, lng2: number): strin
 }
 
 /**
- * Get driving distance and duration between two points using OSRM (free, no API key).
+ * Get driving distance and duration between two points using OSRM demo server.
+ * Routing data from OSRM (Open Source Routing Machine) using OpenStreetMap data.
  * Falls back to haversine × 1.4 if the request fails.
  */
 export async function getDrivingDistance(
@@ -25,7 +26,10 @@ export async function getDrivingDistance(
 
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${lng1},${lat1};${lng2},${lat2}?overview=false`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+      headers: { 'User-Agent': 'Tripseek/1.0 (https://tripseekapp.com)' },
+    });
     if (!res.ok) throw new Error(`OSRM ${res.status}`);
     const data = await res.json();
     if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No route');

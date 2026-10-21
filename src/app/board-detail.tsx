@@ -682,20 +682,6 @@ export default function BoardDetailScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailsFetchedKey]);
 
-  if (!board) {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ThemedText type="headline">Board not found</ThemedText>
-        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }} accessibilityRole="button">
-          <ThemedText style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Go back</ThemedText>
-        </Pressable>
-      </View>
-    );
-  }
-
-  const boardId_ = board.id;
-  const boardName = board.name;
-
   // Resolve board name to geographic coordinates (for destination-aware search)
   // Also re-resolve if destination has stale format with country (e.g. "Miami, Florida, United States")
   const needsResolve = !board?.destinationLat || (board?.destination && board.destination.split(',').length > 2);
@@ -711,6 +697,20 @@ export default function BoardDetailScreen() {
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board?.id, board?.name, needsResolve]);
+
+  if (!board) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ThemedText type="headline">Board not found</ThemedText>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }} accessibilityRole="button">
+          <ThemedText style={{ color: theme.primary, fontSize: 16, fontWeight: '600' }}>Go back</ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const boardId_ = board.id;
+  const boardName = board.name;
 
   // Determine dominant destination (fallback for boards without resolved coords)
   const destCounts: Record<string, number> = {};
@@ -1010,8 +1010,9 @@ export default function BoardDetailScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
-          deleteBoard(boardId_);
           router.back();
+          // Delay deletion so the screen unmounts before the board disappears
+          setTimeout(() => deleteBoard(boardId_), 300);
         },
       },
     ]);

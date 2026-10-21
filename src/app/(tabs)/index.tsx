@@ -860,25 +860,24 @@ export default function HomeScreen() {
               <View style={{ gap: 12 }}>
                 <ThemedText style={[styles.sectionLabel, { color: theme.text }]}>Your boards</ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardCarousel}>
-                  {boards.filter(b => b.items.length > 0).map((board, i) => (
-                    <Animated.View key={board.id} entering={FadeInDown.delay(160 + i * 60).springify()}>
-                      <Pressable
-                        onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
-                        style={({ pressed }) => [
-                          { width: 160, opacity: pressed ? 0.88 : 1 },
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Open ${board.name} board`}
-                      >
-                        <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
-                          <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
-                        </View>
-                        <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
-                        <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
-                          {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
-                        </ThemedText>
-                      </Pressable>
-                    </Animated.View>
+                  {boards.filter(b => b.items.length > 0).map((board) => (
+                    <Pressable
+                      key={board.id}
+                      onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
+                      style={({ pressed }) => [
+                        { width: 160, opacity: pressed ? 0.88 : 1 },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${board.name} board`}
+                    >
+                      <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
+                        <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
+                      </View>
+                      <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
+                      <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
+                        {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
+                      </ThemedText>
+                    </Pressable>
                   ))}
                 </ScrollView>
               </View>
@@ -981,25 +980,24 @@ export default function HomeScreen() {
               <View style={{ gap: 12 }}>
                 <ThemedText style={[styles.sectionLabel, { color: theme.text }]}>Your boards</ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boardCarousel}>
-                  {boards.filter(b => b.items.length > 0).map((board, i) => (
-                    <Animated.View key={board.id} entering={FadeInDown.delay(100 + i * 60).springify()}>
-                      <Pressable
-                        onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
-                        style={({ pressed }) => [
-                          { width: 160, opacity: pressed ? 0.88 : 1 },
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Open ${board.name} board`}
-                      >
-                        <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
-                          <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
-                        </View>
-                        <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
-                        <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
-                          {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
-                        </ThemedText>
-                      </Pressable>
-                    </Animated.View>
+                  {boards.filter(b => b.items.length > 0).map((board) => (
+                    <Pressable
+                      key={board.id}
+                      onPress={() => router.push(`/board-detail?boardId=${board.id}` as any)}
+                      style={({ pressed }) => [
+                        { width: 160, opacity: pressed ? 0.88 : 1 },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${board.name} board`}
+                    >
+                      <View style={[styles.boardCover, { height: 136, backgroundColor: theme.border }]}>
+                        <HomeBoardCover board={board} resolvedPhotos={resolvedPhotos} size={160} />
+                      </View>
+                      <ThemedText style={styles.boardName} numberOfLines={1}>{board.name}</ThemedText>
+                      <ThemedText style={[styles.boardCount, { color: theme.textSecondary }]}>
+                        {board.items.length} {board.items.length === 1 ? 'place' : 'places'}
+                      </ThemedText>
+                    </Pressable>
                   ))}
                 </ScrollView>
               </View>

@@ -398,11 +398,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
         accessibilityRole="button"
         accessibilityLabel="Copy forwarding email address"
       >
-        <ExpoImage
-          source={require('@/assets/images/gmail-logo.png')}
-          style={{ width: 16, height: 16 }}
-          contentFit="contain"
-        />
+        <SymbolView name="envelope" size={14} tintColor={theme.textSecondary} />
         <ThemedText style={[styles.emailStripLabel, { color: theme.textSecondary }]}>
           Forward to:
         </ThemedText>

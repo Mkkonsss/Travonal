@@ -969,7 +969,7 @@ export default function BookingsScreen() {
               accessibilityRole="button"
               accessibilityLabel="Copy forwarding email address"
             >
-              <ExpoImage source={require('@/assets/images/gmail-logo.png')} style={{ width: 16, height: 16 }} contentFit="contain" />
+              <SymbolView name="envelope" size={14} tintColor={theme.textSecondary} />
               <ThemedText style={[styles.emailStripLabel, { color: theme.textSecondary }]}>Forward to:</ThemedText>
               <ThemedText style={[styles.emailStripAddress, { color: theme.primary }]} numberOfLines={1}>{bookingEmail}</ThemedText>
               <SymbolView name={emailCopied ? 'checkmark' : 'square.on.square'} size={13} tintColor={emailCopied ? theme.primary : theme.textSecondary} />

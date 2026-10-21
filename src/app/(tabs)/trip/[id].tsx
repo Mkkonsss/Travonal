@@ -40,7 +40,7 @@ import { categoryToActivityType, type NormalizedPlace } from '@/services/place-m
 import { hasDestinationData } from '@/services/alternatives-pool';
 import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI, getTripAlertsAI, TripAlertResult } from '@/services/ai';
 import { AddBookingModal } from '@/components/add-booking-modal';
-import { FlightsStrip, getAirlineLogoUrl } from '@/components/flights-strip';
+import { FlightsStrip } from '@/components/flights-strip';
 import { ConfirmedBookingSheet } from '@/components/confirmed-booking-sheet';
 import { UnbookedStaySheet } from '@/components/unbooked-stay-sheet';
 import { TripBookingsTab } from '@/components/trip-bookings-tab';
@@ -3302,13 +3302,18 @@ export default function TripWorkspace() {
 
                           {/* Weather */}
                           {wx && dayWeather && (
-                            <View style={styles.dayInfoRow}>
-                              <SymbolView name={wx.icon} size={14} tintColor={theme.textSecondary} />
-                              <ThemedText style={[styles.dayInfoText, { color: theme.text }]}>
-                                {wx.label} · {Math.round(dayWeather.temperatureMax)}° / {Math.round(dayWeather.temperatureMin)}°
-                                {dayWeather.precipitationProbability > 0 ? ` · ${dayWeather.precipitationProbability}% rain` : ''}
+                            <>
+                              <View style={styles.dayInfoRow}>
+                                <SymbolView name={wx.icon} size={14} tintColor={theme.textSecondary} />
+                                <ThemedText style={[styles.dayInfoText, { color: theme.text }]}>
+                                  {wx.label} · {Math.round(dayWeather.temperatureMax)}° / {Math.round(dayWeather.temperatureMin)}°
+                                  {dayWeather.precipitationProbability > 0 ? ` · ${dayWeather.precipitationProbability}% rain` : ''}
+                                </ThemedText>
+                              </View>
+                              <ThemedText style={{ fontSize: 9, color: theme.textSecondary, marginLeft: 22, marginTop: -2 }}>
+                                 Weather
                               </ThemedText>
-                            </View>
+                            </>
                           )}
 
                           {/* Empty state */}

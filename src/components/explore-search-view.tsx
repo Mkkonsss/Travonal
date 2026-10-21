@@ -1436,7 +1436,7 @@ export function ExploreSearchView() {
         {/* Data attribution */}
         {displayPlaces.length > 0 && (
           <ThemedText style={[styles.attribution, { color: theme.textSecondary }]}>
-            Data and photos by Google
+            Place data provided by Google Maps
           </ThemedText>
         )}
       </ScrollView>

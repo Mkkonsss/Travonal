@@ -1610,6 +1610,11 @@ export default function PlaceDetailScreen() {
             Booking links may earn Tripseek a small commission at no extra cost to you.
           </ThemedText>
         )}
+        {isGooglePlace && (
+          <ThemedText style={[styles.affiliateDisclosure, { color: theme.textSecondary }]}>
+            Place data provided by Google Maps
+          </ThemedText>
+        )}
       </ScrollView>
 
       {/* Trip / day selection sheet — avoids variable-length Android Alert */}

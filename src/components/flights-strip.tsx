@@ -88,12 +88,17 @@ export interface FlightsStripProps {
   onRemoveFlight?: (reservation: Reservation) => void;
 }
 
-export function getAirlineLogoUrl(flightNumber?: string, title?: string): string | null {
+/** Extract IATA airline code from a flight number or title (e.g. "AA 1234" → "AA") */
+export function getAirlineCode(flightNumber?: string, title?: string): string | null {
   const source = (flightNumber || title || '').trim();
   const match = source.match(/^([A-Z]{2})\s*\d/i);
   if (!match) return null;
-  const code = match[1].toUpperCase();
-  return `https://pics.avs.io/200/200/${code}.png`;
+  return match[1].toUpperCase();
+}
+
+/** @deprecated — avs.io logos are unlicensed airline trademarks; use getAirlineCode + text badge instead */
+export function getAirlineLogoUrl(_flightNumber?: string, _title?: string): string | null {
+  return null;
 }
 
 function formatRoute(origin?: string, destination?: string, title?: string): string {
@@ -243,11 +248,7 @@ export const FlightsStrip = memo(function FlightsStrip({
                     key={i}
                     style={[s.flightSuggestCard, { backgroundColor: theme.background, borderColor: theme.border }]}
                   >
-                    {f.airlineLogo ? (
-                      <ExpoImage source={{ uri: f.airlineLogo }} style={s.airlineLogo} contentFit="contain" />
-                    ) : (
-                      <SymbolView name="airplane" size={18} tintColor={theme.textSecondary} />
-                    )}
+                    <SymbolView name="airplane" size={18} tintColor={theme.textSecondary} />
                     <ThemedText style={s.suggestPrice} numberOfLines={1}>
                       {f.price != null ? `est. $${f.price}` : '—'}
                     </ThemedText>
@@ -315,19 +316,19 @@ export const FlightsStrip = memo(function FlightsStrip({
           const route = formatRoute(res.origin, res.destination, res.title);
           const dateStr = formatFlightDate(res.date, res.time);
           const photoUrl = flightPhotoMap.get(`${res.title}::${trip.destination}`);
-          const logoUrl = getAirlineLogoUrl(res.flightNumber, res.title);
+          const airlineCode = getAirlineCode(res.flightNumber, res.title);
 
           return (
             <View key={res.id} style={s.gridItem}>
               <Pressable
-                onPress={() => onViewFlight(res, photoUrl ?? logoUrl ?? undefined)}
+                onPress={() => onViewFlight(res, photoUrl ?? undefined)}
                 style={({ pressed }) => [s.gridCard, pressed && { opacity: 0.85 }]}
                 accessibilityRole="button"
                 accessibilityLabel={route}
               >
                 {/* Dark gradient background */}
                 <LinearGradient colors={['#2a2f3d', '#1a1e28']} style={StyleSheet.absoluteFill} />
-                {/* Photo (from activity photos) or airline logo or airplane icon */}
+                {/* Photo (from activity photos) or IATA code badge or airplane icon */}
                 {photoUrl ? (
                   <ExpoImage
                     source={{ uri: photoUrl }}
@@ -337,13 +338,8 @@ export const FlightsStrip = memo(function FlightsStrip({
                   />
                 ) : (
                   <View style={s.airlineLogoCenter}>
-                    {logoUrl ? (
-                      <ExpoImage
-                        source={{ uri: logoUrl }}
-                        style={s.airlineLogoImg}
-                        contentFit="contain"
-                        cachePolicy="memory-disk"
-                      />
+                    {airlineCode ? (
+                      <ThemedText style={s.airlineCodeText}>{airlineCode}</ThemedText>
                     ) : (
                       <SymbolView name="airplane" size={36} tintColor="rgba(255,255,255,0.25)" />
                     )}
@@ -452,10 +448,11 @@ const s = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-  airlineLogo: {
-    width: 28,
-    height: 28,
-    marginBottom: 4,
+  airlineCodeText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.35)',
+    letterSpacing: 2,
   },
   suggestPrice: {
     fontSize: 16,
@@ -504,10 +501,6 @@ const s = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  airlineLogoImg: {
-    width: 72,
-    height: 72,
   },
   cardTypeIcon: {
     position: 'absolute',

@@ -1,12 +1,14 @@
 /**
- * Weather service using Open-Meteo (free, no API key required).
+ * Weather service using Apple WeatherKit via Supabase Edge Function.
  * Fetches daily forecasts for trip destinations to power weather-aware alerts.
+ *
+ * Apple requires attribution: "Weather data provided by Apple Weather."
  */
 
 export interface DayWeather {
   date: string;
   precipitationProbability: number; // 0-100
-  weatherCode: number; // WMO weather code
+  weatherCode: number; // WMO weather code (mapped from WeatherKit conditionCode)
   temperatureMax: number; // Celsius
   temperatureMin: number; // Celsius
 }
@@ -15,6 +17,9 @@ export interface TripWeatherForecast {
   days: DayWeather[];
   fetchedAt: number;
 }
+
+const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/Weather`;
+const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
 // In-memory cache: key = "lat,lng" truncated to 2 decimals
 const weatherCache = new Map<string, TripWeatherForecast>();
@@ -56,23 +61,24 @@ export async function fetchWeatherForecast(
   }
 
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=precipitation_probability_max,weather_code,temperature_2m_max,temperature_2m_min&start_date=${startDate}&end_date=${endDate}&timezone=auto`;
-    const resp = await fetch(url);
+    const resp = await fetch(EDGE_FN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: ANON_KEY,
+        Authorization: `Bearer ${ANON_KEY}`,
+      },
+      body: JSON.stringify({ lat, lng, startDate, endDate }),
+    });
     if (!resp.ok) return null;
     const data = await resp.json();
 
-    const dates: string[] = data.daily?.time ?? [];
-    const precip: number[] = data.daily?.precipitation_probability_max ?? [];
-    const codes: number[] = data.daily?.weather_code ?? [];
-    const tMax: number[] = data.daily?.temperature_2m_max ?? [];
-    const tMin: number[] = data.daily?.temperature_2m_min ?? [];
-
-    const days: DayWeather[] = dates.map((date, i) => ({
-      date,
-      precipitationProbability: precip[i] ?? 0,
-      weatherCode: codes[i] ?? 0,
-      temperatureMax: tMax[i] ?? 0,
-      temperatureMin: tMin[i] ?? 0,
+    const days: DayWeather[] = (data.days ?? []).map((d: Record<string, unknown>) => ({
+      date: d.date as string,
+      precipitationProbability: (d.precipitationProbability as number) ?? 0,
+      weatherCode: (d.weatherCode as number) ?? 0,
+      temperatureMax: (d.temperatureMax as number) ?? 0,
+      temperatureMin: (d.temperatureMin as number) ?? 0,
     }));
 
     const forecast: TripWeatherForecast = { days, fetchedAt: Date.now() };

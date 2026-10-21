@@ -625,15 +625,14 @@ export function isOwnedMediaUri(uri: string): boolean {
  * Deletes a file if it is an owned media URI (inside the document directory).
  * Never throws — errors are silently swallowed.
  */
-export async function deleteOwnedMedia(uri: string): Promise<void> {
+export function deleteOwnedMedia(uri: string): void {
   try {
-    if (isOwnedMediaUri(uri)) {
-      const file = new File(uri);
-      if (file.exists) {
-        file.delete();
-      }
+    if (!uri || !isOwnedMediaUri(uri)) return;
+    const file = new File(uri);
+    if (file?.exists) {
+      file.delete();
     }
   } catch {
-    // Silently swallow errors
+    // Silently swallow errors — never crash on media cleanup
   }
 }
