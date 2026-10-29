@@ -23,6 +23,7 @@ import Animated, {
   FadeInLeft,
   FadeInRight,
   FadeInUp,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -31,7 +32,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-import { AirplaneWindowVideo } from '@/components/airplane-window-video';
+import { OnboardingSkyVideo } from '@/components/onboarding-sky-video';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, Radius } from '@/constants/theme';
@@ -274,7 +275,21 @@ export default function OnboardingScreen() {
   const [phase, setPhase] = useState<Phase>(edit === '1' || survey === '1' ? 'survey' : 'welcome');
   const [activeSlide, setActiveSlide] = useState(0);
   const [heroHeight, setHeroHeight] = useState(0);
-  const { width: SCREEN_WIDTH } = Dimensions.get('window');
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+  // Slide 1's sky video dissolves as the user swipes; the logo is white over the sky
+  const slidesScrollX = useSharedValue(0);
+  const onSlidesScroll = useAnimatedScrollHandler((e) => {
+    slidesScrollX.value = e.contentOffset.x;
+  });
+  // Same timing as the sky dissolving away (OnboardingSkyVideo)
+  const skyLogoStyle = useAnimatedStyle(() => {
+    const t = Math.max(0, Math.min(1, slidesScrollX.value / (SCREEN_WIDTH * 0.75)));
+    return { opacity: 1 - t * t * (3 - 2 * t) };
+  });
+  const plainLogoStyle = useAnimatedStyle(() => {
+    const t = Math.max(0, Math.min(1, slidesScrollX.value / (SCREEN_WIDTH * 0.75)));
+    return { opacity: t * t * (3 - 2 * t) };
+  });
 
   // Welcome screen animations
   const ctaScale = useSharedValue(1);
@@ -423,18 +438,36 @@ export default function OnboardingScreen() {
 
     return (
       <View style={[styles.welcomeRoot, { backgroundColor: theme.background }]}>
-        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <StatusBar barStyle={activeSlide === 0 || isDark ? 'light-content' : 'dark-content'} />
+
+        <OnboardingSkyVideo
+          width={SCREEN_WIDTH}
+          height={SCREEN_HEIGHT * 0.62}
+          scrollX={slidesScrollX}
+          active={activeSlide === 0}
+          background={theme.background}
+        />
 
         <Animated.View
           entering={FadeIn.delay(200).duration(600)}
           style={[styles.welcomeLogoBar, { paddingTop: insets.top + 16 }]}
         >
-          <ExpoImage
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            source={isDark ? require('@/assets/images/logo-light.png') : require('@/assets/images/logo-dark.png')}
-            style={{ width: 160, height: 44 }}
-            contentFit="contain"
-          />
+          <Animated.View style={skyLogoStyle}>
+            <ExpoImage
+              source={require('@/assets/images/logo-light.png')}
+              style={{ width: 160, height: 44 }}
+              contentFit="contain"
+            />
+          </Animated.View>
+          {!isDark && (
+            <Animated.View style={[styles.welcomeLogoOverlay, { top: insets.top + 16 }, plainLogoStyle]}>
+              <ExpoImage
+                source={require('@/assets/images/logo-dark.png')}
+                style={{ width: 160, height: 44 }}
+                contentFit="contain"
+              />
+            </Animated.View>
+          )}
         </Animated.View>
 
 
@@ -443,22 +476,17 @@ export default function OnboardingScreen() {
           onLayout={(e) => setHeroHeight(e.nativeEvent.layout.height)}
         >
           {heroHeight > 0 && (
-            <ScrollView
+            <Animated.ScrollView
               horizontal pagingEnabled showsHorizontalScrollIndicator={false}
               scrollEventThrottle={16}
+              onScroll={onSlidesScroll}
               onMomentumScrollEnd={(e) => {
                 setActiveSlide(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH));
               }}
               style={{ flex: 1 }}
             >
-              {/* Slide 1 — airplane window with a looping clip of the view outside */}
-              <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
-                <AirplaneWindowVideo
-                  width={Math.min(SCREEN_WIDTH * 0.62, (heroHeight - 120) / 1.4)}
-                  active={activeSlide === 0}
-                  isDark={isDark}
-                />
-              </View>
+              {/* Slide 1 — the sky video sits behind the whole top of the screen (OnboardingSkyVideo) */}
+              <View style={{ width: SCREEN_WIDTH, height: heroHeight }} />
               {/* Slide 2 */}
               <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
                 <ExpoImage
@@ -495,7 +523,7 @@ export default function OnboardingScreen() {
                   contentFit="contain"
                 />
               </View>
-            </ScrollView>
+            </Animated.ScrollView>
           )}
         </View>
 
@@ -1020,6 +1048,7 @@ const styles = StyleSheet.create({
   welcomeRoot: { flex: 1, backgroundColor: '#FFFFFF' },
   welcomeTopBar: { paddingHorizontal: 26, paddingBottom: 8 },
   welcomeLogoBar: { alignItems: 'center', paddingBottom: 8 },
+  welcomeLogoOverlay: { position: 'absolute', alignSelf: 'center' },
   welcomeWordmark: { fontSize: 11, fontWeight: '700', letterSpacing: 3.5, color: 'rgba(0,0,0,0.45)' },
   welcomeHero: { flex: 1 },
   welcomeBottom: {

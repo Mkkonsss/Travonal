@@ -382,7 +382,7 @@ function ConfirmationCard({
           accessibilityRole="button"
           accessibilityLabel="Confirm"
         >
-          <ThemedText style={[actionStyles.confirmBtnText, { color: '#fff' }]}>Confirm</ThemedText>
+          <ThemedText style={[actionStyles.confirmBtnText, { color: theme.primaryText }]}>Confirm</ThemedText>
         </Pressable>
       </View>
     </View>

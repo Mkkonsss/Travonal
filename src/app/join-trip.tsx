@@ -137,7 +137,7 @@ export default function JoinTripScreen() {
                 {foundTrip?.title ?? foundTrip?.destination} has been added to your trips.
               </ThemedText>
               <Pressable onPress={() => router.back()} style={[styles.primaryBtn, { backgroundColor: theme.primary }]}>
-                <ThemedText style={styles.primaryBtnText}>Go to trips</ThemedText>
+                <ThemedText style={[styles.primaryBtnText, { color: theme.primaryText }]}>Go to trips</ThemedText>
               </Pressable>
             </Animated.View>
           ) : searching ? (
@@ -230,7 +230,7 @@ export default function JoinTripScreen() {
               ) : (
                 <>
                   <Pressable onPress={handleJoin} style={[styles.primaryBtn, { backgroundColor: theme.primary }]}>
-                    <ThemedText style={styles.primaryBtnText}>Join trip</ThemedText>
+                    <ThemedText style={[styles.primaryBtnText, { color: theme.primaryText }]}>Join trip</ThemedText>
                   </Pressable>
                   <Pressable onPress={() => router.back()} style={styles.declineLink}>
                     <ThemedText style={[styles.declineLinkText, { color: theme.textSecondary }]}>No thanks</ThemedText>
@@ -264,7 +264,7 @@ export default function JoinTripScreen() {
               {foundTrip?.title ?? foundTrip?.destination} has been added to your trips.
             </ThemedText>
             <Pressable onPress={() => router.back()} style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 8 }]}>
-              <ThemedText style={styles.primaryBtnText}>Done</ThemedText>
+              <ThemedText style={[styles.primaryBtnText, { color: theme.primaryText }]}>Done</ThemedText>
             </Pressable>
           </Animated.View>
         ) : (
@@ -339,8 +339,8 @@ export default function JoinTripScreen() {
                   </ThemedText>
                 ) : (
                   <Pressable onPress={handleJoin} style={[styles.joinBtnSmall, { backgroundColor: theme.primary }]}>
-                    <SymbolView name="person.badge.plus" size={16} tintColor="#fff" />
-                    <ThemedText style={styles.primaryBtnText}>Add to my trips</ThemedText>
+                    <SymbolView name="person.badge.plus" size={16} tintColor={theme.primaryText} />
+                    <ThemedText style={[styles.primaryBtnText, { color: theme.primaryText }]}>Add to my trips</ThemedText>
                   </Pressable>
                 )}
               </Animated.View>

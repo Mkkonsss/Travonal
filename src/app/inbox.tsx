@@ -236,7 +236,7 @@ export default function BoardsScreen() {
                 disabled={!newName.trim()}
                 accessibilityRole="button"
               >
-                <ThemedText style={{ color: newName.trim() ? '#fff' : theme.textSecondary, fontSize: 15, fontWeight: '600' }}>Create</ThemedText>
+                <ThemedText style={{ color: newName.trim() ? theme.primaryText : theme.textSecondary, fontSize: 15, fontWeight: '600' }}>Create</ThemedText>
               </Pressable>
             </View>
           </View>

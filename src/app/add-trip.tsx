@@ -1191,7 +1191,7 @@ export default function AddTripScreen() {
                                   )}
                                 </View>
                                 <View style={[styles.hotelBookBtn, { backgroundColor: theme.primary }]}>
-                                  <ThemedText style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Book</ThemedText>
+                                  <ThemedText style={{ color: theme.primaryText, fontSize: 12, fontWeight: '600' }}>Book</ThemedText>
                                 </View>
                               </View>
                             </Pressable>

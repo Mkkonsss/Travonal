@@ -33,7 +33,6 @@ const FEATURES = [
   { icon: 'bubble.left.and.bubble.right', image: require('@/assets/images/plus-feature-chat.png'), imageScale: 1.1, title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
   { icon: 'square.and.arrow.down', image: require('@/assets/images/icon-boards-empty.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere. Tripseek finds the place' },
   { icon: 'icloud.and.arrow.down', image: require('@/assets/images/plus-feature-offline.png'), imageScale: 1, title: 'Offline trip access', desc: 'Download your trip and access it anywhere, no internet needed' },
-  { icon: 'doc.richtext', image: null, imageScale: 1, title: 'PDF export', desc: 'Save or print your whole itinerary as a PDF' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {
@@ -93,7 +92,6 @@ const COMPARISON = [
   { label: 'AI chat messages', free: '20 / month', plus: '100 / month' },
   { label: 'Board imports', free: '3 / month', plus: '15 / month' },
   { label: 'Offline trip access', free: '\u2014', plus: '\u2713' },
-  { label: 'PDF export', free: '\u2014', plus: '\u2713' },
   { label: 'Trip management', free: '\u2713', plus: '\u2713' },
   { label: 'Explore & map', free: '\u2713', plus: '\u2713' },
   { label: 'Boards & saves', free: '\u2713', plus: '\u2713' },

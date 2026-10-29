@@ -203,8 +203,8 @@ export default function TripMembersScreen() {
         {!trip.joinedAs && (
           <View style={styles.shareSection}>
             <Pressable onPress={handleShareInvite} style={[styles.shareBtn, { backgroundColor: theme.primary }]}>
-              <SymbolView name="square.and.arrow.up" size={16} tintColor="#fff" />
-              <ThemedText style={styles.shareBtnText}>Share invite link</ThemedText>
+              <SymbolView name="square.and.arrow.up" size={16} tintColor={theme.primaryText} />
+              <ThemedText style={[styles.shareBtnText, { color: theme.primaryText }]}>Share invite link</ThemedText>
             </Pressable>
             {pendingInvite && (
               <Pressable onPress={() => handleRevokeInvite(pendingInvite)} hitSlop={8}>

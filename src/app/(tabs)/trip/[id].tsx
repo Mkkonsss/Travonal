@@ -709,14 +709,13 @@ export default function TripWorkspace() {
   const tripChatFeedback = useAIFeedback('trip_chat');
   const editGate = useGate('edit_trip');
   const searchGate = useGate('natural_search');
-  const exportGate = useGate('export_pdf');
   const offlineGate = useGate('offline_trip');
   const { refresh: refreshSubscription } = useSubscription();
   const [isOffline, setIsOffline] = useState(false);
   const [offlineDownloading, setOfflineDownloading] = useState(false);
   const [offlineProgress, setOfflineProgress] = useState<{ done: number; total: number } | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place' | 'chat' | 'export_pdf' | 'offline_trip'>('edit_trip');
+  const [upgradeFeature, setUpgradeFeature] = useState<'edit_trip' | 'analyze_trip' | 'natural_search' | 'import_place' | 'chat' | 'offline_trip'>('edit_trip');
   const [showShareSheet, setShowShareSheet] = useState(false);
 
   const trip = trips.find((t) => t.id === id);
@@ -2824,11 +2823,6 @@ export default function TripWorkspace() {
 
   async function handleExportPDF() {
     setShowShareSheet(false);
-    if (!exportGate.allowed) {
-      setUpgradeFeature('export_pdf');
-      setShowUpgradePrompt(true);
-      return;
-    }
     try {
       showToast('Generating PDF…');
       await exportTripPDF(currentTrip);
@@ -6352,7 +6346,6 @@ export default function TripWorkspace() {
           upgradeFeature === 'edit_trip' ? 'AI trip editing' :
           upgradeFeature === 'analyze_trip' ? 'Trip analysis' :
           upgradeFeature === 'natural_search' ? 'AI search' :
-          upgradeFeature === 'export_pdf' ? 'Export your itinerary' :
           upgradeFeature === 'offline_trip' ? 'Offline trip access' :
           'More imports'
         }
@@ -6360,7 +6353,6 @@ export default function TripWorkspace() {
           upgradeFeature === 'edit_trip' ? 'Unlock unlimited AI-powered trip edits with Tripseek+.' :
           upgradeFeature === 'analyze_trip' ? 'Get deep AI analysis of your trips with Tripseek+.' :
           upgradeFeature === 'natural_search' ? 'Search and discover places with AI using Tripseek+.' :
-          upgradeFeature === 'export_pdf' ? 'Save or print your trip as a PDF with Tripseek+.' :
           upgradeFeature === 'offline_trip' ? 'Download your trip to access it without an internet connection.' :
           'Import places from links, text, and screenshots with Tripseek+.'
         }
@@ -6368,7 +6360,6 @@ export default function TripWorkspace() {
           upgradeFeature === 'edit_trip' ? 'wand.and.stars' :
           upgradeFeature === 'analyze_trip' ? 'chart.bar' :
           upgradeFeature === 'natural_search' ? 'magnifyingglass' :
-          upgradeFeature === 'export_pdf' ? 'doc.text' :
           upgradeFeature === 'offline_trip' ? 'icloud.and.arrow.down' :
           'link'
         }
@@ -6398,18 +6389,11 @@ export default function TripWorkspace() {
               onPress={handleExportPDF}
               style={({ pressed }) => [shareSheetStyles.option, pressed && { opacity: 0.7 }]}
             >
-              <View style={[shareSheetStyles.optionIcon, { backgroundColor: exportGate.allowed ? theme.primaryMuted : theme.backgroundElement }]}>
-                <SymbolView name="doc.text" size={18} tintColor={exportGate.allowed ? theme.primary : theme.textSecondary} />
+              <View style={[shareSheetStyles.optionIcon, { backgroundColor: theme.primaryMuted }]}>
+                <SymbolView name="doc.text" size={18} tintColor={theme.primary} />
               </View>
               <View style={shareSheetStyles.optionText}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ThemedText style={shareSheetStyles.optionLabel}>Export as PDF</ThemedText>
-                  {!exportGate.allowed && (
-                    <View style={[shareSheetStyles.plusBadge, { backgroundColor: theme.primary }]}>
-                      <ThemedText style={shareSheetStyles.plusBadgeText}>Plus</ThemedText>
-                    </View>
-                  )}
-                </View>
+                <ThemedText style={shareSheetStyles.optionLabel}>Export as PDF</ThemedText>
                 <ThemedText style={[shareSheetStyles.optionDesc, { color: theme.textSecondary }]}>Save or print a formatted itinerary PDF</ThemedText>
               </View>
             </Pressable>
@@ -6434,8 +6418,6 @@ const shareSheetStyles = StyleSheet.create({
   optionLabel: { fontSize: 16, fontWeight: '600' },
   optionDesc: { fontSize: 13 },
   separator: { height: StyleSheet.hairlineWidth, marginHorizontal: 4 },
-  plusBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
-  plusBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   cancel: { marginTop: 12, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginBottom: 4 },
 });
 

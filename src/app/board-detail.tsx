@@ -1515,7 +1515,7 @@ export default function BoardDetailScreen() {
                 style={({ pressed }) => [styles.fab, { backgroundColor: theme.primary, opacity: pressed ? 0.9 : 1 }]}
                 accessibilityRole="button"
               >
-                <ThemedText style={styles.fabText}>
+                <ThemedText style={[styles.fabText, { color: theme.primaryText }]}>
                   Add {selectedItems.size} {selectedItems.size === 1 ? 'place' : 'places'}
                 </ThemedText>
               </Pressable>
@@ -1607,7 +1607,7 @@ export default function BoardDetailScreen() {
                 <ThemedText style={{ color: theme.textSecondary, fontWeight: '600' }}>Cancel</ThemedText>
               </Pressable>
               <Pressable onPress={handleSaveEdit} style={[styles.renameConfirmBtn, { backgroundColor: theme.primary }]} accessibilityRole="button">
-                <ThemedText style={{ color: '#fff', fontWeight: '600' }}>Save</ThemedText>
+                <ThemedText style={{ color: theme.primaryText, fontWeight: '600' }}>Save</ThemedText>
               </Pressable>
             </View>
           </Pressable>
@@ -1651,7 +1651,7 @@ export default function BoardDetailScreen() {
                     <ThemedText style={{ color: theme.textSecondary, fontWeight: '600' }}>Cancel</ThemedText>
                   </Pressable>
                   <Pressable onPress={handleRename} style={[styles.renameConfirmBtn, { backgroundColor: theme.primary }]} accessibilityRole="button">
-                    <ThemedText style={{ color: '#fff', fontWeight: '600' }}>Save</ThemedText>
+                    <ThemedText style={{ color: theme.primaryText, fontWeight: '600' }}>Save</ThemedText>
                   </Pressable>
                 </View>
               </View>

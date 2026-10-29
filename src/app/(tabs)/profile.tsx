@@ -103,15 +103,17 @@ function SettingToggle({
   value,
   onToggle,
   theme,
+  last,
 }: {
   label: string;
   sublabel: string;
   value: boolean;
   onToggle: (v: boolean) => void;
   theme: any;
+  last?: boolean;
 }) {
   return (
-    <View style={[styles.navRow, { borderBottomColor: theme.border }]}>
+    <View style={[styles.navRow, { borderBottomColor: theme.border }, last && { borderBottomWidth: 0 }]}>
       <View style={{ flex: 1 }}>
         <ThemedText style={styles.navLabel}>{label}</ThemedText>
         <ThemedText style={[styles.navSublabel, { color: theme.textSecondary }]}>{sublabel}</ThemedText>
@@ -276,6 +278,7 @@ export default function ProfileScreen() {
   // Expanded sub-sections
   const [showAccount, setShowAccount] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
 
   useEffect(() => {
     verifyEntitlement().then(setIsSubscribed).catch(() => {});
@@ -528,8 +531,34 @@ export default function ProfileScreen() {
             label="Trip memory"
             onPress={() => setShowMemorySheet(true)}
             theme={theme}
-            last
           />
+
+          {/* Tripseek AI — explicit consent for sharing data with our AI provider (Guideline 5.1.2(i)) */}
+          <Pressable
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAISettings(!showAISettings); }}
+            style={[styles.navRow, { borderBottomColor: theme.border }, !showAISettings && { borderBottomWidth: 0 }]}
+            accessibilityRole="button"
+          >
+            <View style={{ flex: 1 }}>
+              <ThemedText style={[styles.navLabel, { color: theme.textSecondary }]}>Tripseek AI</ThemedText>
+            </View>
+            <ThemedText style={[styles.navChevron, { color: theme.textSecondary }]}>{showAISettings ? '\u2212' : '\u203A'}</ThemedText>
+          </Pressable>
+
+          {showAISettings && (
+            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+              <View style={styles.subSection}>
+                <SettingToggle
+                  label="Tripseek AI"
+                  sublabel={aiConsent === 'granted' ? 'On \u00B7 Plans trips and answers chats' : 'Off \u00B7 AI features are paused'}
+                  value={aiConsent === 'granted'}
+                  onToggle={(val) => { if (val) requestAIConsent(); else turnOffAI(); }}
+                  theme={theme}
+                  last
+                />
+              </View>
+            </Animated.View>
+          )}
         </View>
 
         {/* Trip Memory bottom sheet */}
@@ -638,15 +667,6 @@ export default function ProfileScreen() {
             </Animated.View>
           )}
 
-
-          {/* Tripseek AI — explicit consent for sharing data with our AI provider (Guideline 5.1.2(i)) */}
-          <SettingToggle
-            label="Tripseek AI"
-            sublabel={aiConsent === 'granted' ? 'On \u00B7 Uses AI from Anthropic to plan trips and answer chats' : 'Off \u00B7 AI features are paused'}
-            value={aiConsent === 'granted'}
-            onToggle={(val) => { if (val) requestAIConsent(); else turnOffAI(); }}
-            theme={theme}
-          />
 
           {/* Account */}
           <Pressable

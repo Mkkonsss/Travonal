@@ -47,7 +47,7 @@ function renderInline(line: string, isUser: boolean, theme: ReturnType<typeof us
       parts.push(
         <Text
           key={`${keyPrefix}-u${i}`}
-          style={[mdStyles.link, isUser && { color: 'rgba(255,255,255,0.85)' }]}
+          style={[mdStyles.link, isUser && { color: theme.primaryText }]}
           onPress={() => (affiliateUrl !== url ? openBookingLink(affiliateUrl) : Linking.openURL(url))}
         >
           {url}
@@ -81,10 +81,10 @@ export function ChatMarkdown({ text, isUser = false }: ChatMarkdownProps) {
     if (bulletMatch && !line.trimStart().startsWith('**')) {
       elements.push(
         <View key={key++} style={mdStyles.listItem}>
-          <Text style={[mdStyles.bullet, isUser && { color: 'rgba(255,255,255,0.7)' }, !isUser && { color: theme.textSecondary }]}>
+          <Text style={[mdStyles.bullet, isUser && { color: theme.primaryText, opacity: 0.7 }, !isUser && { color: theme.textSecondary }]}>
             {'\u2022'}
           </Text>
-          <Text style={[mdStyles.listText, isUser ? { color: '#fff' } : { color: theme.text }]}>
+          <Text style={[mdStyles.listText, { color: isUser ? theme.primaryText : theme.text }]}>
             {renderInline(bulletMatch[1], isUser, theme, `l${li}`)}
           </Text>
         </View>
@@ -97,10 +97,10 @@ export function ChatMarkdown({ text, isUser = false }: ChatMarkdownProps) {
     if (numMatch) {
       elements.push(
         <View key={key++} style={mdStyles.listItem}>
-          <Text style={[mdStyles.numBullet, isUser && { color: 'rgba(255,255,255,0.7)' }, !isUser && { color: theme.textSecondary }]}>
+          <Text style={[mdStyles.numBullet, isUser && { color: theme.primaryText, opacity: 0.7 }, !isUser && { color: theme.textSecondary }]}>
             {numMatch[1]}.
           </Text>
-          <Text style={[mdStyles.listText, isUser ? { color: '#fff' } : { color: theme.text }]}>
+          <Text style={[mdStyles.listText, { color: isUser ? theme.primaryText : theme.text }]}>
             {renderInline(numMatch[2], isUser, theme, `l${li}`)}
           </Text>
         </View>
@@ -118,7 +118,7 @@ export function ChatMarkdown({ text, isUser = false }: ChatMarkdownProps) {
     const headerMatch = line.match(/^\s*\*\*(.+?)\*\*\s*$/);
     if (headerMatch) {
       elements.push(
-        <Text key={key++} style={[mdStyles.sectionHeader, isUser ? { color: '#fff' } : { color: theme.text }]}>
+        <Text key={key++} style={[mdStyles.sectionHeader, { color: isUser ? theme.primaryText : theme.text }]}>
           {headerMatch[1]}
         </Text>
       );
@@ -127,7 +127,7 @@ export function ChatMarkdown({ text, isUser = false }: ChatMarkdownProps) {
 
     // Regular text
     elements.push(
-      <Text key={key++} style={[mdStyles.text, isUser ? { color: '#fff' } : { color: theme.text }]}>
+      <Text key={key++} style={[mdStyles.text, { color: isUser ? theme.primaryText : theme.text }]}>
         {renderInline(line, isUser, theme, `l${li}`)}
       </Text>
     );
