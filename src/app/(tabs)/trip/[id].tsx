@@ -36,7 +36,7 @@ import { useDestinationPhoto } from '@/hooks/use-destination-photo';
 import { checkConflicts, getTripDayCount, computeChangePreview, ChangePreview, timeToMinutes, suggestTimeForActivity, reflowFromTime, compareByTime } from '@/services/itinerary-engine';
 import { getDrivingDistance, formatDrivingDistance } from '@/services/driving-distance';
 import { transformTrip, TransformScope, validateLockedProtection, findSemanticDuplicates, detectNoChange } from '@/services/transformation-service';
-import { getPrimaryBookingLink, getTripReadiness, openBookingLink, type StayDates } from '@/services/booking-links';
+import { getPrimaryBookingLink, openBookingLink, type StayDates } from '@/services/booking-links';
 import type { Stay22Campaign } from '@/services/stay22';
 import { fetchExplorePlaces, searchExplorePlaces } from '@/services/explore-service';
 import { getPlacePhoto, prefetchPhotos } from '@/services/free-photos';
@@ -3008,8 +3008,6 @@ export default function TripWorkspace() {
         {viewMode !== 'ai' && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexShrink: 0 }}>
           <View style={[styles.toggleRow, { borderBottomColor: theme.border }]}>
             {(['itinerary', 'alerts', 'reservations', 'map', 'budget', 'prep'] as const).map((mode, modeIdx) => {
-              const readiness = mode === 'reservations' ? getTripReadiness(currentTrip.activities) : null;
-              const showBadge = readiness && readiness.total > 0;
               const alertBadge = mode === 'alerts' && newIssueCount > 0;
               const tabLabel = mode === 'itinerary' ? 'Itinerary' : mode === 'prep' ? 'Prep' : mode === 'budget' ? 'Budget' : mode === 'reservations' ? 'Bookings' : mode === 'alerts' ? 'Alerts' : 'Map';
               return (
@@ -3019,13 +3017,6 @@ export default function TripWorkspace() {
                       <ThemedText style={[styles.toggleText, { color: viewMode === mode ? theme.primary : theme.textSecondary }]}>
                         {tabLabel}
                       </ThemedText>
-                      {showBadge && (
-                        <View style={[styles.toggleBadge, { backgroundColor: readiness.percentage === 100 ? '#10B981' : theme.primary + '20' }]}>
-                          <ThemedText style={[styles.toggleBadgeText, { color: readiness.percentage === 100 ? '#fff' : theme.primary }]}>
-                            {readiness.booked}/{readiness.total}
-                          </ThemedText>
-                        </View>
-                      )}
                       {alertBadge && (
                         <View style={[styles.toggleBadge, { backgroundColor: theme.primary + '20' }]}>
                           <ThemedText style={[styles.toggleBadgeText, { color: theme.primary }]}>
