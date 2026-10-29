@@ -18,21 +18,21 @@
  * correct behavior (not faked).
  */
 
-import {
-  initConnection,
-  endConnection,
-  fetchProducts,
-  requestPurchase,
-  getAvailablePurchases,
-  finishTransaction,
-  purchaseUpdatedListener,
-  purchaseErrorListener,
-  deepLinkToSubscriptions,
-  type ProductSubscription,
-  type Purchase,
-  type ExpoPurchaseError,
-} from 'expo-iap';
+import { isRunningInExpoGo } from 'expo';
+import { Linking } from 'react-native';
+import type { ProductSubscription, Purchase, ExpoPurchaseError } from 'expo-iap';
 import { supabase } from './supabase';
+
+// expo-iap's native code isn't included in Expo Go, so importing it there crashes on launch.
+// Load it only in real builds; in Expo Go, purchases are unavailable and the paywall shows its
+// "couldn't load" state.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const IAP: typeof import('expo-iap') | null = isRunningInExpoGo() ? null : require('expo-iap');
+
+function iap(): typeof import('expo-iap') {
+  if (!IAP) throw new Error('In-app purchases are not available in Expo Go.');
+  return IAP;
+}
 
 export const PRODUCT_IDS = {
   monthly: 'com.tripseek.app.plus.monthly',
@@ -78,14 +78,14 @@ let _connectionOpen = false;
 /** Initialise the StoreKit / Play Billing connection. Call once at app start. */
 export async function openIAPConnection(): Promise<void> {
   if (_connectionOpen) return;
-  await initConnection();
+  await iap().initConnection();
   _connectionOpen = true;
 }
 
 /** Close the billing connection. Call on app background/unmount if needed. */
 export async function closeIAPConnection(): Promise<void> {
   if (!_connectionOpen) return;
-  await endConnection();
+  await iap().endConnection();
   _connectionOpen = false;
 }
 
@@ -97,7 +97,7 @@ export async function loadSubscriptionProducts(): Promise<SubscriptionProduct[]>
   await openIAPConnection();
 
   const skus = Object.values(PRODUCT_IDS);
-  const results = await fetchProducts({ skus, type: 'subs' });
+  const results = await iap().fetchProducts({ skus, type: 'subs' });
 
   const products: SubscriptionProduct[] = [];
   for (const raw of results as ProductSubscription[]) {
@@ -128,7 +128,7 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
     // Tag the purchase with the buyer's account so the server can tell whose subscription it is
     const { data: { session } } = await supabase.auth.getSession();
     // requestPurchase is event-driven — listen via purchaseUpdatedListener for result.
-    await requestPurchase({
+    await iap().requestPurchase({
       request: {
         apple: { sku, appAccountToken: session?.user?.id },
         google: { skus: [sku] },
@@ -150,14 +150,14 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
 export async function restorePurchases(): Promise<{ isSubscribed: boolean; error?: string }> {
   try {
     await openIAPConnection();
-    const purchases = await getAvailablePurchases();
+    const purchases = await iap().getAvailablePurchases();
     const plusIds = new Set<string>(Object.values(PRODUCT_IDS));
     const plusPurchases = purchases.filter((p: Purchase) => plusIds.has(p.productId));
     const isSubscribed = plusPurchases.length > 0;
 
     // Finish all plus transactions
     for (const p of plusPurchases) {
-      await finishTransaction({ purchase: p, isConsumable: false });
+      await iap().finishTransaction({ purchase: p, isConsumable: false });
     }
 
     // Only validate the highest-tier purchase on the server (annual > monthly).
@@ -183,7 +183,7 @@ export async function restorePurchases(): Promise<{ isSubscribed: boolean; error
 export async function verifyEntitlement(): Promise<boolean> {
   try {
     await openIAPConnection();
-    const purchases = await getAvailablePurchases();
+    const purchases = await iap().getAvailablePurchases();
     const plusIds = new Set<string>(Object.values(PRODUCT_IDS));
     return purchases.some((p: Purchase) => plusIds.has(p.productId));
   } catch {
@@ -201,10 +201,10 @@ export function listenForPurchaseUpdates(
   onPurchase: (purchase: Purchase) => void,
   onError: (error: ExpoPurchaseError) => void,
 ): () => void {
-  const updateSub = purchaseUpdatedListener((purchase: Purchase) => {
+  const updateSub = iap().purchaseUpdatedListener((purchase: Purchase) => {
     onPurchase(purchase);
   });
-  const errorSub = purchaseErrorListener((error: ExpoPurchaseError) => {
+  const errorSub = iap().purchaseErrorListener((error: ExpoPurchaseError) => {
     onError(error);
   });
   return () => {
@@ -218,7 +218,7 @@ export function listenForPurchaseUpdates(
  * Must be called for every purchase received via listenForPurchaseUpdates.
  */
 export async function acknowledgePurchase(purchase: Purchase): Promise<void> {
-  await finishTransaction({ purchase, isConsumable: false });
+  await iap().finishTransaction({ purchase, isConsumable: false });
 }
 
 /**
@@ -261,7 +261,7 @@ export async function validatePurchaseOnServer(
 export async function syncActiveSubscription(): Promise<boolean> {
   try {
     await openIAPConnection();
-    const purchases = await getAvailablePurchases();
+    const purchases = await iap().getAvailablePurchases();
     const plusIds = new Set<string>(Object.values(PRODUCT_IDS));
     const plusPurchases = purchases.filter((p: Purchase) => plusIds.has(p.productId));
     if (plusPurchases.length === 0) return false;
@@ -276,5 +276,9 @@ export async function syncActiveSubscription(): Promise<boolean> {
  * Open the platform subscription management page.
  */
 export async function openSubscriptionManagement(): Promise<void> {
-  await deepLinkToSubscriptions({});
+  if (!IAP) {
+    await Linking.openURL('https://apps.apple.com/account/subscriptions');
+    return;
+  }
+  await IAP.deepLinkToSubscriptions({});
 }
