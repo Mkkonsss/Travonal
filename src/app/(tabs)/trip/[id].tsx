@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, InteractionManager, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, InteractionManager, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
@@ -21,6 +21,9 @@ import { PulseAlertList } from '@/components/pulse-alert-list';
 import { TimePickerButton, formatTimeDisplay, defaultTimeForType, HOURS_12, MINUTES_5, parseTime, formatTime } from '@/components/time-picker';
 import { TransformationReveal, SmartReplacePicker } from '@/components/transformation-reveal';
 import { ThemedText } from '@/components/themed-text';
+import { WeatherAttribution } from '@/components/weather-attribution';
+import { getAIConsent, requestAIConsent } from '@/services/ai-consent';
+import { useAIFeedback } from '@/hooks/use-ai-feedback';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Shadow, Spacing } from '@/constants/theme';
 import { Activity, PrepItem, Reservation, ReservationType, Trip, useTrips, setLastViewedTripId } from '@/context/trips';
@@ -32,12 +35,12 @@ import { useActivityPhotos } from '@/hooks/use-activity-photos';
 import { useDestinationPhoto } from '@/hooks/use-destination-photo';
 import { checkConflicts, getTripDayCount, computeChangePreview, ChangePreview, timeToMinutes, suggestTimeForActivity, reflowFromTime, compareByTime } from '@/services/itinerary-engine';
 import { getDrivingDistance, formatDrivingDistance } from '@/services/driving-distance';
-import { transformTrip, findTopReplacements, TransformScope, validateLockedProtection, findSemanticDuplicates, detectNoChange } from '@/services/transformation-service';
-import { getBookingLinks, getPrimaryBookingLink, getTripReadiness, openBookingLink, platformDisplayName, getPlaceBookingLinks } from '@/services/booking-links';
+import { transformTrip, TransformScope, validateLockedProtection, findSemanticDuplicates, detectNoChange } from '@/services/transformation-service';
+import { getPrimaryBookingLink, getTripReadiness, openBookingLink, type StayDates } from '@/services/booking-links';
+import type { Stay22Campaign } from '@/services/stay22';
 import { fetchExplorePlaces, searchExplorePlaces } from '@/services/explore-service';
 import { getPlacePhoto, prefetchPhotos } from '@/services/free-photos';
 import { categoryToActivityType, type NormalizedPlace } from '@/services/place-model';
-import { hasDestinationData } from '@/services/alternatives-pool';
 import { editTripAI, naturalSearchAI, NaturalSearchSuggestion, chatAI, TripAction, type ChatPlace, ParsedBooking, getParsedBookingsAI, dismissParsedBookingAI, markBookingImportedAI, getTripAlertsAI, TripAlertResult } from '@/services/ai';
 import { AddBookingModal } from '@/components/add-booking-modal';
 import { FlightsStrip } from '@/components/flights-strip';
@@ -52,7 +55,7 @@ import { UpgradePrompt } from '@/components/upgrade-prompt';
 import { useSubscription } from '@/context/subscription';
 import { normalizeActivity, mergeDayScopedActivities, generateActivityId, validateGeneratedActivities, repairActivities } from '@/services/ai-utils';
 import { runTripPulse, PulseAlert } from '@/services/trip-pulse';
-import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
+import { loadDismissedPulse, saveDismissedPulse, loadSeenPulse, saveSeenPulse, loadBookingRemindersEnabled, loadDepartureReminderEnabled, loadDailyBriefingEnabled, loadTripEditChat, saveTripEditChat, loadTripEditThreads, saveTripEditThreads, loadTripExternalAlerts, saveTripExternalAlerts } from '@/services/storage';
 import { mergeUserSettings, pullUserSettings, mergeTripChat, pullTripChats, registerInviteCode, pushTrips } from '@/services/sync';
 import { supabase } from '@/services/supabase';
 import { makePulseDismissalKey, isPulseDismissed, formatDayLabel, computeDateForDay } from '@/services/trip-helpers';
@@ -62,7 +65,7 @@ import { StaysStrip } from '@/components/stays-strip';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useToast } from '@/context/toast';
 import { TripMap } from '@/components/trip-map';
-import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings, requestNotificationPermission } from '@/services/notifications';
+import { scheduleBookingReminders, cancelBookingReminders, scheduleDepartureReminder, scheduleDailyBriefings, askNotificationPermissionOnce } from '@/services/notifications';
 import { exportTripPDF } from '@/services/trip-export';
 
 const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', EUR: '\u20AC', GBP: '\u00A3', JPY: '\u00A5', AUD: 'A$', CAD: 'C$', CHF: 'CHF', CNY: '\u00A5', KRW: '\u20A9', THB: '\u0E3F', INR: '\u20B9', MXN: 'MX$', BRL: 'R$' };
@@ -703,6 +706,7 @@ export default function TripWorkspace() {
 
   // Subscription gates
   const chatGate = useGate('chat');
+  const tripChatFeedback = useAIFeedback('trip_chat');
   const editGate = useGate('edit_trip');
   const searchGate = useGate('natural_search');
   const exportGate = useGate('export_pdf');
@@ -1164,6 +1168,8 @@ export default function TripWorkspace() {
 
   async function fetchTripAlerts() {
     if (!currentTrip.destination) return;
+    // Background AI — skipped quietly until the user turns Tripseek AI on (Guideline 5.1.2(i))
+    if (getAIConsent() !== 'granted') return;
     setAlertsLoading(true);
     try {
       const result = await getTripAlertsAI({
@@ -1198,6 +1204,8 @@ export default function TripWorkspace() {
 
   function handleAlertsOpen() {
     if (!alertsEnabled) return;
+    // First natural moment to ask for notifications (the other is finishing a trip)
+    askNotificationPermissionOnce();
     // Mark pulse alerts as seen
     const newSeen = new Set(seenPulse);
     for (const a of activePulseAlerts) newSeen.add(makeSeenKey(a.id));
@@ -1241,58 +1249,30 @@ export default function TripWorkspace() {
     showToast(msg, 'success');
   }
 
-  // Booking handler — opens affiliate/deep link in the in-app browser
-  async function handleBookActivity(activity: Activity) {
+  // Booking handler — opens affiliate/deep link in the in-app browser. Never marks anything booked:
+  // bookings are confirmed only by a forwarded confirmation email or manually added details.
+  async function handleBookActivity(activity: Activity, campaign: Stay22Campaign = 'trip_timeline') {
+    // Hotels book the exact nights shown on their stay card
+    const block = activity.type === 'hotel' ? staysData.blocks.find((b) => b.hotel.id === activity.id) : undefined;
+    const stayDates: StayDates | undefined = block && currentTrip.datesKnown !== false
+      ? {
+          checkIn: block.reservation?.date ?? computeDateForDay(currentTrip.startDate, block.checkInDay),
+          checkOut: block.reservation?.checkOutDate ?? computeDateForDay(currentTrip.startDate, block.checkOutDay),
+        }
+      : undefined;
     const link = getPrimaryBookingLink(
       activity,
       currentTrip.startDate,
       currentTrip.endDate,
       currentTrip.destination,
       currentTrip.travelers,
+      { country: currentTrip.country, datesKnown: currentTrip.datesKnown, stayDates, campaign },
     );
     const url = link
       ? link.url
       : `https://www.google.com/search?q=${encodeURIComponent(`${activity.title} ${currentTrip.destination} book`)}`;
 
-    // In-app browser resolves when user dismisses — no setTimeout needed
     await openBookingLink(url);
-
-    Alert.alert(
-      'Booking status',
-      `Did you complete the booking for "${activity.title}"?`,
-      [
-        {
-          text: 'Yes, booked!',
-          onPress: () => {
-            updateActivity(currentTrip.id, activity.id, { bookingStatus: 'booked' });
-            // Auto-create a linked reservation
-            const resType: import('@/context/trips').ReservationType =
-              activity.type === 'food' ? 'restaurant'
-              : activity.type === 'hotel' ? 'hotel'
-              : activity.type === 'flight' ? 'flight'
-              : 'activity';
-            addReservation(currentTrip.id, {
-              type: resType,
-              title: activity.title,
-              day: activity.day,
-              time: activity.time,
-              address: activity.address,
-              bookingUrl: url,
-            });
-            showToast(`"${activity.title}" marked as booked`, 'success');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
-        },
-        {
-          text: 'Pending',
-          onPress: () => {
-            updateActivity(currentTrip.id, activity.id, { bookingStatus: 'pending' });
-            showToast(`"${activity.title}" marked as pending`);
-          },
-        },
-        { text: 'Not yet', style: 'cancel' },
-      ],
-    );
   }
 
   function getBookLabel(activity: Activity): string {
@@ -1579,6 +1559,8 @@ export default function TripWorkspace() {
       setShowUpgradePrompt(true);
       return;
     }
+    // Ask before trip details go to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
     setAiEditLoading(true);
     const instruction =
       `Replace "${target.title}" (Day ${target.day} at ${target.time}) with a better ` +
@@ -1624,30 +1606,11 @@ export default function TripWorkspace() {
         changes: [`"${target.title}" replaced with AI suggestion`],
       });
     } catch {
-      // Fallback: local alternatives picker — only use when destination has real curated data
-      const hasCurated = hasDestinationData(currentTrip.destination);
-      const existingTitles = currentTrip.activities.filter((a) => a.day === target.day).map((a) => a.title);
-      const alternatives = hasCurated ? findTopReplacements(currentTrip.destination, target, {
-        interests: profile.interests,
-        dislikes: profile.dislikes,
-        budget: currentTrip.budget ?? profile.budget ?? '$$',
-        existingTitles,
-      }) : [];
-      if (alternatives.length === 0) {
-        setTransformResult({
-          summary: 'No alternatives found',
-          changes: ['AI is temporarily unavailable. Use Manual Replace to enter a custom alternative.'],
-        });
-      } else {
-        setReplaceTarget(target);
-        setReplaceAlternatives(alternatives.map((alt) => ({
-          title: alt.title,
-          description: alt.description ?? '',
-          cost: alt.cost,
-          crowdLevel: alt.crowdLevel ?? 'medium',
-          whyFits: alt.tags.filter((t) => profile.interests.includes(t)).join(', ') || alt.tags[0] || 'Good fit',
-        })));
-      }
+      // No offline fallback list — real alternatives only come from AI (Guideline 2.1(a))
+      setTransformResult({
+        summary: 'No alternatives found',
+        changes: ['AI is temporarily unavailable. Try again, or use Manual Replace to enter your own alternative.'],
+      });
     } finally {
       setAiEditLoading(false);
     }
@@ -1792,7 +1755,7 @@ export default function TripWorkspace() {
     );
   }
 
-  function handleCommand(command: ToveliCommand, dayOverride?: number, scopeOverride?: TransformScope, searchTerms?: string, startAfter?: string) {
+  async function handleCommand(command: ToveliCommand, dayOverride?: number, scopeOverride?: TransformScope, searchTerms?: string, startAfter?: string) {
     if (command === 'add_activity') {
       const targetDay = dayOverride ?? selectedDay ?? filterDay ?? 1;
       setAiAddDay(targetDay);
@@ -1833,6 +1796,9 @@ export default function TripWorkspace() {
         fix_my_day: 'Fix scheduling issues: resolve overlapping times, add missing meals, remove excess activities, and re-space everything',
       };
       const instruction = instructionMap[command] ?? command;
+
+      // Ask before trip details go to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+      if (!(await requestAIConsent())) return;
 
       setAiEditLoading(true);
       editTripAI({ trip: currentTrip, instruction, day: dayScope, profile })
@@ -1923,6 +1889,8 @@ export default function TripWorkspace() {
       setShowUpgradePrompt(true);
       return;
     }
+    // Ask before trip details go to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
     setAiAddLoading(true);
     try {
       const result = await naturalSearchAI({
@@ -2034,6 +2002,8 @@ export default function TripWorkspace() {
       setShowUpgradePrompt(true);
       return;
     }
+    // Ask before trip details go to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
     setAiEditLoading(true);
     try {
       const day = selectedDay ?? filterDay ?? undefined;
@@ -2455,6 +2425,9 @@ export default function TripWorkspace() {
       setShowUpgradePrompt(true);
       return;
     }
+
+    // Ask before trip details go to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
 
     const userMsg: EditChatMessage = {
       id: Date.now().toString(),
@@ -3310,9 +3283,7 @@ export default function TripWorkspace() {
                                   {dayWeather.precipitationProbability > 0 ? ` · ${dayWeather.precipitationProbability}% rain` : ''}
                                 </ThemedText>
                               </View>
-                              <ThemedText style={{ fontSize: 9, color: theme.textSecondary, marginLeft: 22, marginTop: -2 }}>
-                                 Weather
-                              </ThemedText>
+                              <WeatherAttribution style={{ marginLeft: 22, marginTop: -2 }} />
                             </>
                           )}
 
@@ -3829,19 +3800,24 @@ export default function TripWorkspace() {
                         <ThemedText style={[styles.editChatAvatarLabel, { color: theme.background }]}>TS</ThemedText>
                       </View>
                     )}
-                    <View style={[
-                      styles.editChatBubble,
-                      msg.role === 'user'
-                        ? [styles.editChatBubbleUser, { backgroundColor: theme.primary }]
-                        : [styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
-                      isCompactMsg && styles.editChatBubbleCompact,
-                    ]}>
+                    <Pressable
+                      onLongPress={msg.role === 'assistant' ? () => tripChatFeedback.openMenu(msg.id, msg.text) : undefined}
+                      delayLongPress={350}
+                      accessibilityHint={msg.role === 'assistant' ? 'Press and hold to copy or report this reply' : undefined}
+                      style={[
+                        styles.editChatBubble,
+                        msg.role === 'user'
+                          ? [styles.editChatBubbleUser, { backgroundColor: theme.primary }]
+                          : [styles.editChatBubbleAssistant, { backgroundColor: theme.backgroundElement, borderColor: theme.border }],
+                        isCompactMsg && styles.editChatBubbleCompact,
+                      ]}
+                    >
                       {msg.role === 'user' ? (
                         <ThemedText style={[styles.editChatBubbleText, { color: '#fff' }]}>{msg.text}</ThemedText>
                       ) : (
                         <ChatMarkdown text={msg.text} />
                       )}
-                    </View>
+                    </Pressable>
                     {msg.role === 'user' && (
                       <View style={[styles.editChatAvatar, { backgroundColor: theme.primaryMuted }]}>
                         <ThemedText style={[styles.editChatAvatarLabel, { color: theme.primary }]}>
@@ -3854,6 +3830,18 @@ export default function TripWorkspace() {
                     <ThemedText style={[styles.editChatTime, { color: theme.textSecondary }, msg.role === 'user' && styles.editChatTimeUser]}>
                       {new Date(msg.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                     </ThemedText>
+                  )}
+
+                  {/* 👍 / 👎 on AI replies — 👎 opens "What went wrong?" (Guideline 1.2) */}
+                  {msg.role === 'assistant' && (
+                    <View style={styles.editChatFeedbackRow}>
+                      <Pressable onPress={() => tripChatFeedback.thumbsUp(msg.id, msg.text)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Good reply">
+                        <SymbolView name={tripChatFeedback.ratings[msg.id] === 'up' ? 'hand.thumbsup.fill' : 'hand.thumbsup'} size={13} tintColor={theme.textSecondary} />
+                      </Pressable>
+                      <Pressable onPress={() => tripChatFeedback.report(msg.id, msg.text)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Report reply">
+                        <SymbolView name={tripChatFeedback.ratings[msg.id] === 'down' ? 'hand.thumbsdown.fill' : 'hand.thumbsdown'} size={13} tintColor={theme.textSecondary} />
+                      </Pressable>
+                    </View>
                   )}
 
                   {/* Place cards */}
@@ -4743,6 +4731,7 @@ export default function TripWorkspace() {
             onReservationPress={(res, photoUrl) =>
               setBookingSheetData({ res, trip: currentTrip, photoUrl })
             }
+            onBookActivity={(activity) => handleBookActivity(activity, 'bookings_tab')}
           />
         ) : viewMode === 'alerts' ? (
           <View style={styles.itinerary}>
@@ -4757,20 +4746,8 @@ export default function TripWorkspace() {
                     if (alertsFetchedForRef.current !== currentTrip.id) {
                       fetchTripAlerts();
                     }
-                    const alreadyShown = await loadPushPromptShown();
-                    if (!alreadyShown) {
-                      savePushPromptShown();
-                      Alert.alert(
-                        'Get Phone Notifications?',
-                        'Want Trip Alerts delivered to your lock screen? You can enable Push Notifications in Profile settings.',
-                        [
-                          { text: 'Not Now', style: 'cancel' },
-                          { text: 'Enable', onPress: () => {
-                            requestNotificationPermission();
-                          }},
-                        ],
-                      );
-                    }
+                    // Straight to the iOS prompt (no custom pre-prompt) — Guideline 5.1.1(iv)
+                    askNotificationPermissionOnce();
                   }
                 }}
                 trackColor={{ false: theme.border, true: theme.primary }}
@@ -5357,14 +5334,7 @@ export default function TripWorkspace() {
               <Pressable
                 onPress={async () => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                  if (status !== 'granted') {
-                    Alert.alert('Photo Access Required', 'Allow Toveli to access your photos to set a trip cover image.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Open Settings', onPress: () => Linking.openSettings() },
-                    ]);
-                    return;
-                  }
+                  // The system photo picker runs outside the app and needs no photo-library permission.
                   const result = await ImagePicker.launchImageLibraryAsync({
                     mediaTypes: ['images'],
                     quality: 0.8,
@@ -6307,6 +6277,10 @@ export default function TripWorkspace() {
       <UnbookedStaySheet
         data={unbookedStayData}
         onClose={() => setUnbookedStayData(null)}
+        onBook={(activity) => handleBookActivity(activity, 'stay_sheet')}
+        bookLabel={unbookedStayData
+          ? getPrimaryBookingLink(unbookedStayData.activity, currentTrip.startDate, currentTrip.endDate, currentTrip.destination)?.label
+          : undefined}
         onRemove={(activity) => {
           Alert.alert('Remove stay?', `Remove "${activity.title}" from this trip?`, [
             { text: 'Cancel', style: 'cancel' },
@@ -7693,6 +7667,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     alignSelf: 'flex-start' as const,
     marginLeft: 4,
+  },
+  editChatFeedbackRow: {
+    flexDirection: 'row',
+    gap: 18,
+    marginTop: 6,
+    marginLeft: 40,
   },
   editChatTimeUser: {
     alignSelf: 'flex-end' as const,

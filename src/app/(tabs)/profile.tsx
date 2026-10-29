@@ -11,7 +11,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing, Radius } from '@/constants/theme';
 import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
-import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, SUPPORT_EMAIL } from '@/constants/legal';
+import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, SUPPORT_EMAIL, APP_STORE_REVIEW_URL, isAppleRelayEmail } from '@/constants/legal';
+import { useAIConsent } from '@/context/ai-consent';
 import { useProfile } from '@/context/profile';
 import { useTrips } from '@/context/trips';
 import { useMemory, type TravelMemoryEntry } from '@/context/memory';
@@ -26,10 +27,10 @@ import { clearOnboardingComplete, resetAllData, clearLastUserId, loadChatMessage
 import { mergeUserSettings, pullUserSettings } from '@/services/sync';
 import { hasPermission, requestNotificationPermission, onPermissionChange, openNotificationSettings } from '@/services/notifications';
 import { deleteAccount } from '@/services/supabase';
+import { getAppleAuthorizationCode, isAppleUser } from '@/services/social-auth';
 import { verifyEntitlement, openSubscriptionManagement } from '@/services/subscription';
 import { useSubscription } from '@/context/subscription';
 import Constants from 'expo-constants';
-import * as StoreReview from 'expo-store-review';
 
 
 
@@ -240,6 +241,7 @@ export default function ProfileScreen() {
   const { resetAll: resetPulseHistory } = usePulseHistory();
   const { resetAll: resetTrips } = useTrips();
   const { user, signOut, resetPassword } = useAuth();
+  const { consent: aiConsent, requestConsent: requestAIConsent, turnOff: turnOffAI } = useAIConsent();
 
   const providerName =
     (user?.user_metadata?.full_name as string | undefined) ||
@@ -263,7 +265,6 @@ export default function ProfileScreen() {
   const { showToast } = useToast();
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(hasPermission());
-  const [mediaPermissionGranted, setMediaPermissionGranted] = useState(false);
   const [showMemorySheet, setShowMemorySheet] = useState(false);
   const [chatMessageCount, setChatMessageCount] = useState(0);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -279,10 +280,6 @@ export default function ProfileScreen() {
   useEffect(() => {
     verifyEntitlement().then(setIsSubscribed).catch(() => {});
     loadChatMessages<unknown[]>([]).then((msgs) => setChatMessageCount(msgs.length));
-    // Pre-check media permission so the picker opens instantly on tap
-    ImagePicker.getMediaLibraryPermissionsAsync().then(({ status }) => {
-      setMediaPermissionGranted(status === 'granted');
-    });
   }, []);
 
   // Pull notification settings from cloud on sign-in
@@ -308,17 +305,7 @@ export default function ProfileScreen() {
 
   async function handlePickAvatar() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (!mediaPermissionGranted) {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Photo Access Required', 'Allow Tripseek to access your photos.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: openNotificationSettings },
-        ]);
-        return;
-      }
-      setMediaPermissionGranted(true);
-    }
+    // The system photo picker runs outside the app and needs no photo-library permission.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,
@@ -652,6 +639,15 @@ export default function ProfileScreen() {
           )}
 
 
+          {/* Tripseek AI — explicit consent for sharing data with our AI provider (Guideline 5.1.2(i)) */}
+          <SettingToggle
+            label="Tripseek AI"
+            sublabel={aiConsent === 'granted' ? 'On \u00B7 Uses AI from Anthropic to plan trips and answer chats' : 'Off \u00B7 AI features are paused'}
+            value={aiConsent === 'granted'}
+            onToggle={(val) => { if (val) requestAIConsent(); else turnOffAI(); }}
+            theme={theme}
+          />
+
           {/* Account */}
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowAccount(!showAccount); }}
@@ -670,7 +666,7 @@ export default function ProfileScreen() {
                 {user ? (
                   <>
                     <InfoRow
-                      label={user.email?.endsWith('@privaterelay.appleid.com') ? 'Apple Private Email' : 'Email'}
+                      label={isAppleRelayEmail(user.email) ? 'Apple Private Email' : 'Email'}
                       value={user.email ?? 'Unknown'}
                       theme={theme}
                     />
@@ -712,7 +708,10 @@ export default function ProfileScreen() {
                       onPress={() => {
                         Alert.alert(
                           'Delete Account',
-                          'This will permanently delete your account and all cloud data. Local data will also be cleared. This cannot be undone.',
+                          'This will permanently delete your account and all cloud data. Local data will also be cleared. This cannot be undone.' +
+                            (isPlus
+                              ? '\n\nYour Tripseek+ subscription is billed by Apple and won’t be canceled automatically. To stop billing, cancel it in Settings › your name › Subscriptions.'
+                              : ''),
                           [
                             { text: 'Cancel', style: 'cancel' },
                             {
@@ -720,7 +719,17 @@ export default function ProfileScreen() {
                               style: 'destructive',
                               onPress: async () => {
                                 try {
-                                  const { error } = await deleteAccount();
+                                  // Apple requires revoking Sign in with Apple when an account is deleted,
+                                  // which needs a fresh one-time code from Apple
+                                  let appleCode: string | null = null;
+                                  if (isAppleUser(user)) {
+                                    appleCode = await getAppleAuthorizationCode();
+                                    if (!appleCode) {
+                                      Alert.alert('Account not deleted', 'Apple confirmation was canceled, so nothing was deleted.');
+                                      return;
+                                    }
+                                  }
+                                  const { error } = await deleteAccount(appleCode);
                                   if (error) {
                                     Alert.alert('Delete Failed', 'Your account could not be deleted right now. ' + error.message);
                                     return;
@@ -779,11 +788,7 @@ export default function ProfileScreen() {
           <NavRow
             label="Leave a review"
             sublabel="Enjoying Tripseek? Let us know!"
-            onPress={async () => {
-              if (await StoreReview.hasAction()) {
-                await StoreReview.requestReview();
-              }
-            }}
+            onPress={() => Linking.openURL(APP_STORE_REVIEW_URL)}
             theme={theme}
           />
         </View>

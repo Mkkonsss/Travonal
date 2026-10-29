@@ -5,7 +5,7 @@ import { InteractionManager, Pressable, StyleSheet, useColorScheme, View } from 
 import { Component, useEffect, useRef, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { ObserveRoot, useObserve } from 'expo-observe';
+import { isRunningInExpoGo } from 'expo';
 
 import { ThemedText } from '@/components/themed-text';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -15,6 +15,7 @@ import { AppPulseEvaluator } from '@/components/app-pulse-evaluator';
 import { BookingPhotoPrefetcher } from '@/components/booking-photo-prefetcher';
 import { MemoryTracker } from '@/components/memory-tracker';
 import { AuthProvider, useAuth } from '@/context/auth';
+import { AIConsentProvider } from '@/context/ai-consent';
 
 import { FabProvider } from '@/context/fab';
 import { BoardsProvider, useBoards } from '@/context/boards';
@@ -30,6 +31,12 @@ import { TripsProvider, useTrips } from '@/context/trips';
 import { BookingsProvider, useBookings } from '@/context/bookings';
 import { loadNotificationPermissionState, onNotificationTap } from '@/services/notifications';
 import { isOnboardingComplete, resetAllData, loadLastUserId, saveLastUserId, clearLastUserId } from '@/services/storage';
+
+// expo-observe's native code isn't included in Expo Go, so importing it there crashes on launch.
+// Load it only in real builds; in Expo Go, performance metrics are skipped.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Observe: typeof import('expo-observe') | null = isRunningInExpoGo() ? null : require('expo-observe');
+const useObserve = Observe?.useObserve ?? (() => ({ markInteractive: () => {} }));
 
 SplashScreen.preventAutoHideAsync();
 
@@ -244,6 +251,7 @@ function RootLayout() {
         <ToastProvider>
           <FabProvider>
           <AuthProvider>
+            <AIConsentProvider>
             <ProfileProvider>
               <SubscriptionProvider>
               <TripsProvider>
@@ -269,6 +277,7 @@ function RootLayout() {
               </TripsProvider>
               </SubscriptionProvider>
             </ProfileProvider>
+            </AIConsentProvider>
           </AuthProvider>
           </FabProvider>
         </ToastProvider>
@@ -278,4 +287,4 @@ function RootLayout() {
   );
 }
 
-export default ObserveRoot.wrap(RootLayout);
+export default Observe ? Observe.ObserveRoot.wrap(RootLayout) : RootLayout;

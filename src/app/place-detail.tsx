@@ -22,13 +22,13 @@ import { useInbox } from '@/context/inbox';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { searchAllPlaces } from '@/services/places-data';
 import { sortTripsForPicker, formatDayLabel } from '@/services/trip-helpers';
 import { categoryToActivityType, priceLevelLabel, mapGoogleTypeToCategory } from '@/services/place-model';
 import { getPlacePhoto } from '@/services/free-photos';
 import { fetchPlaceDetails, getCachedPlaceDetails, searchExplorePlaces, searchPlaceByName } from '@/services/explore-service';
 import { normalizeGooglePlace } from '@/services/place-model';
-import { getPlaceBookingLinks, getPlaceBookingSectionTitle, openBookingLink, isBookablePlace, getBookableCTA } from '@/services/booking-links';
+import { getPlaceBookingLinks, getPlaceBookingSectionTitle, openBookingLink, isBookablePlace, getBookableCTA, tripStayDates } from '@/services/booking-links';
+import { AFFILIATE_DISCLOSURE } from '@/constants/affiliates';
 
 const costLabels: Record<string, string> = {
   free: 'Free',
@@ -37,23 +37,17 @@ const costLabels: Record<string, string> = {
   premium: '$$$',
 };
 
-const crowdLabels: Record<string, string> = {
-  low: 'Usually quiet',
-  medium: 'Moderate crowds',
-  high: 'Often crowded',
-};
-
-const energyLabels: Record<string, string> = {
-  low: 'Low effort',
-  medium: 'Moderate activity',
-  high: 'Active / Physical',
-};
-
-const noiseLevelLabels: Record<string, string> = {
-  quiet: 'Quiet',
-  moderate: 'Moderate',
-  lively: 'Lively',
-};
+/** Icon for the photo tile when a place has no photo (e.g. activities you typed in yourself). */
+function placeholderSymbol(type?: string, category?: string): string {
+  const c = (category ?? '').toLowerCase();
+  if (type === 'food' || c.startsWith('food') || c.includes('restaurant') || c.includes('cafe')) return 'fork.knife';
+  if (type === 'hotel' || c.startsWith('stay') || c.includes('hotel')) return 'bed.double.fill';
+  if (c.includes('park') || c.includes('nature') || c.includes('beach') || c.includes('garden')) return 'leaf.fill';
+  if (c.includes('museum') || c.includes('art') || c.includes('culture') || c.includes('landmark')) return 'building.columns.fill';
+  if (c.includes('nightlife') || c.includes('bar')) return 'wineglass.fill';
+  if (c.includes('shopping') || c.includes('market')) return 'bag.fill';
+  return 'mappin.and.ellipse';
+}
 
 const busyLabels: Record<string, string> = {
   'not busy': 'Not busy',
@@ -149,7 +143,7 @@ export default function PlaceDetailScreen() {
     website?: string; phone?: string; hours?: string;
     priceLevel?: string; googleMapsUri?: string; openNow?: string;
     photoRef?: string; imageUrl?: string; notes?: string;
-    fromStaySearch?: string;
+    fromStaySearch?: string; bookingComUrl?: string;
   }>();
   const {
     title: paramTitle, destination: paramDest, tripId: paramTripId, day: paramDay,
@@ -159,7 +153,7 @@ export default function PlaceDetailScreen() {
     website: paramWebsite, phone: paramPhone, hours: paramHours,
     priceLevel: paramPriceLevel, googleMapsUri: paramGoogleMapsUri,
     openNow: paramOpenNow, photoRef: paramPhotoRef, imageUrl: paramImageUrl,
-    notes: paramNotes,
+    notes: paramNotes, bookingComUrl: paramBookingComUrl,
   } = params;
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -320,12 +314,6 @@ export default function PlaceDetailScreen() {
 
   // Real data flag — true if we have or resolved a placeId
   const isGooglePlace = !!effectivePlaceId;
-  const showSampleBanner = !isGooglePlace && resolveFinished;
-
-  // Only fall back to sample pool when we have no real data at all
-  const foundPlace = isGooglePlace
-    ? undefined
-    : searchAllPlaces('', 'all').find((p) => p.title === title && p.destination === destination);
 
   // Parse opening hours — may be JSON array or single string
   const parsedOpeningHours: string[] | undefined = (() => {
@@ -345,7 +333,8 @@ export default function PlaceDetailScreen() {
 
   // Build a unified place object — merge URL params with resolved data
   const parsedPriceLevel = paramPriceLevel != null ? parseInt(paramPriceLevel, 10) : resolvedPlace?.priceLevel;
-  const place: Record<string, any> | null = foundPlace ? { ...foundPlace } : (title ? {
+  // Only real data: URL params, Google lookups, or what the user/AI saved. No sample fallbacks.
+  const place: Record<string, any> | null = title ? {
     title,
     destination,
     placeId: effectivePlaceId,
@@ -365,7 +354,8 @@ export default function PlaceDetailScreen() {
     googleMapsUri: paramGoogleMapsUri ?? resolvedPlace?.googleMapsUri,
     openNow: paramOpenNow === 'true' ? true : paramOpenNow === 'false' ? false : resolvedPlace?.openNow,
     address: paramAddress ?? resolvedPlace?.address,
-  } : null);
+    bookingComUrl: paramBookingComUrl,
+  } : null;
 
   // Enrich place with Google Details data when available
   if (place && googleDetails) {
@@ -569,11 +559,17 @@ export default function PlaceDetailScreen() {
 
   const saved = isSaved(place.title, place.destination);
 
+  // Directions / Google search are only useful for a real place — not "Lunch with friends"
+  const hasLocation = !!(place.placeId || place.address || place.shortFormattedAddress || (place.lat != null && place.lng != null));
+
   const placeBookable = isBookablePlace({
     category: place.category ?? '',
     reservable: place.reservationsRecommended ?? (googleDetails?.reservable as boolean | undefined),
     priceLevel: place.priceLevel,
   });
+
+  // Trip context for booking links — pre-fills dates and travelers when opened from a trip
+  const bookingTrip = paramTripId ? trips.find((t) => t.id === paramTripId) : undefined;
 
   // Build genuinely personalized match reasons from real profile + place data
   const personalReasons: string[] = [];
@@ -792,6 +788,7 @@ export default function PlaceDetailScreen() {
       lat: place.lat,
       lng: place.lng,
       rating: place.rating,
+      bookingComUrl: place.bookingComUrl,
       fixed: true,
     });
     showToast(`"${place.title}" added to stays`, 'success');
@@ -815,6 +812,7 @@ export default function PlaceDetailScreen() {
       lat: place.lat,
       lng: place.lng,
       rating: place.rating,
+      website: place.website,
       ...(isHotel ? { fixed: true } : {}),
     });
     setPendingAdd(null);
@@ -880,16 +878,7 @@ export default function PlaceDetailScreen() {
           </View>
         )}
 
-        {/* Sample information notice — only for non-OSM, non-Google places */}
-        {showSampleBanner && (
-          <View style={[styles.sampleBanner, { backgroundColor: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.2)' }]}>
-            <ThemedText style={styles.sampleBannerText}>
-              Sample information {'\u2014'} details shown are simulated for demonstration
-            </ThemedText>
-          </View>
-        )}
-
-        {/* Place photo or placeholder */}
+        {/* Place photo or category icon tile */}
         {photoUrl ? (
             <ExpoImage
               source={{ uri: photoUrl }}
@@ -904,8 +893,12 @@ export default function PlaceDetailScreen() {
             height: 200,
             borderRadius: Radius.sm,
             marginBottom: 12,
-            backgroundColor: theme.border,
-          }} />
+            backgroundColor: theme.backgroundElement,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <SymbolView name={placeholderSymbol(place.type, place.category) as any} size={44} tintColor={theme.textSecondary} />
+          </View>
         )}
 
         {/* Title section */}
@@ -915,12 +908,6 @@ export default function PlaceDetailScreen() {
               {place.neighborhood ? `${place.neighborhood}, ` : ''}{place.destination}
               {(place.shortFormattedAddress ?? place.address) ? ` \u00B7 ${place.shortFormattedAddress ?? place.address}` : ''}
             </ThemedText>
-            {place.verified && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <SymbolView name="checkmark.seal.fill" size={14} tintColor={theme.primary} />
-                <ThemedText style={[styles.verified, { color: theme.primary }]}>Verified listing</ThemedText>
-              </View>
-            )}
           </View>
 
         {/* Rating */}
@@ -1006,79 +993,73 @@ export default function PlaceDetailScreen() {
                 </Pressable>
               </>
             )}
-            <Pressable
-              onPress={async () => {
-                const name = encodeURIComponent(place.title + (place.destination ? ', ' + place.destination : ''));
-                const ll = place.lat && place.lng ? `&ll=${place.lat},${place.lng}` : '';
-                const url = `https://maps.apple.com/?q=${name}${ll}`;
-                const supported = await Linking.canOpenURL(url);
-                if (supported) Linking.openURL(url);
-                else showToast('Maps app is not available on this device', 'error');
-              }}
-              style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel={`Get directions to ${place.title}`}
-            >
-              <SymbolView name="arrow.triangle.turn.up.right.diamond" size={18} tintColor={theme.primary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Directions</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                if (!place.website) {
-                  showToast('No website listed for this place', 'info');
-                  return;
-                }
-                const supported = await Linking.canOpenURL(place.website);
-                if (supported) Linking.openURL(place.website);
-                else showToast('Unable to open this URL', 'error');
-              }}
-              style={[
-                styles.actionBtn,
-                { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: place.website ? 1 : 0.45 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={place.website ? `Visit ${place.title} website` : 'Website unavailable'}
-            >
-              <SymbolView name="globe" size={18} tintColor={place.website ? theme.primary : theme.textSecondary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: place.website ? theme.primary : theme.textSecondary }]}>Website</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                if (!place.phone) {
-                  showToast('No phone number listed for this place', 'info');
-                  return;
-                }
-                const url = `tel:${place.phone}`;
-                const supported = await Linking.canOpenURL(url);
-                if (supported) Linking.openURL(url);
-                else showToast('Phone calls are not supported on this device', 'error');
-              }}
-              style={[
-                styles.actionBtn,
-                { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: place.phone ? 1 : 0.45 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={place.phone ? `Call ${place.title}` : 'Phone unavailable'}
-            >
-              <SymbolView name="phone" size={18} tintColor={place.phone ? theme.primary : theme.textSecondary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: place.phone ? theme.primary : theme.textSecondary }]}>Call</ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                const url = place.googleMapsUri
-                  ?? (place.placeId ? `https://www.google.com/maps/place/?q=place_id:${place.placeId}` : null)
-                  ?? `https://www.google.com/maps/search/${encodeURIComponent(place.title + (place.destination ? ', ' + place.destination : ''))}`;
-                const supported = await Linking.canOpenURL(url);
-                if (supported) Linking.openURL(url);
-                else showToast('Unable to open Google Maps', 'error');
-              }}
-              style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
-              accessibilityRole="button"
-              accessibilityLabel={`View ${place.title} on Google Maps`}
-            >
-              <SymbolView name="map" size={18} tintColor={theme.primary} />
-              <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Google</ThemedText>
-            </Pressable>
+            {hasLocation && (
+              <Pressable
+                onPress={async () => {
+                  const name = encodeURIComponent(place.title + (place.destination ? ', ' + place.destination : ''));
+                  const ll = place.lat && place.lng ? `&ll=${place.lat},${place.lng}` : '';
+                  const url = `https://maps.apple.com/?q=${name}${ll}`;
+                  const supported = await Linking.canOpenURL(url);
+                  if (supported) Linking.openURL(url);
+                  else showToast('Maps app is not available on this device', 'error');
+                }}
+                style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Get directions to ${place.title}`}
+              >
+                <SymbolView name="arrow.triangle.turn.up.right.diamond" size={18} tintColor={theme.primary} />
+                <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Directions</ThemedText>
+              </Pressable>
+            )}
+            {!!place.website && (
+              <Pressable
+                onPress={async () => {
+                  const supported = await Linking.canOpenURL(place.website);
+                  if (supported) Linking.openURL(place.website);
+                  else showToast('Unable to open this URL', 'error');
+                }}
+                style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Visit ${place.title} website`}
+              >
+                <SymbolView name="globe" size={18} tintColor={theme.primary} />
+                <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Website</ThemedText>
+              </Pressable>
+            )}
+            {!!place.phone && (
+              <Pressable
+                onPress={async () => {
+                  const url = `tel:${place.phone}`;
+                  const supported = await Linking.canOpenURL(url);
+                  if (supported) Linking.openURL(url);
+                  else showToast('Phone calls are not supported on this device', 'error');
+                }}
+                style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={`Call ${place.title}`}
+              >
+                <SymbolView name="phone" size={18} tintColor={theme.primary} />
+                <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Call</ThemedText>
+              </Pressable>
+            )}
+            {hasLocation && (
+              <Pressable
+                onPress={async () => {
+                  const url = place.googleMapsUri
+                    ?? (place.placeId ? `https://www.google.com/maps/place/?q=place_id:${place.placeId}` : null)
+                    ?? `https://www.google.com/maps/search/${encodeURIComponent(place.title + (place.destination ? ', ' + place.destination : ''))}`;
+                  const supported = await Linking.canOpenURL(url);
+                  if (supported) Linking.openURL(url);
+                  else showToast('Unable to open Google Maps', 'error');
+                }}
+                style={[styles.actionBtn, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${place.title} on Google Maps`}
+              >
+                <SymbolView name="map" size={18} tintColor={theme.primary} />
+                <ThemedText style={[styles.actionBtnLabel, { color: theme.primary }]}>Google</ThemedText>
+              </Pressable>
+            )}
           </ScrollView>
           </View>
         {/* Mini map */}
@@ -1096,7 +1077,7 @@ export default function PlaceDetailScreen() {
                   scrollEnabled={false}
                   bounces={false}
                   originWhitelist={['*']}
-                  source={{ html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>body,html,#map{margin:0;padding:0;width:100%;height:100%}</style></head><body><div id="map"></div><script>var m=L.map('map',{zoomControl:false,attributionControl:false,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,touchZoom:false}).setView([${place.lat},${place.lng}],15);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(m);L.circleMarker([${place.lat},${place.lng}],{radius:8,fillColor:'#4F46E5',color:'#fff',weight:2,fillOpacity:1}).addTo(m);</script></body></html>` }}
+                  source={{ html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>body,html,#map{margin:0;padding:0;width:100%;height:100%}.leaflet-control-attribution{font-size:9px!important;line-height:1.3!important;padding:0 4px!important;background:rgba(255,255,255,0.7)!important;}.leaflet-control-attribution a{color:#555!important;}</style></head><body><div id="map"></div><script>var m=L.map('map',{zoomControl:false,attributionControl:true,dragging:false,scrollWheelZoom:false,doubleClickZoom:false,touchZoom:false}).setView([${place.lat},${place.lng}],15);m.attributionControl.setPrefix(false);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(m);L.circleMarker([${place.lat},${place.lng}],{radius:8,fillColor:'#4F46E5',color:'#fff',weight:2,fillOpacity:1}).addTo(m);</script></body></html>` }}
                 />
               ) : (
                 <NativeMap
@@ -1133,7 +1114,7 @@ export default function PlaceDetailScreen() {
                     scrollEnabled
                     javaScriptEnabled
                     originWhitelist={['*']}
-                    source={{ html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>body,html,#map{margin:0;padding:0;width:100%;height:100%}</style></head><body><div id="map"></div><script>var m=L.map('map',{zoomControl:false,attributionControl:false}).setView([${place.lat},${place.lng}],15);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(m);L.circleMarker([${place.lat},${place.lng}],{radius:8,fillColor:'#4F46E5',color:'#fff',weight:2,fillOpacity:1}).addTo(m);</script></body></html>` }}
+                    source={{ html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><style>body,html,#map{margin:0;padding:0;width:100%;height:100%}.leaflet-control-attribution{font-size:9px!important;line-height:1.3!important;padding:0 4px!important;background:rgba(255,255,255,0.7)!important;}.leaflet-control-attribution a{color:#555!important;}</style></head><body><div id="map"></div><script>var m=L.map('map',{zoomControl:false,attributionControl:true}).setView([${place.lat},${place.lng}],15);m.attributionControl.setPrefix(false);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(m);L.circleMarker([${place.lat},${place.lng}],{radius:8,fillColor:'#4F46E5',color:'#fff',weight:2,fillOpacity:1}).addTo(m);</script></body></html>` }}
                   />
                 ) : (
                   <NativeMap
@@ -1309,7 +1290,6 @@ export default function PlaceDetailScreen() {
             <View style={[styles.section, { borderColor: theme.border }]}>
               <View style={styles.sampleLabelRow}>
                 <ThemedText type="sectionTitle" style={{ color: theme.textSecondary }}>What people say</ThemedText>
-                {showSampleBanner && <ThemedText style={styles.sampleLabel}>Sample data</ThemedText>}
               </View>
               <ThemedText style={[styles.descText, { fontStyle: 'italic' }]}>{`\u201C${place.reviewSummary}\u201D`}</ThemedText>
               {place.bestQualities && place.bestQualities.length > 0 && (
@@ -1344,7 +1324,6 @@ export default function PlaceDetailScreen() {
                 <ThemedText type="sectionTitle" style={{ color: theme.textSecondary }}>
                   Reviews ({place.reviews.length})
                 </ThemedText>
-                {showSampleBanner && <ThemedText style={styles.sampleLabel}>Sample data</ThemedText>}
               </View>
               {reviewsToShow.map((review: any, i: number) => (
                 <ReviewCard key={i} review={review} theme={theme} />
@@ -1457,40 +1436,6 @@ export default function PlaceDetailScreen() {
           </View>
         </View>
 
-        {/* Experience details — only show fields from real data, never fabricated defaults */}
-        {showSampleBanner && (place.crowdLevel || place.energyLevel || place.noiseLevel || place.dressCode) && (
-        <View>
-          <View style={[styles.section, { borderColor: theme.border }]}>
-            <ThemedText type="sectionTitle" style={{ color: theme.textSecondary }}>Details</ThemedText>
-            <View style={styles.detailGrid}>
-              {place.crowdLevel && (
-              <View style={styles.detailItem}>
-                <ThemedText style={[styles.detailLabel, { color: theme.textSecondary }]}>Crowds</ThemedText>
-                <ThemedText style={styles.detailValue}>{crowdLabels[place.crowdLevel]}</ThemedText>
-              </View>
-              )}
-              {place.energyLevel && (
-              <View style={styles.detailItem}>
-                <ThemedText style={[styles.detailLabel, { color: theme.textSecondary }]}>Activity level</ThemedText>
-                <ThemedText style={styles.detailValue}>{energyLabels[place.energyLevel]}</ThemedText>
-              </View>
-              )}
-              {place.noiseLevel && (
-                <View style={styles.detailItem}>
-                  <ThemedText style={[styles.detailLabel, { color: theme.textSecondary }]}>Noise level</ThemedText>
-                  <ThemedText style={styles.detailValue}>{noiseLevelLabels[place.noiseLevel]}</ThemedText>
-                </View>
-              )}
-              {place.dressCode && (
-                <View style={styles.detailItem}>
-                  <ThemedText style={[styles.detailLabel, { color: theme.textSecondary }]}>Dress code</ThemedText>
-                  <ThemedText style={styles.detailValue}>{place.dressCode}</ThemedText>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-        )}
 
         {/* Facilities & practical info */}
         {(place.outdoorSeating || place.rooftop || place.waterfront || place.scenicView ||
@@ -1607,7 +1552,7 @@ export default function PlaceDetailScreen() {
         )}
         {placeBookable && (
           <ThemedText style={[styles.affiliateDisclosure, { color: theme.textSecondary }]}>
-            Booking links may earn Tripseek a small commission at no extra cost to you.
+            {AFFILIATE_DISCLOSURE}
           </ThemedText>
         )}
         {isGooglePlace && (
@@ -1693,11 +1638,27 @@ export default function PlaceDetailScreen() {
         const cat = (place.category ?? '') as string;
         const bookable = placeBookable;
         const isStay = cat.startsWith('stay');
+        const bookingLinks = getPlaceBookingLinks(
+          place.title,
+          cat,
+          place.destination || bookingTrip?.destination || '',
+          tripStayDates(bookingTrip),
+          bookingTrip?.travelers,
+          {
+            lat: place.lat,
+            lng: place.lng,
+            address: place.address,
+            country: bookingTrip?.country,
+            bookingComUrl: place.bookingComUrl,
+            campaign: 'place_detail',
+            website: place.website,
+            placeId: place.placeId,
+          },
+        );
+        const primaryLink = bookingLinks[0];
 
         // Hotels/stays: single "Book" CTA
         if (isStay) {
-          const bookingLinks = getPlaceBookingLinks(place.title, cat, place.destination ?? '');
-          const primaryLink = bookingLinks[0];
           return (
             <View style={[styles.bottomBar, { backgroundColor: theme.background, borderTopColor: theme.border, paddingBottom: insets.bottom + 8 }]}>
               <View style={styles.bottomBarContent}>
@@ -1706,9 +1667,9 @@ export default function PlaceDetailScreen() {
                     onPress={() => openBookingLink(primaryLink.url)}
                     style={({ pressed }) => [styles.addButton, { backgroundColor: theme.primary, opacity: pressed ? 0.85 : 1 }]}
                     accessibilityRole="button"
-                    accessibilityLabel="Book"
+                    accessibilityLabel={primaryLink.label}
                   >
-                    <ThemedText style={[styles.addButtonText, { color: theme.primaryText }]}>Book</ThemedText>
+                    <ThemedText style={[styles.addButtonText, { color: theme.primaryText }]}>{primaryLink.shortLabel}</ThemedText>
                   </Pressable>
                 )}
               </View>
@@ -1717,8 +1678,6 @@ export default function PlaceDetailScreen() {
         }
 
         if (bookable) {
-          const bookingLinks = getPlaceBookingLinks(place.title, cat, place.destination ?? '');
-          const primaryLink = bookingLinks[0];
           const label = getBookableCTA(cat) ?? getPlaceBookingSectionTitle(cat);
           const icon = cat.startsWith('food') ? 'fork.knife' : 'star';
           return (

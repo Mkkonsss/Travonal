@@ -18,6 +18,7 @@
 
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isSenderVerified } from "../_shared/email-auth.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,9 @@ if (_MISSING_ENV.length > 0) {
 }
 
 const MODEL = "claude-haiku-4-5-20251001";
+
+// Most saved bookings one account can receive from forwarded emails in 24 hours
+const MAX_PARSED_BOOKINGS_PER_DAY = 30;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -520,6 +524,7 @@ async function processInboundEmail(req: Request) {
 
   // Also try the envelope field for more reliable recipient parsing
   let envelopeTo = "";
+  let envelopeFrom = "";
   const envelopeRaw = formData.get("envelope");
   if (envelopeRaw) {
     try {
@@ -527,6 +532,7 @@ async function processInboundEmail(req: Request) {
       if (Array.isArray(envelope.to) && envelope.to.length > 0) {
         envelopeTo = envelope.to.join(",");
       }
+      if (typeof envelope.from === "string") envelopeFrom = envelope.from;
     } catch (_e) {
       // envelope parse failed — use to field
     }
@@ -538,6 +544,16 @@ async function processInboundEmail(req: Request) {
   const senderEmail = extractSenderEmail(from);
   if (!senderEmail) {
     console.error("[inbound-booking] Could not extract sender email from:", from);
+    return;
+  }
+
+  // The From header is easy to fake — only trust it when the sender's mail provider vouches
+  // for it (DKIM, or SPF with a matching envelope sender). Otherwise anyone could put
+  // bookings into someone else's account.
+  const dkim = String(formData.get("dkim") || "");
+  const spf = String(formData.get("SPF") || "");
+  if (!isSenderVerified({ senderEmail, dkim, spf, envelopeFrom })) {
+    console.warn("[inbound-booking] Sender not verified (dkim:", dkim, "spf:", spf, ") — ignoring email");
     return;
   }
 
@@ -635,6 +651,29 @@ async function processInboundEmail(req: Request) {
   }
 
   const userId = matchedUser.id;
+
+  // Only read the email with AI if this user has turned Tripseek AI on (Guideline 5.1.2(i))
+  const { data: consentRow } = await supabase
+    .from("user_ai_consent")
+    .select("granted")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!consentRow?.granted) {
+    console.log("[inbound-booking] User has not turned on Tripseek AI — not reading email");
+    return;
+  }
+
+  // Cap forwarded bookings per account per day so nobody can flood an account
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count: recentCount } = await supabase
+    .from("parsed_bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", since);
+  if ((recentCount ?? 0) >= MAX_PARSED_BOOKINGS_PER_DAY) {
+    console.warn("[inbound-booking] Daily limit reached for user — ignoring email");
+    return;
+  }
 
   // ── Extract booking details with Claude ──
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");

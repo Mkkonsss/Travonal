@@ -61,6 +61,29 @@ export async function signInWithApple(): Promise<SocialAuthResult> {
   }
 }
 
+/** True when the account was created or linked with Sign in with Apple. */
+export function isAppleUser(user: { app_metadata?: Record<string, unknown>; identities?: { provider: string }[] } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.app_metadata?.provider === 'apple') return true;
+  return !!user.identities?.some((identity) => identity.provider === 'apple');
+}
+
+/**
+ * Asks Apple for a fresh authorization code, used when deleting an account so the server
+ * can revoke the Sign in with Apple tokens — Apple requires this for account deletion.
+ * Returns null if the user cancels or this isn't iOS.
+ */
+export async function getAppleAuthorizationCode(): Promise<string | null> {
+  if (Platform.OS !== 'ios') return null;
+  try {
+    const AppleAuth = await import('expo-apple-authentication');
+    const credential = await AppleAuth.signInAsync({ requestedScopes: [] });
+    return credential.authorizationCode ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Google Sign In — iOS + Android.
  * Opens a browser-based OAuth implicit flow via Supabase, which

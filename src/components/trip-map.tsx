@@ -89,7 +89,7 @@ var markers=[];
 
   L.tileLayer('${OSM_TILES}',{
     maxZoom:19,
-    attribution:'\\u00a9 <a href="https://openstreetmap.org/">OSM</a>'
+    attribution:'\\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
   if(ACTS.length>0){

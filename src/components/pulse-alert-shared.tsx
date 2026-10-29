@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
+import { WeatherAttribution } from '@/components/weather-attribution';
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { PulseAlert, PulseSeverity } from '@/services/trip-pulse';
@@ -111,6 +112,8 @@ export function PulseAlertCard({
           <ThemedText style={[sharedStyles.alertMessage, { color: theme.textSecondary }]} numberOfLines={expanded ? undefined : 2}>
             {alert.message}
           </ThemedText>
+          {/* Rain alerts are derived from Apple WeatherKit forecasts */}
+          {alert.type === 'weather' && <WeatherAttribution modified />}
           {!resolved && expanded && alert.actionLabel ? (
             <View style={sharedStyles.alertActions}>
               <Pressable

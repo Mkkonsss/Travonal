@@ -34,6 +34,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { loadChatMessages, saveChatMessages, loadChatThreads, saveChatThreads } from '@/services/storage';
 import { pushChatThreads, pullChatThreads } from '@/services/sync';
 import { chatAI, type TripAction, type ChatPlace } from '@/services/ai';
+import { requestAIConsent } from '@/services/ai-consent';
+import { useAIFeedback } from '@/hooks/use-ai-feedback';
 import { ChatPlaceCard, placeStyles } from '@/components/chat-place-card';
 import { normalizeTimeTo24 } from '@/services/ai-utils';
 import { compareByTime } from '@/services/itinerary-engine';
@@ -700,6 +702,7 @@ export default function ChatScreen() {
   const userName = (user?.user_metadata?.full_name as string | undefined) || formatUserName(user?.email);
 
   const chatGate = useGate('chat');
+  const aiFeedback = useAIFeedback('chat');
   const { refresh: refreshSubscription } = useSubscription();
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1386,14 +1389,18 @@ export default function ChatScreen() {
         id: generateId(),
         role: 'assistant',
         text: chatGate.isPlus
-          ? 'You\u2019ve used all 50 AI messages this month. Your allowance resets next billing cycle.'
-          : 'You\u2019ve used your 10 free messages this month. Upgrade to Tripseek+ for 50 messages per month.',
+          ? `You\u2019ve used all ${chatGate.total || 100} AI messages this month. Your allowance resets next billing cycle.`
+          : `You\u2019ve used your ${chatGate.total || 20} free messages this month. Upgrade to Tripseek+ for 100 messages per month.`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, { id: generateId(), role: 'user', text: text.trim(), timestamp: Date.now() }, limitMsg]);
       setInput('');
       return;
     }
+
+    // Ask before the message goes to the AI provider (Guideline 5.1.2(i)).
+    // "Not now" leaves the draft in the input, with nothing sent.
+    if (retryCount === 0 && !(await requestAIConsent())) return;
 
     // On first attempt, add user message and haptic; on retry, skip (already shown)
     if (retryCount === 0) {
@@ -1618,7 +1625,10 @@ export default function ChatScreen() {
               <ThemedText style={[styles.avatarLabel, { color: theme.background }]}>TS</ThemedText>
             </View>
           )}
-          <View
+          <Pressable
+            onLongPress={isUser ? undefined : () => aiFeedback.openMenu(item.id, item.text)}
+            delayLongPress={350}
+            accessibilityHint={isUser ? undefined : 'Press and hold to copy or report this reply'}
             style={[
               styles.messageBubble,
               isUser
@@ -1627,7 +1637,7 @@ export default function ChatScreen() {
             ]}
           >
             <ChatMarkdown text={item.text} isUser={isUser} />
-          </View>
+          </Pressable>
           {isUser && (
             profile.avatarUri ? (
               <ExpoImage source={{ uri: profile.avatarUri }} style={styles.avatarCircle} contentFit="cover" />
@@ -1644,6 +1654,18 @@ export default function ChatScreen() {
           <ThemedText style={[styles.messageTime, { color: theme.textSecondary }, isUser && styles.messageTimeUser]}>
             {timeStr}
           </ThemedText>
+        )}
+
+        {/* 👍 / 👎 on AI replies — 👎 opens "What went wrong?" (Guideline 1.2) */}
+        {!isUser && !item.failed && (
+          <View style={styles.feedbackRow}>
+            <Pressable onPress={() => aiFeedback.thumbsUp(item.id, item.text)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Good reply">
+              <SymbolView name={aiFeedback.ratings[item.id] === 'up' ? 'hand.thumbsup.fill' : 'hand.thumbsup'} size={13} tintColor={theme.textSecondary} />
+            </Pressable>
+            <Pressable onPress={() => aiFeedback.report(item.id, item.text)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Report reply">
+              <SymbolView name={aiFeedback.ratings[item.id] === 'down' ? 'hand.thumbsdown.fill' : 'hand.thumbsdown'} size={13} tintColor={theme.textSecondary} />
+            </Pressable>
+          </View>
         )}
 
         {/* Retry button for failed messages */}
@@ -1728,7 +1750,7 @@ export default function ChatScreen() {
     }
     return <View>{content}</View>;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, messages.length, isTyping]);
+  }, [theme, messages.length, isTyping, aiFeedback.ratings]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -2161,6 +2183,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginLeft: 0,
     marginRight: 4,
+  },
+  feedbackRow: {
+    flexDirection: 'row' as const,
+    gap: 18,
+    marginTop: 6,
+    marginLeft: 40,
   },
   retryBtn: {
     flexDirection: 'row',

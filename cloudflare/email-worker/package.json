@@ -1,0 +1,15 @@
+{
+  "name": "tripseek-booking-email",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "postal-mime": "4.1.4"
+  },
+  "devDependencies": {
+    "wrangler": "4.155.0"
+  }
+}

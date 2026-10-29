@@ -149,14 +149,7 @@ export default function EditProfileScreen() {
   }
 
   async function handlePickAvatar() {
-    let { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      ({ status } = await ImagePicker.requestMediaLibraryPermissionsAsync());
-    }
-    if (status !== 'granted') {
-      Alert.alert('Photo Access Required', 'Allow Tripseek to access your photos.');
-      return;
-    }
+    // The system photo picker runs outside the app and needs no photo-library permission.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.8,

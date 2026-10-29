@@ -99,10 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function signUp(email: string, password: string, name: string) {
+    // Name is optional (Guideline 5.1.1(x)); omit it when blank so name fallbacks kick in
+    const fullName = name.trim();
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name.trim() } },
+      options: fullName ? { data: { full_name: fullName } } : undefined,
     });
     return { error };
   }

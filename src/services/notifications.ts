@@ -58,6 +58,24 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
 }
 
+/**
+ * Shows the iOS notification prompt only if the user has never been asked.
+ * iOS shows that prompt once per install, so later calls do nothing.
+ * Used when Trip Alerts is switched on, when a trip's Alerts tab opens,
+ * and after a trip is created — whichever happens first.
+ */
+export async function askNotificationPermissionOnce(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const { status, canAskAgain } = await Notifications.getPermissionsAsync();
+    if (status === 'granted') return loadNotificationPermissionState();
+    if (status === 'denied' || !canAskAgain) return false;
+    return requestNotificationPermission();
+  } catch {
+    return false;
+  }
+}
+
 export async function scheduleLocalNotification(
   title: string,
   body: string,

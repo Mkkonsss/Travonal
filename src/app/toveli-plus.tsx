@@ -21,6 +21,7 @@ import {
   purchaseSubscription,
   restorePurchases,
 } from '@/services/subscription';
+import { annualSavingsPercent } from '@/services/subscription-pricing';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SLIDE_PADDING = 24;
@@ -30,8 +31,9 @@ const SLIDE_PADDING = 24;
 const FEATURES = [
   { icon: 'sparkles', image: require('@/assets/images/icon-chat-empty.png'), imageScale: 1, title: '5 AI trip plans / month', desc: 'Fresh AI-powered itineraries every month, one for every adventure' },
   { icon: 'bubble.left.and.bubble.right', image: require('@/assets/images/plus-feature-chat.png'), imageScale: 1.1, title: '100 AI messages / month', desc: 'Chat with your travel assistant to build, edit, and perfect any plan' },
-  { icon: 'square.and.arrow.down', image: require('@/assets/images/plus-feature-import.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere. Tripseek finds the place' },
+  { icon: 'square.and.arrow.down', image: require('@/assets/images/icon-boards-empty.png'), imageScale: 1, title: '15 board imports / month', desc: 'Paste a link or screenshot from Instagram, TikTok, or anywhere. Tripseek finds the place' },
   { icon: 'icloud.and.arrow.down', image: require('@/assets/images/plus-feature-offline.png'), imageScale: 1, title: 'Offline trip access', desc: 'Download your trip and access it anywhere, no internet needed' },
+  { icon: 'doc.richtext', image: null, imageScale: 1, title: 'PDF export', desc: 'Save or print your whole itinerary as a PDF' },
 ];
 
 function FeaturesSlide({ theme }: { theme: any }) {
@@ -91,6 +93,7 @@ const COMPARISON = [
   { label: 'AI chat messages', free: '20 / month', plus: '100 / month' },
   { label: 'Board imports', free: '3 / month', plus: '15 / month' },
   { label: 'Offline trip access', free: '\u2014', plus: '\u2713' },
+  { label: 'PDF export', free: '\u2014', plus: '\u2713' },
   { label: 'Trip management', free: '\u2713', plus: '\u2713' },
   { label: 'Explore & map', free: '\u2713', plus: '\u2713' },
   { label: 'Boards & saves', free: '\u2713', plus: '\u2713' },
@@ -163,14 +166,15 @@ export default function ToveliPlusScreen() {
     try {
       const loaded = await loadSubscriptionProducts();
       if (loaded === null || loaded.length === 0) {
-        setStatus('unavailable');
+        // Never show made-up prices — Guideline 2.1(b) / 2.3.1(a). Offer a retry instead.
+        setStatus('error');
       } else {
         setProducts(loaded);
         setStatus('available');
       }
     } catch {
       // IAP connection fails in simulator / when products aren't configured
-      setStatus('unavailable');
+      setStatus('error');
     }
   }, []);
 
@@ -178,9 +182,14 @@ export default function ToveliPlusScreen() {
 
   async function handleSubscribe() {
     if (status !== 'available') return;
+    // Buy the plan shown as selected — if only one plan loaded from the App Store, that one
+    const planToBuy = products.some((p) => p.planId === selectedPlan)
+      ? selectedPlan
+      : (products.find((p) => p.planId === 'annual') ?? products[0])?.planId;
+    if (!planToBuy) return;
     setPurchasing(true);
     try {
-      const result = await purchaseSubscription(selectedPlan);
+      const result = await purchaseSubscription(planToBuy);
       if (result.error) {
         // requestPurchase rejected — show the error (e.g. "already subscribed")
         showToast(result.error);
@@ -212,9 +221,29 @@ export default function ToveliPlusScreen() {
     }
   }
 
-  const selectedProduct = products.find((p) => p.planId === selectedPlan);
   const annualProduct = products.find((p) => p.planId === 'annual');
   const monthlyProduct = products.find((p) => p.planId === 'monthly');
+  // If only one plan loaded from the App Store, select the one that exists
+  const selectedProduct = products.find((p) => p.planId === selectedPlan) ?? annualProduct ?? monthlyProduct;
+  const annualSavings = annualSavingsPercent(monthlyProduct?.price, annualProduct?.price);
+
+  const legalLinks = (
+    <View style={styles.bottomLinks}>
+      <Pressable onPress={handleRestore} disabled={restoring} accessibilityRole="button">
+        <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>
+          {restoring ? 'Restoring...' : 'Restore Purchases'}
+        </ThemedText>
+      </Pressable>
+      <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'·'}</ThemedText>
+      <Pressable onPress={() => TERMS_OF_USE_URL && Linking.openURL(TERMS_OF_USE_URL)} accessibilityRole="link">
+        <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Terms</ThemedText>
+      </Pressable>
+      <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'·'}</ThemedText>
+      <Pressable onPress={() => PRIVACY_POLICY_URL && Linking.openURL(PRIVACY_POLICY_URL)} accessibilityRole="link">
+        <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Privacy</ThemedText>
+      </Pressable>
+    </View>
+  );
 
   const renewalInfo = (() => {
     if (!usage?.expires_at) return null;
@@ -328,7 +357,7 @@ export default function ToveliPlusScreen() {
           <View style={styles.errorSection}>
             <SymbolView name={"exclamationmark.triangle" as any} size={20} tintColor={theme.textSecondary} />
             <ThemedText style={{ fontSize: 14, color: theme.textSecondary, textAlign: 'center' }}>
-              Something went wrong loading subscriptions.
+              Couldn{'’'}t load subscription options. Check your connection and try again.
             </ThemedText>
             <Pressable
               onPress={loadProducts}
@@ -340,6 +369,7 @@ export default function ToveliPlusScreen() {
             >
               <ThemedText style={{ fontSize: 14, fontWeight: '600' }}>Try again</ThemedText>
             </Pressable>
+            {legalLinks}
           </View>
         )}
 
@@ -362,9 +392,9 @@ export default function ToveliPlusScreen() {
             </View>
             {usage && (
               <View style={styles.usageSummary}>
-                <UsageRow label="AI plans" used={usage.generations_used} total={usage.limits.generations ?? 3} theme={theme} />
-                <UsageRow label="Messages" used={usage.assistance_used} total={usage.limits.assistance ?? 50} theme={theme} />
-                <UsageRow label="Places from links" used={usage.imports_used} total={usage.limits.imports ?? 10} theme={theme} />
+                <UsageRow label="AI plans" used={usage.generations_used} total={usage.limits.generations ?? 5} theme={theme} />
+                <UsageRow label="Messages" used={usage.assistance_used} total={usage.limits.assistance ?? 100} theme={theme} />
+                <UsageRow label="Places from links" used={usage.imports_used} total={usage.limits.imports ?? 15} theme={theme} />
               </View>
             )}
             <View style={styles.bottomLinks}>
@@ -382,57 +412,63 @@ export default function ToveliPlusScreen() {
         )}
 
         {/* Purchase flow */}
-        {(status === 'available' || status === 'unavailable') && !isPlus && (
+        {status === 'available' && !isPlus && selectedProduct && (
           <>
-            {/* Plan toggle */}
+            {/* Plan toggle \u2014 prices only ever come from the App Store */}
             <View style={styles.planToggle}>
-                <Pressable
-                  onPress={() => setSelectedPlan('monthly')}
-                  style={[
-                    styles.planOption,
-                    {
-                      backgroundColor: selectedPlan === 'monthly' ? theme.backgroundElement : 'transparent',
-                      borderColor: selectedPlan === 'monthly' ? theme.primary : 'transparent',
-                    },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <ThemedText style={styles.planOptionLabel}>Monthly</ThemedText>
-                  <ThemedText style={styles.planOptionPrice}>
-                    {monthlyProduct?.displayPrice ?? '$4.99'}<ThemedText style={[styles.planOptionPeriod, { color: theme.textSecondary }]}> /mo</ThemedText>
-                  </ThemedText>
-                </Pressable>
+                {monthlyProduct && (
+                  <Pressable
+                    onPress={() => setSelectedPlan('monthly')}
+                    style={[
+                      styles.planOption,
+                      {
+                        backgroundColor: selectedProduct.planId === 'monthly' ? theme.backgroundElement : 'transparent',
+                        borderColor: selectedProduct.planId === 'monthly' ? theme.primary : 'transparent',
+                      },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <ThemedText style={styles.planOptionLabel}>Monthly</ThemedText>
+                    <ThemedText style={styles.planOptionPrice}>
+                      {monthlyProduct.displayPrice}<ThemedText style={[styles.planOptionPeriod, { color: theme.textSecondary }]}> /mo</ThemedText>
+                    </ThemedText>
+                  </Pressable>
+                )}
 
-                <Pressable
-                  onPress={() => setSelectedPlan('annual')}
-                  style={[
-                    styles.planOption,
-                    {
-                      backgroundColor: selectedPlan === 'annual' ? theme.backgroundElement : 'transparent',
-                      borderColor: selectedPlan === 'annual' ? theme.primary : 'transparent',
-                    },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <View style={[styles.saveBadge, { backgroundColor: theme.primary }]}>
-                    <ThemedText style={[styles.saveBadgeText, { color: theme.primaryText }]}>Save 33%</ThemedText>
-                  </View>
-                  <ThemedText style={styles.planOptionLabel}>Yearly</ThemedText>
-                  <ThemedText style={styles.planOptionPrice}>
-                    {annualProduct?.displayPrice ?? '$39.99'}<ThemedText style={[styles.planOptionPeriod, { color: theme.textSecondary }]}> /yr</ThemedText>
-                  </ThemedText>
-                </Pressable>
+                {annualProduct && (
+                  <Pressable
+                    onPress={() => setSelectedPlan('annual')}
+                    style={[
+                      styles.planOption,
+                      {
+                        backgroundColor: selectedProduct.planId === 'annual' ? theme.backgroundElement : 'transparent',
+                        borderColor: selectedProduct.planId === 'annual' ? theme.primary : 'transparent',
+                      },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    {annualSavings != null && (
+                      <View style={[styles.saveBadge, { backgroundColor: theme.primary }]}>
+                        <ThemedText style={[styles.saveBadgeText, { color: theme.primaryText }]}>Save {annualSavings}%</ThemedText>
+                      </View>
+                    )}
+                    <ThemedText style={styles.planOptionLabel}>Yearly</ThemedText>
+                    <ThemedText style={styles.planOptionPrice}>
+                      {annualProduct.displayPrice}<ThemedText style={[styles.planOptionPeriod, { color: theme.textSecondary }]}> /yr</ThemedText>
+                    </ThemedText>
+                  </Pressable>
+                )}
               </View>
 
             {/* CTA */}
             <Pressable
               onPress={handleSubscribe}
-              disabled={purchasing || status !== 'available'}
+              disabled={purchasing}
               style={({ pressed }) => [
                 styles.ctaButton,
                 {
                   backgroundColor: theme.primary,
-                  opacity: (purchasing || status !== 'available') ? 0.5 : pressed ? 0.85 : 1,
+                  opacity: purchasing ? 0.5 : pressed ? 0.85 : 1,
                 },
               ]}
               accessibilityRole="button"
@@ -441,30 +477,16 @@ export default function ToveliPlusScreen() {
               <ThemedText style={[styles.ctaText, { color: theme.primaryText }]}>
                 {purchasing
                   ? 'Processing...'
-                  : status !== 'available'
-                    ? 'Not yet available'
-                    : selectedProduct
-                      ? `Subscribe \u2013 ${selectedProduct.displayPrice}/${selectedPlan === 'annual' ? 'yr' : 'mo'}`
-                      : 'Subscribe'}
+                  : `Subscribe \u2013 ${selectedProduct.displayPrice}/${selectedProduct.planId === 'annual' ? 'yr' : 'mo'}`}
               </ThemedText>
             </Pressable>
 
+            <ThemedText style={[styles.renewNote, { color: theme.textSecondary }]}>
+              Renews automatically at {selectedProduct.displayPrice}/{selectedProduct.planId === 'annual' ? 'year' : 'month'} until canceled. Cancel anytime in Settings.
+            </ThemedText>
+
             {/* Restore + legal */}
-            <View style={styles.bottomLinks}>
-              <Pressable onPress={handleRestore} disabled={restoring} accessibilityRole="button">
-                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>
-                  {restoring ? 'Restoring...' : 'Restore Purchases'}
-                </ThemedText>
-              </Pressable>
-              <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'\u00B7'}</ThemedText>
-              <Pressable onPress={() => TERMS_OF_USE_URL && Linking.openURL(TERMS_OF_USE_URL)} accessibilityRole="link">
-                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Terms</ThemedText>
-              </Pressable>
-              <ThemedText style={[styles.bottomLinkDot, { color: theme.border }]}>{'\u00B7'}</ThemedText>
-              <Pressable onPress={() => PRIVACY_POLICY_URL && Linking.openURL(PRIVACY_POLICY_URL)} accessibilityRole="link">
-                <ThemedText style={[styles.bottomLinkText, { color: theme.textSecondary }]}>Privacy</ThemedText>
-              </Pressable>
-            </View>
+            {legalLinks}
           </>
         )}
       </Animated.View>
@@ -606,6 +628,7 @@ const styles = StyleSheet.create({
   bottomLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 4 },
   bottomLinkText: { fontSize: 12 },
   bottomLinkDot: { fontSize: 12 },
+  renewNote: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginBottom: 4 },
 
   // Error / unavailable
   errorSection: { alignItems: 'center' as const, gap: 12, paddingVertical: 20 },

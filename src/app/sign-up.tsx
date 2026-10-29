@@ -53,10 +53,6 @@ export default function SignUpScreen() {
   }
 
   async function handleSignUp() {
-    if (!name.trim()) {
-      setError('Please enter your name');
-      return;
-    }
     if (!email.trim() || !password) return;
     if (password.length < 8) {
       setError('Password must be at least 8 characters');
@@ -157,7 +153,7 @@ export default function SignUpScreen() {
           <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.fields}>
             <TextInput
               style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.border, color: theme.text }]}
-              placeholder="Your name"
+              placeholder="Your name (optional)"
               placeholderTextColor={theme.textSecondary}
               value={name}
               onChangeText={setName}

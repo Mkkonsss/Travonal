@@ -32,7 +32,7 @@ import { generateTripAI } from '@/services/ai';
 import { normalizeActivity, deduplicateFixedActivities, ensureRequestedActivities, validateGeneratedActivities, repairActivities, generateActivityId } from '@/services/ai-utils';
 import { useSubscription } from '@/context/subscription';
 import type { Activity } from '@/context/trips';
-import { scheduleAlertCheckReminder } from '@/services/notifications';
+import { askNotificationPermissionOnce, scheduleAlertCheckReminder } from '@/services/notifications';
 import { getTripAlertsAI, getPlaceDetailsAI } from '@/services/ai';
 import { saveTripExternalAlerts } from '@/services/storage';
 import { getPlacePhoto } from '@/services/free-photos';
@@ -382,6 +382,8 @@ export default function GeneratingTripScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.dismiss();
     router.push(`/trip/${tripId}` as any);
+    // Finishing a trip is one of the two moments we ask for notifications (the other is the Alerts tab)
+    setTimeout(() => { askNotificationPermissionOnce(); }, 800);
   }
 
   function handleRetry() {

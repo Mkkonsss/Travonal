@@ -2,7 +2,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import {
-  Alert,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
@@ -32,6 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
+import { AirplaneWindowVideo } from '@/components/airplane-window-video';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, Radius } from '@/constants/theme';
@@ -40,8 +40,8 @@ import { useMemory } from '@/context/memory';
 import { useTripPulse } from '@/context/trip-pulse';
 import { useTheme } from '@/hooks/use-theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { setOnboardingComplete, loadPushPromptShown, savePushPromptShown } from '@/services/storage';
-import { requestNotificationPermission } from '@/services/notifications';
+import { setOnboardingComplete } from '@/services/storage';
+import { askNotificationPermissionOnce } from '@/services/notifications';
 import { useAuth } from '@/context/auth';
 import { pushProfile } from '@/services/sync';
 
@@ -413,7 +413,7 @@ export default function OnboardingScreen() {
   // ========== WELCOME ==========
   if (phase === 'welcome') {
     const slideHeadlines = [
-      'Your entire trip\nlives here.',
+      'Your personal AI\ntravel assistant.',
       'All your bookings\nautomatically organized.',
       'Explore and save\nreal places nearby.',
       'Catch problems before\nthey ruin your trip.',
@@ -451,13 +451,12 @@ export default function OnboardingScreen() {
               }}
               style={{ flex: 1 }}
             >
-              {/* Slide 1 */}
+              {/* Slide 1 — airplane window with a looping clip of the view outside */}
               <View style={{ width: SCREEN_WIDTH, height: heroHeight, alignItems: 'center', justifyContent: 'center', paddingTop: 80 }}>
-                <ExpoImage
-                  // eslint-disable-next-line @typescript-eslint/no-require-imports
-                  source={require('@/assets/images/onboarding-slide-1.png')}
-                  style={{ width: '95%', height: '95%' }}
-                  contentFit="contain"
+                <AirplaneWindowVideo
+                  width={Math.min(SCREEN_WIDTH * 0.62, (heroHeight - 120) / 1.4)}
+                  active={activeSlide === 0}
+                  isDark={isDark}
                 />
               </View>
               {/* Slide 2 */}
@@ -956,22 +955,8 @@ export default function OnboardingScreen() {
                     onValueChange={async (val) => {
                       Haptics.selectionAsync();
                       setTripPulseEnabled(val);
-                      if (val) {
-                        const alreadyShown = await loadPushPromptShown();
-                        if (!alreadyShown) {
-                          savePushPromptShown();
-                          Alert.alert(
-                            'Get Phone Notifications?',
-                            'Want Trip Alerts delivered to your lock screen? You can enable Push Notifications in Profile settings.',
-                            [
-                              { text: 'Not Now', style: 'cancel' },
-                              { text: 'Enable', onPress: () => {
-                                requestNotificationPermission();
-                              }},
-                            ],
-                          );
-                        }
-                      }
+                      // Straight to the iOS prompt (no custom pre-prompt) — Guideline 5.1.1(iv)
+                      if (val) askNotificationPermissionOnce();
                     }}
                     trackColor={{ false: theme.border, true: isDark ? '#34D399' : theme.primary }}
                     thumbColor="#fff"

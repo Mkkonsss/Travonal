@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
@@ -24,9 +24,10 @@ import { normalizeGooglePlace, type NormalizedPlace } from '@/services/place-mod
 import { prefetchPhotosFromCache, getCachedPhotoUrl, getPlacePhoto } from '@/services/free-photos';
 import { getTripDayCount, suggestTimeForActivity } from '@/services/itinerary-engine';
 import { importPlaceAI } from '@/services/ai';
+import { requestAIConsent } from '@/services/ai-consent';
 import { searchPlace as geocodePlace } from '@/services/geocoder';
+import { canonicalBookingHotelUrl } from '@/services/stay22';
 import { useGate } from '@/hooks/use-gate';
-import { FontAwesome5 } from '@expo/vector-icons';
 
 const COLUMN_GAP = 10;
 
@@ -738,6 +739,8 @@ export default function BoardDetailScreen() {
     const googleMapsUri = cached?.googleMapsUri ?? item.googleMapsUri;
     const openNow = cached?.openNow ?? item.openNow;
     const photoRef = cached?.photoRef;
+    // Imported from a Booking.com hotel page — lets "Book" deep-link to that exact property
+    const bookingComUrl = canonicalBookingHotelUrl(item.source);
 
     if (placeId) url += `&placeId=${encodeURIComponent(placeId)}`;
     if (address) url += `&address=${encodeURIComponent(address)}`;
@@ -757,6 +760,7 @@ export default function BoardDetailScreen() {
     if (photoRef) url += `&photoRef=${encodeURIComponent(photoRef)}`;
     if (item.mediaUri) url += `&imageUrl=${encodeURIComponent(item.mediaUri)}`;
     if (item.notes) url += `&notes=${encodeURIComponent(item.notes)}`;
+    if (bookingComUrl) url += `&bookingComUrl=${encodeURIComponent(bookingComUrl)}`;
     return url;
   }
 
@@ -803,6 +807,8 @@ export default function BoardDetailScreen() {
 
   async function handlePasteLink() {
     if (!gate.allowed) { gate.showUpgrade(); return; }
+    // Ask before anything goes to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
     const clip = await Clipboard.getStringAsync();
     const prefill = clip.trim().startsWith('http') ? clip.trim() : '';
     Alert.prompt('Save a post', 'Paste a link from social media and AI finds the place', [
@@ -834,18 +840,9 @@ export default function BoardDetailScreen() {
 
   async function handleAddScreenshot() {
     if (!gate.allowed) { gate.showUpgrade(); return; }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Photo Access Required',
-        'Tripseek needs photo library access to import screenshots. Please enable it in Settings.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() },
-        ],
-      );
-      return;
-    }
+    // Ask before anything goes to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
+    // The system photo picker runs outside the app and needs no photo-library permission.
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.5,
@@ -874,8 +871,10 @@ export default function BoardDetailScreen() {
     });
   }
 
-  function handleAddNote() {
+  async function handleAddNote() {
     if (!gate.allowed) { gate.showUpgrade(); return; }
+    // Ask before anything goes to the AI provider (Guideline 5.1.2(i)); "Not now" changes nothing
+    if (!(await requestAIConsent())) return;
     Alert.prompt('Paste text', 'Type or paste a place name or idea', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -1079,6 +1078,7 @@ export default function BoardDetailScreen() {
         address: item.address,
         lat: item.lat,
         lng: item.lng,
+        website: item.website,
       };
 
       addActivity(selectedTripId, newAct);
@@ -1249,13 +1249,7 @@ export default function BoardDetailScreen() {
                 style={({ pressed }) => [styles.addSquare, { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.8 : 1 }]}
                 accessibilityRole="button"
               >
-                <View style={{ alignItems: 'center', gap: 2 }}>
-                  <View style={{ flexDirection: 'row', gap: 4 }}>
-                    <FontAwesome5 name="instagram" size={14} color="#E4405F" />
-                    <FontAwesome5 name="tiktok" size={14} color={theme.text} />
-                  </View>
-                  <FontAwesome5 name="youtube" size={14} color="#FF0000" />
-                </View>
+                <SymbolView name="link" size={24} tintColor={theme.text} />
                 <ThemedText style={styles.addSquareLabel}>Save a post</ThemedText>
               </Pressable>
               <Pressable

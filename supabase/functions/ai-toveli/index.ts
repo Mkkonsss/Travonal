@@ -728,7 +728,8 @@ async function handleChat(payload) {
     "- 'Add [place] on day 2 at 7pm' / 'Remove the museum' / 'Move lunch to 2pm' → modification. Check you have all details, then execute.",
     "- When ambiguous, default to recommending. Never auto-add to the itinerary.",
     "",
-    "NEVER REFUSE a type of request. If the user wants it, help them get it. But 'never refuse' does not mean 'execute without details'.",
+    "Never refuse a reasonable travel request because of the user's saved preferences — preferences shape your suggestions, they never block a request. Helping still means asking for missing details before acting.",
+    "Stay focused on travel and the user's trips. Politely decline requests for sexual, hateful or harassing content, or for help with anything illegal or dangerous, and never produce that kind of content even if asked.",
     "If a user overrides their profile preferences, follow their instruction.",
     "Respect dietary restrictions/allergies — warn if a place conflicts.",
     "",
@@ -3407,6 +3408,18 @@ async function handlePhotoCacheStore(payload) {
     throw new Error("placeId and photoRef are required");
   }
 
+  // 0. Already saved to our storage — hand that back instead of paying Google for it again.
+  //    (A Google URL saved after a failed upload is temporary, so those are fetched afresh.)
+  var sbSaved = getSupabaseAdmin();
+  var { data: savedRow } = await sbSaved
+    .from("photo_cache")
+    .select("photo_url")
+    .eq("place_id", placeId)
+    .maybeSingle();
+  if (savedRow && savedRow.photo_url && savedRow.photo_url.includes("/storage/v1/object/public/photo-cache/")) {
+    return { url: savedRow.photo_url, stored: true };
+  }
+
   var gKey = Deno.env.get("GOOGLE_PLACES_API_KEY") || "";
   if (!gKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
 
@@ -3898,7 +3911,8 @@ Deno.serve(async (req) => {
       handler = async function() {
         var uid = await getUserIdFromRequest(req);
         if (!uid) throw new Error("Not authenticated");
-        return { email: "bookings+" + uid + "@toveli.com" };
+        // Users are matched by the sender's address, so everyone shares one forwarding address
+        return { email: "bookings@tripseekapp.com" };
       };
     } else if (action === "get_parsed_bookings") {
       handler = async function() {
@@ -4010,12 +4024,19 @@ Deno.serve(async (req) => {
     }
 
     // --- Rate limiting (per-user, in-memory) ---
+    // Photo requests count against their own 60 a minute, so a screen full of places can't use up
+    // the allowance that opening a place or searching needs. Both limits equal the single one before.
+    var PHOTO_ACTIONS = {
+      "photo_cache_lookup": true, "photo_cache_store": true, "resolve_photo_url": true,
+      "get_photo_key": true, "photo_street_view": true,
+    };
     if (userId) {
       var now = Date.now();
-      var userRL = _rateLimitMap.get(userId);
+      var rateLimitKey = PHOTO_ACTIONS[action] ? userId + ":photos" : userId;
+      var userRL = _rateLimitMap.get(rateLimitKey);
       if (!userRL || now - userRL.windowStart > 60000) {
         userRL = { windowStart: now, count: 0 };
-        _rateLimitMap.set(userId, userRL);
+        _rateLimitMap.set(rateLimitKey, userRL);
       }
       userRL.count++;
       if (userRL.count > 60) {

@@ -71,6 +71,8 @@ export interface Activity {
   notes?: string;           // user's personal notes from board
   reservationId?: string; // linked reservation ID
   bookingStatus?: 'booked' | 'pending'; // booking state — undefined = not yet booked
+  bookingComUrl?: string; // Booking.com hotel page, when known — exact Stay22 match
+  website?: string;       // the place's own website, when known — a restaurant's Reserve opens it
 }
 
 /** @deprecated ChangeRecord functionality has been removed. Kept as a stub for downstream imports. */

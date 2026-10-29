@@ -39,7 +39,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * And the secret to be set:
  *   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<key>
  */
-export async function deleteAccount(): Promise<{ error: Error | null }> {
+export async function deleteAccount(
+  /** Fresh Sign in with Apple code so the server can revoke the Apple sign-in (Apple requirement) */
+  appleAuthorizationCode?: string | null,
+): Promise<{ error: Error | null }> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { error: new Error('Not signed in') };
@@ -52,6 +55,7 @@ export async function deleteAccount(): Promise<{ error: Error | null }> {
         'Content-Type': 'application/json',
         apikey: supabaseAnonKey,
       },
+      body: JSON.stringify({ appleAuthorizationCode: appleAuthorizationCode ?? undefined }),
     });
 
     if (!response.ok) {

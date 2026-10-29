@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
@@ -22,6 +21,7 @@ import { Reservation, ReservationType, Trip } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { ParsedBooking } from '@/services/ai';
 import { sortTripsForPicker } from '@/services/trip-helpers';
+import { useBookingForwardEmail } from '@/hooks/use-booking-forward-email';
 
 // ── Shared helpers (exported for use by bookings screen) ──
 
@@ -88,7 +88,7 @@ export function AddBookingModal({
   const [addMode, setAddMode] = useState<'choose' | 'email' | 'review' | 'manual'>(editRes ? 'manual' : initData ? 'review' : (initialMode ?? 'choose'));
 
   // Email forwarding
-  const bookingEmail = 'bookings@tripseekapp.com';
+  const { label: bookingEmail, copyOrEnable: copyBookingEmail, enabled: forwardingEnabled } = useBookingForwardEmail();
   const [emailLoading] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
 
@@ -263,7 +263,7 @@ export function AddBookingModal({
               </ThemedText>
               <Pressable
                 onPress={async () => {
-                  await Clipboard.setStringAsync(bookingEmail);
+                  if (!(await copyBookingEmail())) return;
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   setEmailCopied(true);
                   setTimeout(() => setEmailCopied(false), 2000);
@@ -276,7 +276,7 @@ export function AddBookingModal({
                   {bookingEmail}
                 </ThemedText>
                 <SymbolView
-                  name={emailCopied ? 'checkmark' : 'square.on.square'}
+                  name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
                   size={14}
                   tintColor={emailCopied ? theme.primary : theme.textSecondary}
                 />
@@ -310,7 +310,7 @@ export function AddBookingModal({
             ) : bookingEmail ? (
               <Pressable
                 onPress={async () => {
-                  await Clipboard.setStringAsync(bookingEmail);
+                  if (!(await copyBookingEmail())) return;
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   setEmailCopied(true);
                   setTimeout(() => setEmailCopied(false), 2000);
@@ -323,7 +323,7 @@ export function AddBookingModal({
                   {bookingEmail}
                 </ThemedText>
                 <SymbolView
-                  name={emailCopied ? 'checkmark' : 'square.on.square'}
+                  name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
                   size={14}
                   tintColor={emailCopied ? theme.primary : theme.textSecondary}
                 />

@@ -23,6 +23,7 @@ import {
   openIAPConnection,
   isPurchaseInProgress,
   clearPurchaseInProgress,
+  syncActiveSubscription,
 } from '@/services/subscription';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -56,14 +57,17 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const loadState = useCallback(async () => {
     try {
       // Fetch from server — server is the source of truth for subscription state
-      const summary = await fetchUsageSummary();
+      let summary = await fetchUsageSummary();
+      // A renewal the server hasn't heard about yet: have it re-check with Apple
+      // (it only links subscriptions that belong to this account)
+      if (summary && !summary.is_plus && await syncActiveSubscription()) {
+        summary = (await fetchUsageSummary()) ?? summary;
+      }
       if (summary) {
         setIsPlus(summary.is_plus);
         setPlan(summary.plan);
         setUsage(summary);
       }
-      // Server is the sole source of truth — don't check StoreKit here.
-      // Users can manually restore purchases from the Tripseek+ screen.
     } catch {
       // Failed to load — keep cached state
     } finally {

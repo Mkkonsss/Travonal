@@ -33,6 +33,8 @@ import { Image as ExpoImage } from 'expo-image';
 import { fetchExplorePlaces } from '@/services/explore-service';
 import { getPlacePhoto } from '@/services/free-photos';
 import { getPlaceBookingLinks, openBookingLink } from '@/services/booking-links';
+import { askNotificationPermissionOnce } from '@/services/notifications';
+import { requestAIConsent } from '@/services/ai-consent';
 import type { NormalizedPlace } from '@/services/place-model';
 
 const DESTINATION_EMOJIS: Record<string, string> = {
@@ -409,9 +411,11 @@ export default function AddTripScreen() {
     }
 
     router.push(`/trip/${tripId}` as any);
+    // Finishing a trip is one of the two moments we ask for notifications (the other is the Alerts tab)
+    setTimeout(() => { askNotificationPermissionOnce(); }, 800);
   }
 
-  function handleQuickBuild() {
+  async function handleQuickBuild() {
     if (!destination.trim()) return;
     if (dateMode === 'dates' && startDate && endDate && endDate < startDate) {
       Alert.alert('Invalid dates', 'End date must be on or after the start date.');
@@ -422,6 +426,9 @@ export default function AddTripScreen() {
       setShowUpgradePrompt(true);
       return;
     }
+    // Ask before any trip details go to the AI provider (Guideline 5.1.2(i)).
+    // "Not now" leaves them on this screen with nothing created.
+    if (!(await requestAIConsent())) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const dest = destination.trim();
     const tripTitle = title.trim() || `${dest} Trip`;
@@ -1145,7 +1152,14 @@ export default function AddTripScreen() {
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
                         {hotelSuggestions.map((hotel) => {
                           const photoUrl = hotelPhotoUrls.get(hotel.placeId ?? hotel.name);
-                          const links = getPlaceBookingLinks(hotel.name, hotel.category, destination);
+                          const links = getPlaceBookingLinks(
+                            hotel.name,
+                            'stay/hotel',
+                            destination,
+                            dateMode === 'dates' && startDate && endDate ? { checkIn: startDate, checkOut: endDate } : undefined,
+                            travelers,
+                            { lat: hotel.lat, lng: hotel.lng, address: hotel.address, campaign: 'add_trip' },
+                          );
                           return (
                             <Pressable
                               key={hotel.placeId ?? hotel.name}
@@ -1389,7 +1403,7 @@ export default function AddTripScreen() {
           visible={showUpgradePrompt}
           feature="generate_trip"
           title="Unlimited AI trip plans"
-          description="Generate up to 3 AI-powered itineraries every month with Tripseek+."
+          description="Get 5 AI-powered itineraries every month with Tripseek+."
           icon="sparkles"
           onClose={() => setShowUpgradePrompt(false)}
         />

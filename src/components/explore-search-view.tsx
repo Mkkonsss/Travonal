@@ -61,7 +61,7 @@ import {
 } from '@/services/free-photos';
 import { cityAutocompleteAI, rankPlacesAI, type CityAutocompleteSuggestion } from '@/services/ai';
 import { getCategoryPathData } from '@/constants/map-icons';
-import { isBookablePlace, getBookableCTA, getPlaceBookingLinks, openBookingLink } from '@/services/booking-links';
+import { isBookablePlace, getBookableCTA, getPlaceBookingLinks, openBookingLink, tripStayDates } from '@/services/booking-links';
 
 // ============ Helpers ============
 
@@ -356,12 +356,14 @@ body{background:#e8e8e8}
 .popup-name{font-size:14px;font-weight:700;color:#111;margin-bottom:3px}
 .popup-rating{font-size:12px;color:#F59E0B;font-weight:600;margin-bottom:2px}
 .popup-addr{font-size:11px;color:#9CA3AF;line-height:1.4}
+.leaflet-control-attribution{font-size:9px!important;line-height:1.3!important;padding:0 4px!important;background:rgba(255,255,255,0.7)!important;}.leaflet-control-attribution a{color:#555!important;}
 </style>
 </head><body><div id="map"></div><script>
 var places=${placesJson};
 var photoUrls={};
-var map=L.map('map',{zoomControl:false,attributionControl:false});
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+var map=L.map('map',{zoomControl:false,attributionControl:true});
+map.attributionControl.setPrefix(false);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 var markers=[];
 places.forEach(function(p,i){
   var svgHtml='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'+decodeURIComponent(p.svg).replace(/%23/g,'#')+'</svg>';
@@ -437,12 +439,14 @@ function MapPreview({
   onNavigateToDetail,
   onAddToTrip,
   onToggleSave,
+  onBook,
 }: {
   places: NormalizedPlace[];
   location: ExploreLocation | null;
   onNavigateToDetail: (place: NormalizedPlace) => void;
   onAddToTrip: (place: NormalizedPlace) => void;
   onToggleSave: (place: NormalizedPlace) => void;
+  onBook: (place: NormalizedPlace) => void;
 }) {
   const theme = useTheme();
   const colorScheme = useColorScheme() ?? 'light';
@@ -574,8 +578,7 @@ function MapPreview({
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      const links = getPlaceBookingLinks(place.name, place.category, location?.label ?? '');
-                      if (links[0]) openBookingLink(links[0].url);
+                      onBook(place);
                     }}
                     style={[styles.mapCardAddBtn, { backgroundColor: '#111' }]}
                     accessibilityRole="button"
@@ -1061,6 +1064,29 @@ export function ExploreSearchView() {
     router.push(url as any);
   }
 
+  function handleBookPlace(place: NormalizedPlace) {
+    // Trip context pre-fills dates and travelers when exploring for a specific trip
+    const tripId = exploreLocation?.type === 'trip' ? exploreLocation.tripId : paramTripId;
+    const trip = tripId ? trips.find((t) => t.id === tripId) : undefined;
+    const link = getPlaceBookingLinks(
+      place.name,
+      place.category,
+      exploreLocation?.label ?? '',
+      tripStayDates(trip),
+      trip?.travelers,
+      {
+        lat: place.lat,
+        lng: place.lng,
+        address: place.address,
+        country: trip?.country,
+        campaign: 'explore_map',
+        website: place.website,
+        placeId: place.placeId,
+      },
+    )[0];
+    if (link) openBookingLink(link.url);
+  }
+
   // ---- Add to trip ----
 
   function handleAddToTrip(place: NormalizedPlace) {
@@ -1158,6 +1184,7 @@ export function ExploreSearchView() {
       lng: place.lng,
       rating: place.rating,
       reviewCount: place.reviewCount,
+      website: place.website,
     });
     setPendingAdd(null);
     showToast(`"${place.name}" added to ${trip?.destination ?? 'trip'} (Day ${day})`, 'success');
@@ -1191,6 +1218,7 @@ export function ExploreSearchView() {
       lat: place.lat,
       lng: place.lng,
       rating: place.rating,
+      website: place.website,
     });
     showToast(`"${place.name}" saved to board`, 'success');
     setBoardPickerVisible(false);
@@ -1394,6 +1422,7 @@ export function ExploreSearchView() {
             onNavigateToDetail={navigateToDetail}
             onAddToTrip={handleAddToTrip}
             onToggleSave={handleSaveToBoard}
+            onBook={handleBookPlace}
           />
         )}
 

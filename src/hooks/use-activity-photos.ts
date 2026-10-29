@@ -3,13 +3,14 @@
  *
  * Flow:
  *  1. Check in-memory + Supabase shared cache for already-cached photos
+ *     (placeIds and name-only keys together, in one request)
  *  2. For misses: fetch place details (includes photo references), then
  *     use getPlacePhoto to fetch + cache the photo via the edge function
  *  3. If place details fails (404 — bad/fabricated placeId), fall back to
  *     name-based Google Places search to resolve a real placeId
- *  4. Returns a Map<placeId, photoUrl> that updates as photos load
- *
- * Activities without a placeId are skipped.
+ *  4. Activities without a placeId are found by name search — one search per
+ *     name, even when several screens ask for it at once
+ *  5. Returns a Map<placeId, photoUrl> that updates as photos load
  */
 
 import { useEffect, useState } from 'react';
@@ -34,6 +35,46 @@ export interface ActivityNameHint {
   key: string;
   name: string;
   destination?: string;
+}
+
+/** Name lookups in flight — shared so screens asking for the same activity at once search only once */
+const nameLookups = new Map<string, Promise<string | null>>();
+
+/**
+ * Photo for an activity with no placeId: search by name, then cache the photo under the hint's key.
+ * Exported for testing.
+ */
+export function photoForName(hint: ActivityNameHint): Promise<string | null> {
+  const inFlight = nameLookups.get(hint.key);
+  if (inFlight) return inFlight;
+
+  const lookup = (async () => {
+    // Use global text search (no location restriction) so we reliably
+    // find named places regardless of how specific the destination string is
+    const results = await searchPlaceByName(hint.name, hint.destination);
+    if (results.length === 0) return null;
+
+    const topResult = results[0];
+
+    // Use photo ref from search result directly (included in Text Search response)
+    let photoRef: string | undefined = topResult.photos?.[0]?.reference;
+
+    // Fallback: fetch place details if search result had no photos
+    if (!photoRef && topResult.placeId) {
+      const resolvedDetails = await fetchPlaceDetails(topResult.placeId);
+      const rawPhotos = resolvedDetails?.photos as { name?: string }[] | undefined;
+      photoRef = rawPhotos?.[0]?.name;
+    }
+    if (!photoRef) return null;
+
+    const result = await getPlacePhoto({ cacheKey: hint.key, photoRef });
+    return result?.url ?? null;
+  })()
+    .catch(() => null) // name resolution failed, skip
+    .finally(() => nameLookups.delete(hint.key));
+
+  nameLookups.set(hint.key, lookup);
+  return lookup;
 }
 
 export function useActivityPhotos(
@@ -69,8 +110,10 @@ export function useActivityPhotos(
     }
 
     async function run() {
-      // Step 1: Check shared Supabase cache (fast batch lookup)
-      await prefetchPhotosFromCache(placeIds);
+      // Step 1: Check shared Supabase cache (fast batch lookup). Name-only photos are cached under
+      // their key, so ones found before come back here instead of costing a new search each
+      const nameHints = nameOnlyHints ?? [];
+      await prefetchPhotosFromCache([...placeIds, ...nameHints.map((h) => h.key)]);
       if (cancelled) return;
 
       const map = new Map<string, string>();
@@ -82,6 +125,10 @@ export function useActivityPhotos(
         } else {
           uncached.push(id);
         }
+      }
+      for (const hint of nameHints) {
+        const url = getCachedPhotoUrl(hint.key);
+        if (url) map.set(hint.key, url);
       }
 
       // Publish cache hits immediately
@@ -152,51 +199,25 @@ export function useActivityPhotos(
       }
 
       // Resolve photos for activities with no placeId via name search
-      if (nameOnlyHints && nameOnlyHints.length > 0) {
-        const NBATCH = 2;
-        for (let i = 0; i < nameOnlyHints.length && !cancelled; i += NBATCH) {
-          const nbatch = nameOnlyHints.slice(i, i + NBATCH);
-          await Promise.allSettled(
-            nbatch.map(async (hint) => {
-              if (cancelled) return;
-              // Skip if already in memory cache
-              const cached = getCachedPhotoUrl(hint.key);
-              if (cached) {
-                map.set(hint.key, cached);
-                return;
-              }
-              try {
-                // Use global text search (no location restriction) so we reliably
-                // find named places regardless of how specific the destination string is
-                const results = await searchPlaceByName(hint.name, hint.destination);
-                if (cancelled) return;
-                if (results.length === 0) return;
-
-                const topResult = results[0];
-
-                // Use photo ref from search result directly (included in Text Search response)
-                let photoRef: string | undefined = topResult.photos?.[0]?.reference;
-
-                // Fallback: fetch place details if search result had no photos
-                if (!photoRef && topResult.placeId) {
-                  const resolvedDetails = await fetchPlaceDetails(topResult.placeId);
-                  if (cancelled) return;
-                  const rawPhotos = resolvedDetails?.photos as { name?: string }[] | undefined;
-                  photoRef = rawPhotos?.[0]?.name;
-                }
-
-                if (photoRef) {
-                  const result = await getPlacePhoto({ cacheKey: hint.key, photoRef });
-                  if (result?.url && !cancelled) {
-                    map.set(hint.key, result.url);
-                  }
-                }
-              } catch { /* name resolution failed, skip */ }
-            }),
-          );
-          if (cancelled) return;
-          if (map.size > 0) setPhotos(new Map(map));
-        }
+      const unresolved = nameHints.filter((h) => !map.has(h.key));
+      const NBATCH = 2;
+      for (let i = 0; i < unresolved.length && !cancelled; i += NBATCH) {
+        const nbatch = unresolved.slice(i, i + NBATCH);
+        await Promise.allSettled(
+          nbatch.map(async (hint) => {
+            if (cancelled) return;
+            // Skip if already in memory cache
+            const cached = getCachedPhotoUrl(hint.key);
+            if (cached) {
+              map.set(hint.key, cached);
+              return;
+            }
+            const url = await photoForName(hint);
+            if (url && !cancelled) map.set(hint.key, url);
+          }),
+        );
+        if (cancelled) return;
+        if (map.size > 0) setPhotos(new Map(map));
       }
     }
 

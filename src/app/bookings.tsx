@@ -31,6 +31,7 @@ import {
   getParsedBookingsAI, markBookingImportedAI,
 } from '@/services/ai';
 import { useActivityPhotos, ActivityNameHint } from '@/hooks/use-activity-photos';
+import { useBookingForwardEmail } from '@/hooks/use-booking-forward-email';
 
 // ── Helpers ──
 
@@ -174,12 +175,12 @@ export default function BookingsScreen() {
   const [isStandaloneEdit, setIsStandaloneEdit] = useState(false);
 
   // ── Booking forwarding email ──
-  const bookingEmail = 'bookings@tripseekapp.com';
+  const { label: bookingEmail, copyOrEnable: copyBookingEmail, enabled: forwardingEnabled } = useBookingForwardEmail();
   const [emailCopied, setEmailCopied] = useState(false);
   const [copiedConfirmation, setCopiedConfirmation] = useState<string | null>(null);
 
   async function handleCopyEmail() {
-    await Clipboard.setStringAsync(bookingEmail);
+    if (!(await copyBookingEmail())) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEmailCopied(true);
     setTimeout(() => setEmailCopied(false), 2000);
@@ -950,7 +951,7 @@ export default function BookingsScreen() {
                 {bookingEmail}
               </ThemedText>
               <SymbolView
-                name={emailCopied ? 'checkmark' : 'square.on.square'}
+                name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
                 size={14}
                 tintColor={emailCopied ? theme.primary : theme.textSecondary}
               />
@@ -972,7 +973,7 @@ export default function BookingsScreen() {
               <SymbolView name="envelope" size={14} tintColor={theme.textSecondary} />
               <ThemedText style={[styles.emailStripLabel, { color: theme.textSecondary }]}>Forward to:</ThemedText>
               <ThemedText style={[styles.emailStripAddress, { color: theme.primary }]} numberOfLines={1}>{bookingEmail}</ThemedText>
-              <SymbolView name={emailCopied ? 'checkmark' : 'square.on.square'} size={13} tintColor={emailCopied ? theme.primary : theme.textSecondary} />
+              <SymbolView name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'} size={13} tintColor={emailCopied ? theme.primary : theme.textSecondary} />
             </Pressable>
 
             {/* Sort chips */}

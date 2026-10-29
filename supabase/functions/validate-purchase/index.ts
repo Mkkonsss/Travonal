@@ -2,8 +2,13 @@
  * Supabase Edge Function: validate-purchase
  *
  * Called by the Tripseek app after a successful IAP purchase or restore.
- * Validates the purchase and upserts the user's subscription record in
- * user_subscriptions so the server-side usage RPCs see the correct plan.
+ * Checks the purchase with Apple's App Store Server API and upserts the user's
+ * subscription record in user_subscriptions (real plan, status and expiry from Apple),
+ * so the server-side usage RPCs see the correct plan. Renewals, expiries and refunds
+ * arrive later via the app-store-notifications function.
+ *
+ * Until the In-App Purchase key secrets are set (see _shared/app-store.ts) it falls back
+ * to the old unverified behaviour and logs an error — set them before release.
  *
  * DEPLOYMENT:
  *   supabase functions deploy validate-purchase
@@ -17,6 +22,8 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { appStoreConfig, fetchSubscriptionState } from '../_shared/app-store.ts';
+import { ownershipConflict, planForProduct, statusFromApple } from '../_shared/app-store-utils.ts';
 
 const ALLOWED_ORIGINS = [
   'https://tripseekapp.com',
@@ -38,14 +45,6 @@ function makeCorsHeaders(req: Request) {
     'Vary': 'Origin',
   };
 }
-
-// Product ID → plan mapping (support both current and legacy App Store Connect IDs)
-const PRODUCT_PLAN_MAP: Record<string, 'monthly' | 'annual'> = {
-  'com.tripseek.app.plus.monthly': 'monthly',
-  'com.tripseek.app.plus.annual': 'annual',
-  'com.toveli.plus.monthly': 'monthly',
-  'com.toveli.plus.annual': 'annual',
-};
 
 // Validate required env vars at startup
 const _REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
@@ -94,9 +93,10 @@ Deno.serve(async (req: Request) => {
 
     // Parse request body
     const body = await req.json();
-    const { productId, transactionId } = body as {
+    const { productId, transactionId, auto } = body as {
       productId?: string;
       transactionId?: string;
+      auto?: boolean;
     };
 
     if (!productId || typeof productId !== 'string') {
@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Map product ID to plan
-    const plan = PRODUCT_PLAN_MAP[productId];
+    const plan = planForProduct(productId);
     if (!plan) {
       return new Response(JSON.stringify({ error: 'Unknown product ID' }), {
         status: 400,
@@ -120,6 +120,84 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
+
+    // ── Verified path: ask Apple what this purchase really is ──
+    const config = appStoreConfig();
+    if (config) {
+      if (!transactionId || typeof transactionId !== 'string') {
+        return new Response(JSON.stringify({ error: 'Missing transactionId' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const state = await fetchSubscriptionState(config, transactionId);
+      const tx = state?.transaction;
+      const verifiedPlan = planForProduct(tx?.productId);
+      if (!state || !tx || !verifiedPlan || tx.bundleId !== config.bundleId) {
+        return new Response(JSON.stringify({ error: 'Purchase could not be verified with Apple' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // One Apple subscription backs one Tripseek account
+      const { data: otherOwner } = await adminClient
+        .from('user_subscriptions')
+        .select('user_id')
+        .eq('original_transaction_id', tx.originalTransactionId)
+        .neq('user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      if (ownershipConflict({ userId: user.id, appAccountToken: tx.appAccountToken, existingOwnerId: otherOwner?.user_id })) {
+        return new Response(JSON.stringify({ error: 'This subscription is linked to another Tripseek account.' }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const status = statusFromApple(state.appleStatus);
+      const verifiedExpiresAt = tx.expiresDate ? new Date(tx.expiresDate).toISOString() : null;
+      const { error: verifiedUpsertError } = await adminClient
+        .from('user_subscriptions')
+        .upsert(
+          {
+            user_id: user.id,
+            plan: verifiedPlan,
+            status,
+            store: 'apple',
+            product_id: tx.productId,
+            original_transaction_id: tx.originalTransactionId,
+            expires_at: verifiedExpiresAt,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        );
+      if (verifiedUpsertError) {
+        console.error('[validate-purchase] upsert error:', verifiedUpsertError.message);
+        return new Response(JSON.stringify({ error: 'Failed to update subscription' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, verified: true, plan: verifiedPlan, status, expires_at: verifiedExpiresAt }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // ── Unverified fallback (no In-App Purchase key configured yet) ──
+    console.error('[validate-purchase] APPLE_IAP_* secrets not set — purchase NOT verified with Apple. Set them before release.');
+
+    // Background re-checks are only safe when Apple verifies ownership — without that,
+    // one Apple ID's subscription could be attached to every account used on the device.
+    if (auto === true) {
+      return new Response(JSON.stringify({ success: false, error: 'Verification not configured' }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Never downgrade an active annual subscription to monthly.
     // This can happen when StoreKit replays old monthly transactions

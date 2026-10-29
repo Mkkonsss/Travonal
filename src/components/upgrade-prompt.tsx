@@ -44,7 +44,7 @@ const FEATURE_CONTENT: Record<string, { image: any; title: string; desc: string 
     desc: 'Search for activities in plain English, like "a cozy cafe near the museum".',
   },
   import_place: {
-    image: require('@/assets/images/plus-feature-import.png'),
+    image: require('@/assets/images/icon-boards-empty.png'),
     title: 'Import more places',
     desc: 'Add up to 15 places from links & photos every month with Tripseek+.',
   },
@@ -124,8 +124,8 @@ export function UpgradePrompt({
               onPress={handleUpgrade}
               style={({ pressed }) => [styles.cta, { backgroundColor: theme.primary, opacity: pressed ? 0.85 : 1 }]}
             >
-              <ThemedText style={[styles.ctaText, { color: theme.background }]}>Upgrade to Tripseek+</ThemedText>
-              <ThemedText style={[styles.ctaPrice, { color: theme.background }]}>$4.99/month</ThemedText>
+              {/* No price here: real, local prices come from the App Store on the Tripseek+ screen */}
+              <ThemedText style={[styles.ctaText, { color: theme.background }]}>See Tripseek+ plans</ThemedText>
             </Pressable>
 
             {/* Dismiss */}

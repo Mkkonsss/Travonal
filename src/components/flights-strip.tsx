@@ -10,9 +10,9 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Reservation, Trip } from '@/context/trips';
 import { searchFlightsAI, type FlightResult } from '@/services/ai';
+import { openBookingLink } from '@/services/booking-links';
+import { wrapBookingComUrl } from '@/services/stay22';
 import { useActivityPhotos, type ActivityNameHint } from '@/hooks/use-activity-photos';
-
-const BOOKING_AFFILIATE_ID = process.env.EXPO_PUBLIC_BOOKING_COM_AID ?? '';
 
 const CITY_TO_IATA: Record<string, string> = {
   'new york': 'NYC', 'new york city': 'NYC', 'nyc': 'NYC',
@@ -66,7 +66,6 @@ function buildBookingFlightsUrl(from: string | undefined, to: string, date?: str
   const fromCode = from ? toIata(from.split(',')[0].trim()) : undefined;
 
   const params = new URLSearchParams({
-    aid: BOOKING_AFFILIATE_ID,
     adults: '1',
     type: returnDate ? 'ROUNDTRIP' : 'ONEWAY',
     cabinClass: 'ECONOMY',
@@ -76,7 +75,7 @@ function buildBookingFlightsUrl(from: string | undefined, to: string, date?: str
   if (fromCode && /^[A-Z]{3}$/.test(fromCode)) params.set('from', fromCode);
   if (date) params.set('depart', date);
   if (returnDate) params.set('return', returnDate);
-  return `https://www.booking.com/flights/index.html?${params.toString()}`;
+  return wrapBookingComUrl(`https://www.booking.com/flights/index.html?${params.toString()}`, 'flights_strip');
 }
 
 export interface FlightsStripProps {
@@ -208,7 +207,7 @@ export const FlightsStrip = memo(function FlightsStrip({
           onPress={() => {
             const validDate = trip.startDate && !trip.startDate.startsWith('2099') ? trip.startDate : undefined;
             const validReturn = trip.endDate && !trip.endDate.startsWith('2099') ? trip.endDate : undefined;
-            Linking.openURL(buildBookingFlightsUrl(departureCity, trip.destination, validDate, validReturn));
+            openBookingLink(buildBookingFlightsUrl(departureCity, trip.destination, validDate, validReturn));
           }}
           accessibilityRole="button"
           accessibilityLabel="Find a flight"
@@ -260,7 +259,7 @@ export const FlightsStrip = memo(function FlightsStrip({
                       {f.duration > 0 ? ` · ${formatDuration(f.duration)}` : ''}
                     </ThemedText>
                     <Pressable
-                      onPress={() => Linking.openURL(bookingUrl)}
+                      onPress={() => openBookingLink(bookingUrl)}
                       style={[s.suggestBookBtn, { backgroundColor: theme.primary }]}
                       accessibilityRole="button"
                       accessibilityLabel="Book flight"

@@ -1,0 +1,9 @@
+name = "tripseek-booking-email"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+[observability]
+enabled = true
+
+# Secret (not stored here): INBOUND_URL — set with `npx wrangler secret put INBOUND_URL`

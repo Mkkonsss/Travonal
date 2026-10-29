@@ -10,28 +10,32 @@ import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
+import { AFFILIATE_DISCLOSURE } from '@/constants/affiliates';
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { Activity, Trip } from '@/context/trips';
+import { useBookingForwardEmail } from '@/hooks/use-booking-forward-email';
 
-const BOOKING_EMAIL = 'bookings@tripseekapp.com';
 
 interface Props {
   data: { activity: Activity; trip: Trip; photoUrl?: string } | null;
   onClose: () => void;
+  onBook?: (activity: Activity) => void;
+  /** e.g. "Book on Booking.com" / "Find stays nearby on Booking.com" */
+  bookLabel?: string;
   onRemove?: (activity: Activity) => void;
 }
 
-export function UnbookedStaySheet({ data, onClose, onRemove }: Props) {
+export function UnbookedStaySheet({ data, onClose, onBook, bookLabel = 'Book on Booking.com', onRemove }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
 
   const [mounted, setMounted] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
+  const { label: bookingEmail, copyOrEnable: copyBookingEmail, enabled: forwardingEnabled } = useBookingForwardEmail();
 
   const sheetAnim = useRef(new Animated.Value(800)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -58,7 +62,7 @@ export function UnbookedStaySheet({ data, onClose, onRemove }: Props) {
   }
 
   async function handleCopyEmail() {
-    await Clipboard.setStringAsync(BOOKING_EMAIL);
+    if (!(await copyBookingEmail())) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEmailCopied(true);
     setTimeout(() => setEmailCopied(false), 2000);
@@ -131,6 +135,22 @@ export function UnbookedStaySheet({ data, onClose, onRemove }: Props) {
             {activity.title}
           </ThemedText>
 
+          {onBook && (
+            <View style={styles.bookBlock}>
+              <Pressable
+                onPress={() => { close(); onBook(activity); }}
+                style={({ pressed }) => [styles.bookBtn, { backgroundColor: theme.primary, opacity: pressed ? 0.85 : 1 }]}
+                accessibilityRole="button"
+                accessibilityLabel={bookLabel}
+              >
+                <ThemedText style={[styles.bookBtnText, { color: theme.primaryText }]}>{bookLabel}</ThemedText>
+              </Pressable>
+              <ThemedText style={[styles.disclosure, { color: theme.textSecondary }]}>
+                {AFFILIATE_DISCLOSURE}
+              </ThemedText>
+            </View>
+          )}
+
           <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
             <ExpoImage
               source={require('@/assets/images/onboarding-slide-2.png')}
@@ -152,10 +172,10 @@ export function UnbookedStaySheet({ data, onClose, onRemove }: Props) {
             accessibilityLabel="Copy forwarding email address"
           >
             <ThemedText style={[styles.emailText, { color: theme.primary }]} numberOfLines={1}>
-              {BOOKING_EMAIL}
+              {bookingEmail}
             </ThemedText>
             <SymbolView
-              name={emailCopied ? 'checkmark' : 'square.on.square'}
+              name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
               size={15}
               tintColor={emailCopied ? theme.primary : theme.textSecondary}
             />
@@ -228,6 +248,23 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  bookBlock: {
+    gap: 8,
+  },
+  bookBtn: {
+    paddingVertical: 14,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+  },
+  bookBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  disclosure: {
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
   },
   card: {
     flexDirection: 'row',

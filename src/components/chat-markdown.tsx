@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
 import { Linking, Text, View, StyleSheet } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
+import { openBookingLink } from '@/services/booking-links';
+import { wrapBookingComUrl } from '@/services/stay22';
 
 /**
  * Lightweight markdown renderer for chat messages.
@@ -39,13 +41,14 @@ function renderInline(line: string, isUser: boolean, theme: ReturnType<typeof us
         <Text key={`${keyPrefix}-i${i}`} style={mdStyles.italic}>{match[4]}</Text>
       );
     } else if (match[5]) {
-      // URL
+      // URL — Booking.com links go through our Stay22 affiliate link like every other Book button
       const url = match[5];
+      const affiliateUrl = wrapBookingComUrl(url, 'chat');
       parts.push(
         <Text
           key={`${keyPrefix}-u${i}`}
           style={[mdStyles.link, isUser && { color: 'rgba(255,255,255,0.85)' }]}
-          onPress={() => Linking.openURL(url)}
+          onPress={() => (affiliateUrl !== url ? openBookingLink(affiliateUrl) : Linking.openURL(url))}
         >
           {url}
         </Text>

@@ -2,6 +2,8 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // React Native defines __DEV__ globally; app code reads it
+  globals: { __DEV__: true },
   roots: ['<rootDir>/src'],
   moduleNameMapper: {
     // CSS / assets must come before the @/ catch-all
@@ -22,6 +24,9 @@ module.exports = {
     '^expo-video$': '<rootDir>/src/__mocks__/expo-video.js',
     '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.js',
     '^expo-symbols$': '<rootDir>/src/__mocks__/expo-symbols.js',
+    '^expo-linking$': '<rootDir>/src/__mocks__/empty.js',
+    '^expo-auth-session$': '<rootDir>/src/__mocks__/empty.js',
+    '^expo-secure-store$': '<rootDir>/src/__mocks__/empty.js',
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
   transform: {

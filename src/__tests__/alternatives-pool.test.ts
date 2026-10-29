@@ -1,52 +1,51 @@
-import { getAlternatives, getAllPoolDestinations, findReplacement, findSurprise } from '@/services/alternatives-pool';
+import { getAlternatives, findReplacement, findSurprise } from '@/services/alternatives-pool';
 import { Activity } from '@/context/trips';
 
 describe('getAlternatives', () => {
-  test('returns Tokyo alternatives for Tokyo', () => {
-    const pool = getAlternatives('Tokyo');
-    expect(pool.length).toBeGreaterThan(0);
-    expect(pool.some((p) => p.title === 'Senso-ji Temple')).toBe(true);
+  test('returns the same generic ideas for every destination', () => {
+    for (const destination of ['Tokyo', 'Barcelona', 'Kyoto', 'Atlantis']) {
+      const pool = getAlternatives(destination);
+      expect(pool.length).toBeGreaterThan(0);
+      expect(pool.some((p) => p.title === 'Walking city tour')).toBe(true);
+    }
   });
 
-  test('returns Barcelona alternatives for Barcelona', () => {
-    const pool = getAlternatives('Barcelona');
-    expect(pool.length).toBeGreaterThan(0);
-    expect(pool.some((p) => p.title === 'Casa Batllo tour')).toBe(true);
+  // Guideline 2.1(a) / 1.1.6: the quick-edit ideas must never carry made-up venue details
+  test('contains no made-up ratings, reviews, hours or verified badges', () => {
+    for (const p of getAlternatives('Tokyo')) {
+      expect(p.rating).toBeUndefined();
+      expect(p.reviewCount).toBeUndefined();
+      expect(p.reviews).toBeUndefined();
+      expect(p.reviewSummary).toBeUndefined();
+      expect(p.hours).toBeUndefined();
+      expect(p.openNow).toBeUndefined();
+      expect(p.verified).toBeUndefined();
+    }
   });
 
-  test('returns default alternatives for unknown destination', () => {
-    const pool = getAlternatives('Atlantis');
-    expect(pool.length).toBeGreaterThan(0);
-    // Default pool should have generic items
-    expect(pool.some((p) => p.title === 'Walking city tour')).toBe(true);
-  });
-});
-
-describe('getAllPoolDestinations', () => {
-  test('returns known destinations excluding _default', () => {
-    const destinations = getAllPoolDestinations();
-    expect(destinations).toContain('Tokyo');
-    expect(destinations).toContain('Barcelona');
-    expect(destinations).toContain('Kyoto');
-    expect(destinations).not.toContain('_default');
+  test('contains no named sample venues or fake hotels', () => {
+    const titles = getAlternatives('Tokyo').map((p) => p.title);
+    expect(titles).not.toContain('Senso-ji Temple');
+    expect(titles).not.toContain('Tsukemen at Fuunji');
+    expect(titles).not.toContain('Casa Batllo tour');
+    expect(getAlternatives('Paris').some((p) => p.type === 'hotel')).toBe(false);
   });
 });
 
 describe('findReplacement', () => {
   const baseActivity: Activity = {
     id: '1',
-    title: 'TeamLab Borderless',
+    title: 'Museum visit',
     type: 'activity',
     day: 1,
     time: '10:00',
-    
     category: 'art',
   };
 
   test('returns a replacement that is not the same activity', () => {
     const replacement = findReplacement('Tokyo', baseActivity);
     expect(replacement).not.toBeNull();
-    expect(replacement!.title).not.toBe('TeamLab Borderless');
+    expect(replacement!.title).not.toBe('Museum visit');
   });
 
   test('prefers same type when available', () => {
@@ -57,38 +56,33 @@ describe('findReplacement', () => {
 
   test('respects budget filter', () => {
     const replacement = findReplacement('Tokyo', baseActivity, { budget: 'budget' });
-    if (replacement) {
-      expect(['free', 'budget']).toContain(replacement.cost);
-    }
+    expect(replacement).not.toBeNull();
+    expect(['free', 'budget']).toContain(replacement!.cost);
   });
 
   test('avoids crowds when requested', () => {
     const replacement = findReplacement('Tokyo', baseActivity, { avoidCrowds: true });
-    if (replacement) {
-      expect(replacement.crowdLevel).not.toBe('high');
-    }
+    expect(replacement).not.toBeNull();
+    expect(replacement!.crowdLevel).toBe('low');
   });
 
-  test('returns null when no candidates remain (all excluded)', () => {
-    // Use a destination with only one activity type match and exclude everything
-    const food: Activity = { id: '1', title: 'Tsukemen at Fuunji', type: 'food', day: 1, time: '12:00' };
+  test('never returns the activity being replaced', () => {
+    const food: Activity = { id: '1', title: 'Local market visit', type: 'food', day: 1, time: '12:00' };
     const result = findReplacement('Tokyo', food, { dislikes: ['Crowds'] });
-    // May or may not be null depending on pool, but should not crash
     expect(result === null || result.title !== food.title).toBe(true);
   });
 });
 
 describe('findSurprise', () => {
   test('returns an activity not in existingTitles', () => {
-    const existing = ['TeamLab Borderless', 'Senso-ji Temple'];
+    const existing = ['Walking city tour', 'Museum visit'];
     const surprise = findSurprise('Tokyo', existing, ['Art & Museums'], []);
     expect(surprise).not.toBeNull();
     expect(existing).not.toContain(surprise!.title);
   });
 
   test('returns null when all alternatives already exist', () => {
-    const pool = getAlternatives('Kyoto');
-    const allTitles = pool.map((p) => p.title);
+    const allTitles = getAlternatives('Kyoto').map((p) => p.title);
     const surprise = findSurprise('Kyoto', allTitles, [], []);
     expect(surprise).toBeNull();
   });

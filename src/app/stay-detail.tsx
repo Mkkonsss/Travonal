@@ -25,9 +25,9 @@ import { useTrips, type Reservation } from '@/context/trips';
 import { useToast } from '@/context/toast';
 import { useTheme } from '@/hooks/use-theme';
 import { useActivityPhotos } from '@/hooks/use-activity-photos';
-import { getBookingEmailAI } from '@/services/ai';
 import { getPlaceBookingLinks, openBookingLink } from '@/services/booking-links';
 import { formatShortDate } from '@/services/trip-helpers';
+import { useBookingForwardEmail } from '@/hooks/use-booking-forward-email';
 
 export default function StayDetailScreen() {
   const params = useLocalSearchParams<{ tripId?: string; activityId?: string }>();
@@ -59,16 +59,14 @@ export default function StayDetailScreen() {
   const [modalInitialMode, setModalInitialMode] = useState<'choose' | 'email' | 'manual'>('choose');
 
   // Forwarding email
-  const [bookingEmail, setBookingEmail] = useState('');
   const [emailCopied, setEmailCopied] = useState(false);
+  const { label: bookingEmail, copyOrEnable: copyBookingEmail, enabled: forwardingEnabled } = useBookingForwardEmail();
 
   useEffect(() => {
-    getBookingEmailAI().then((r) => setBookingEmail(r.email)).catch(() => {});
   }, []);
 
   async function handleCopyEmail() {
-    if (!bookingEmail) return;
-    await Clipboard.setStringAsync(bookingEmail);
+    if (!(await copyBookingEmail())) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEmailCopied(true);
     setTimeout(() => setEmailCopied(false), 2000);
@@ -378,7 +376,7 @@ export default function StayDetailScreen() {
                     {bookingEmail}
                   </ThemedText>
                   <SymbolView
-                    name={emailCopied ? 'checkmark' : 'square.on.square'}
+                    name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
                     size={14}
                     tintColor={emailCopied ? theme.primary : theme.textSecondary}
                   />

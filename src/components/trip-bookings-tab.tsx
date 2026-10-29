@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,16 +10,17 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SymbolView } from 'expo-symbols';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { TYPE_SYMBOLS, formatBookingDate } from '@/components/add-booking-modal';
+import { AFFILIATE_DISCLOSURE } from '@/constants/affiliates';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { Reservation, Trip } from '@/context/trips';
+import { Activity, Reservation, Trip } from '@/context/trips';
 import { useActivityPhotos, ActivityNameHint } from '@/hooks/use-activity-photos';
 import { isBookableActivity } from '@/services/booking-links';
+import { useBookingForwardEmail } from '@/hooks/use-booking-forward-email';
 
 const GAP = 10;
 
@@ -70,9 +70,10 @@ function BookingImage({
 interface TripBookingsTabProps {
   trip: Trip;
   onReservationPress: (res: Reservation, photoUrl?: string) => void;
+  onBookActivity?: (activity: Activity) => void;
 }
 
-export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabProps) {
+export function TripBookingsTab({ trip, onReservationPress, onBookActivity }: TripBookingsTabProps) {
   const theme = useTheme();
   const { width: screenWidth } = useWindowDimensions();
 
@@ -84,7 +85,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
   const [emailCopied, setEmailCopied] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
-  const bookingEmail = 'bookings@tripseekapp.com';
+  const { label: bookingEmail, copyOrEnable: copyBookingEmail, enabled: forwardingEnabled } = useBookingForwardEmail();
 
   const reservations = useMemo(
     () => (trip.reservations ?? []).filter((r) => !r.cancelled),
@@ -111,7 +112,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
   }, [reservations, sortBy]);
 
   async function handleCopyEmail() {
-    await Clipboard.setStringAsync(bookingEmail);
+    if (!(await copyBookingEmail())) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEmailCopied(true);
     setTimeout(() => setEmailCopied(false), 2000);
@@ -193,7 +194,6 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
 
   function renderAccordion() {
     if (activeSections.length === 0) return null;
-    const AID = 'YOUR_AID_HERE';
     return (
       <View style={styles.accordionContainer}>
         <View style={[styles.accordionDivider, { backgroundColor: theme.border }]} />
@@ -285,16 +285,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
                           </View>
                         ) : (
                           <Pressable
-                            onPress={() => {
-                              const q = `${activity.title} ${trip.destination}`.replace(/\s+/g, '+');
-                              const url =
-                                actType === 'flight'
-                                  ? `https://www.booking.com/flights/index.html?aid=${AID}`
-                                  : actType === 'hotel'
-                                    ? `https://www.booking.com/searchresults.html?ss=${q}&aid=${AID}`
-                                    : `https://www.booking.com/attractions/index.html?aid=${AID}`;
-                              Linking.openURL(url);
-                            }}
+                            onPress={() => onBookActivity?.(activity)}
                             style={[styles.bookBtn, { backgroundColor: theme.text }]}
                             accessibilityRole="button"
                             accessibilityLabel={`Book ${activity.title}`}
@@ -333,6 +324,9 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
             </View>
           );
         })}
+        <ThemedText style={[styles.disclosure, { color: theme.textSecondary }]}>
+          {AFFILIATE_DISCLOSURE}
+        </ThemedText>
       </View>
     );
   }
@@ -375,7 +369,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
               {bookingEmail}
             </ThemedText>
             <SymbolView
-              name={emailCopied ? 'checkmark' : 'square.on.square'}
+              name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
               size={14}
               tintColor={emailCopied ? theme.primary : theme.textSecondary}
             />
@@ -409,7 +403,7 @@ export function TripBookingsTab({ trip, onReservationPress }: TripBookingsTabPro
           {bookingEmail}
         </ThemedText>
         <SymbolView
-          name={emailCopied ? 'checkmark' : 'square.on.square'}
+          name={emailCopied ? 'checkmark' : forwardingEnabled ? 'square.on.square' : 'sparkles'}
           size={13}
           tintColor={emailCopied ? theme.primary : theme.textSecondary}
         />
@@ -587,6 +581,7 @@ const styles = StyleSheet.create({
   // Accordion
   accordionContainer: { gap: 8, paddingBottom: 8 },
   accordionDivider: { height: StyleSheet.hairlineWidth, marginBottom: 4 },
+  disclosure: { fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 4 },
   accordionHeader: {
     fontSize: 13,
     fontWeight: '700',

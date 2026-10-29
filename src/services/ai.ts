@@ -9,6 +9,8 @@
  */
 
 import { supabase } from './supabase';
+import { pausePhotoRequests, photoRequestSlot } from './photo-budget';
+import { AIConsentRequiredError, getAIConsent } from './ai-consent';
 import type { Trip, Activity } from '@/context/trips';
 import type { TravelProfile } from '@/context/profile';
 
@@ -16,7 +18,22 @@ const EDGE_FN_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/ai-tov
 
 // ─── Core fetch helper ────────────────────────────────────────────────────────
 
+/**
+ * Actions that send personal data to Anthropic's Claude. They are blocked on the device
+ * until the user agrees in the AI consent sheet (Guideline 5.1.2(i)). Places, photos and
+ * booking lookups don't use AI and aren't blocked.
+ */
+export const AI_ACTIONS = new Set([
+  'generate_trip', 'chat', 'edit_trip', 'enhance_profile', 'import_place', 'import_booking',
+  'rank_places', 'natural_search', 'prepare_fix', 'analyze_trip', 'generate_description',
+  'get_trip_alerts',
+]);
+
 async function callEdgeFunction<T>(action: string, payload: unknown): Promise<T> {
+  if (AI_ACTIONS.has(action) && getAIConsent() !== 'granted') {
+    throw new AIConsentRequiredError();
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
@@ -47,7 +64,10 @@ async function callEdgeFunction<T>(action: string, payload: unknown): Promise<T>
       if (errJson.retry_after) retryAfter = errJson.retry_after;
     } catch { /* ignore */ }
     const mins = Math.ceil(retryAfter / 60);
-    throw new Error(`You're browsing too fast! Try again in ${mins} minute${mins > 1 ? 's' : ''}.`);
+    const err = new Error(`You're browsing too fast! Try again in ${mins} minute${mins > 1 ? 's' : ''}.`);
+    (err as any).code = 'RATE_LIMIT';
+    (err as any).retryAfter = retryAfter;
+    throw err;
   }
 
   // Usage limit — server denied the action due to subscription/usage gate
@@ -317,10 +337,19 @@ export async function getPlacePhotoAI(params: {
   reference: string;
   maxWidth?: number;
 }): Promise<PlacePhotoResult> {
-  return callEdgeFunction('resolve_photo_url', {
-    reference: params.reference,
-    maxWidth: params.maxWidth || 1024,
-  });
+  // Paced with the other photo requests; over the backend's limit, wait until it lets us in again
+  for (let attempt = 1; ; attempt++) {
+    await photoRequestSlot();
+    try {
+      return await callEdgeFunction('resolve_photo_url', {
+        reference: params.reference,
+        maxWidth: params.maxWidth || 1024,
+      });
+    } catch (err: unknown) {
+      if ((err as any)?.code !== 'RATE_LIMIT' || attempt >= 3) throw err;
+      pausePhotoRequests((err as any).retryAfter ?? 60);
+    }
+  }
 }
 
 // ─── 10. Place Details ──────────────────────────────────────────────────────

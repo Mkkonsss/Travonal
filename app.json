@@ -20,10 +20,7 @@
         ]
       },
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Tripseek uses your location to show nearby places and personalise your trip recommendations.",
-        "NSPhotoLibraryUsageDescription": "Tripseek needs access to your photo library to import screenshots of places you want to visit.",
-        "NSCameraUsageDescription": "Tripseek uses the camera to capture screenshots of places you want to add to your trips."
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -88,7 +85,18 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Tripseek uses your location to show places near you in Explore."
+          "locationWhenInUsePermission": "Tripseek uses your location to show places near you and suggest things to do nearby.",
+          "locationAlwaysAndWhenInUsePermission": "Tripseek only uses your location while you're using the app, to show places near you and suggest things to do nearby.",
+          "locationAlwaysPermission": "Tripseek only uses your location while you're using the app, to show places near you and suggest things to do nearby.",
+          "motionUsagePermission": "Tripseek doesn't use motion data."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Tripseek only uses the photos you choose, to find places in your screenshots and to set profile and trip photos.",
+          "cameraPermission": "Tripseek doesn't use your camera.",
+          "microphonePermission": "Tripseek doesn't use your microphone."
         }
       ]
     ],

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -10,19 +10,9 @@ import { useTheme } from '@/hooks/use-theme';
 import type { Activity, Reservation, Trip } from '@/context/trips';
 import type { StaysData } from '@/components/stays-section';
 import type { NormalizedPlace } from '@/services/place-model';
+import { getPlaceBookingLinks, openBookingLink, tripStayDates } from '@/services/booking-links';
 
 import { StayCard } from '@/components/stays/stay-card';
-
-const BOOKING_AFFILIATE_ID = process.env.EXPO_PUBLIC_BOOKING_COM_AID ?? '';
-
-function buildBookingHotelUrl(hotelName: string, destination: string): string {
-  const query = [hotelName, destination].filter(Boolean).join(' ');
-  const params = new URLSearchParams({
-    ss: query,
-    aid: BOOKING_AFFILIATE_ID,
-  });
-  return `https://www.booking.com/searchresults.html?${params.toString()}`;
-}
 
 export interface StaysStripProps {
   trip: Trip;
@@ -117,7 +107,14 @@ export const StaysStrip = memo(function StaysStrip({
                       <Pressable
                         onPress={(e) => {
                           e.stopPropagation();
-                          Linking.openURL(buildBookingHotelUrl(hotel.name, hotel.city ?? hotel.address ?? trip.destination));
+                          const link = getPlaceBookingLinks(hotel.name, 'stay/hotel', trip.destination, tripStayDates(trip), trip.travelers, {
+                            lat: hotel.lat,
+                            lng: hotel.lng,
+                            address: hotel.address,
+                            country: trip.country,
+                            campaign: 'stays_strip',
+                          })[0];
+                          if (link) openBookingLink(link.url);
                         }}
                         style={[s.bookBtn, { backgroundColor: theme.primary }]}
                         accessibilityRole="button"

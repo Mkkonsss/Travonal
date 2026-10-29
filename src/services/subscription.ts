@@ -64,6 +64,8 @@ export interface SubscriptionProduct {
   planId: PlanId;
   /** Formatted price string from App Store (e.g. "$4.99") — never hardcoded */
   displayPrice: string;
+  /** Numeric price in the store's currency, used to work out the annual saving */
+  price: number | null;
   title: string;
   period: 'month' | 'year';
   raw: ProductSubscription;
@@ -105,8 +107,9 @@ export async function loadSubscriptionProducts(): Promise<SubscriptionProduct[]>
 
     const period: 'month' | 'year' = planId === 'annual' ? 'year' : 'month';
     const displayPrice = (raw as { displayPrice?: string }).displayPrice ?? '';
+    const price = typeof raw.price === 'number' ? raw.price : null;
 
-    products.push({ planId, displayPrice, title: raw.title, period, raw });
+    products.push({ planId, displayPrice, price, title: raw.title, period, raw });
   }
 
   return products;
@@ -122,10 +125,12 @@ export async function purchaseSubscription(planId: PlanId): Promise<{ error?: st
     await openIAPConnection();
     _expectedPurchaseProductId = PRODUCT_IDS[planId];
     const sku = PRODUCT_IDS[planId];
+    // Tag the purchase with the buyer's account so the server can tell whose subscription it is
+    const { data: { session } } = await supabase.auth.getSession();
     // requestPurchase is event-driven — listen via purchaseUpdatedListener for result.
     await requestPurchase({
       request: {
-        apple: { sku },
+        apple: { sku, appAccountToken: session?.user?.id },
         google: { skus: [sku] },
       },
       type: 'subs',
@@ -220,7 +225,11 @@ export async function acknowledgePurchase(purchase: Purchase): Promise<void> {
  * Validate a purchase on the server and update user_subscriptions.
  * This is the critical step that makes the server recognize the subscription.
  */
-export async function validatePurchaseOnServer(purchase: Purchase): Promise<boolean> {
+export async function validatePurchaseOnServer(
+  purchase: Purchase,
+  /** True for background re-checks — the server only accepts these once it verifies with Apple */
+  options?: { auto?: boolean },
+): Promise<boolean> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return false;
@@ -229,6 +238,7 @@ export async function validatePurchaseOnServer(purchase: Purchase): Promise<bool
       body: {
         productId: purchase.productId,
         transactionId: purchase.transactionId,
+        auto: options?.auto === true,
       },
     });
 
@@ -239,6 +249,25 @@ export async function validatePurchaseOnServer(purchase: Purchase): Promise<bool
     return true;
   } catch (e) {
     if (__DEV__) console.warn('[subscription] validate-purchase failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+/**
+ * Renewals: if StoreKit shows an active Tripseek+ subscription that the server hasn't
+ * caught up with (e.g. a renewal notification is late), ask the server to re-check it with
+ * Apple. The server only links it if it belongs to this account. Returns true if it did.
+ */
+export async function syncActiveSubscription(): Promise<boolean> {
+  try {
+    await openIAPConnection();
+    const purchases = await getAvailablePurchases();
+    const plusIds = new Set<string>(Object.values(PRODUCT_IDS));
+    const plusPurchases = purchases.filter((p: Purchase) => plusIds.has(p.productId));
+    if (plusPurchases.length === 0) return false;
+    const best = plusPurchases.find((p) => p.productId === PRODUCT_IDS.annual) ?? plusPurchases[0];
+    return await validatePurchaseOnServer(best, { auto: true });
+  } catch {
     return false;
   }
 }
